@@ -1,0 +1,77 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --shell-bg: #0F172A;
+  --shell-surface: #1E293B;
+  --shell-border: #334155;
+  --shell-muted: #94A3B8;
+  --accent-dark: #60A5FA;
+  --accent-light: #2563EB;
+  --accent-hover: #1D4ED8;
+  --accent-bg: #DBEAFE;
+  --panel-bg: #F8FAFC;
+  --panel-surface: #FFFFFF;
+  --primary-text: #0F172A;
+  --secondary-text: #64748B;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+/* Citation markers */
+.citation-marker {
+  color: #2563EB;
+  font-weight: 600;
+  cursor: pointer;
+  vertical-align: super;
+  font-size: 0.75em;
+}
+.citation-marker:hover {
+  text-decoration: underline;
+}
+
+/* Answer prose */
+.answer-prose {
+  font-size: 15px;
+  line-height: 1.65;
+  color: #0F172A;
+}
+.answer-prose p {
+  margin-bottom: 0.75em;
+}
+.answer-prose p:last-child {
+  margin-bottom: 0;
+}

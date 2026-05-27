@@ -1,0 +1,41 @@
+# Environment and secrets
+.env
+.env.*
+.secrets
+**/secrets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+dist/
+.next/
+
+# Logs
+*.log
+logs/
+
+# Design handoff — belongs to Claude Design, not source control
+ui/design-handoff/
+
+# Test artifacts
+.pytest_cache/
+coverage/
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# JetBrains / VSCode
+.idea/
+.vscode/
