@@ -554,15 +554,199 @@ async def _run_metadata_query(
     filters: QueryFilters,
     retrieval: RetrievalParams,
 ) -> dict:
-    """Execute a METADATA-path query. Returns structured results from Qdrant scroll."""
-    # Will be fully implemented in step 5
+    """Execute a METADATA-path query using Qdrant scroll/count and PostgreSQL."""
+    query_lower = request.query.lower()
+    qdrant_filter = build_qdrant_filter(filters)
+
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+    # Determine what kind of metadata query this is
+    is_count = any(w in query_lower for w in ["how many", "how much", "count of", "number of"])
+    is_list = any(w in query_lower for w in ["list", "show", "find all", "what are"])
+    is_current_version = any(w in query_lower for w in ["current version", "what is the current", "latest version"])
+
+    citations = []
+    answer = ""
+
+    if is_count:
+        # Count document chunks matching filter in Qdrant
+        count_result = client.count(
+            collection_name=QDRANT_COLLECTION,
+            count_filter=qdrant_filter,
+            exact=True,
+        )
+        total = count_result.count if count_result else 0
+
+        agency_str = f"from {filters.agency}" if filters.agency else "across all agencies"
+        type_str = f" of type {filters.document_type}" if filters.document_type else ""
+
+        answer = f"There are {total} document chunks{type_str} {agency_str} in the indexed corpus."
+
+    elif is_current_version:
+        # Look up document version from PostgreSQL document_registry
+        import psycopg2
+        answer_parts = []
+        try:
+            conn = psycopg2.connect(
+                host=POSTGRES_HOST, port=POSTGRES_PORT,
+                dbname=POSTGRES_DB, user=POSTGRES_USER,
+                password=POSTGRES_PASSWORD, connect_timeout=5
+            )
+            cur = conn.cursor()
+            where = ""
+            params = []
+            if filters.agency:
+                params.append(filters.agency)
+                where = f"WHERE issuing_body = %s"
+            cur.execute(
+                f"""SELECT document_id, metadata_json->>'document_title' as title,
+                          document_version, metadata_json->>'publication_date' as pub_date,
+                          issuing_body, document_status, document_family_id
+                   FROM document_registry
+                   {where}
+                   ORDER BY metadata_json->>'document_title'"""
+                , params
+            )
+            rows = cur.fetchall()
+
+            # Build family map for supersede detection
+            families = {}
+            for row in rows:
+                doc_id, title, version, pub_date, agency, status, family_id = row
+                if family_id:
+                    if family_id not in families:
+                        families[family_id] = []
+                    families[family_id].append(row)
+
+            for row in rows:
+                doc_id, title, version, pub_date, agency, status, family_id = row
+                agency_norm = normalise_agency(agency or "")
+                title_clean = strip_title_suffix(title or "")
+
+                superseded = False
+                superseded_by = None
+                if family_id and family_id in families:
+                    # Check if a newer version exists in same family
+                    for other in families[family_id]:
+                        if other[0] != doc_id and other[3] and pub_date and other[3] > pub_date:
+                            superseded = True
+                            superseded_by = strip_title_suffix(other[1] or other[0])
+                            break
+
+                if is_current_version and superseded:
+                    continue
+
+                answer_parts.append(
+                    f"{title_clean} ({agency_norm}): version {version or 'unknown'}"
+                    f"{', published ' + pub_date if pub_date else ''}"
+                    f"{' [SUPERSEDED by ' + superseded_by + ']' if superseded else ''}"
+                )
+
+                citations.append({
+                    "index": len(citations) + 1,
+                    "chunk_id": "",
+                    "document_id": doc_id,
+                    "chunk_text": "",
+                    "document_title": title_clean,
+                    "issuing_body": agency_norm,
+                    "document_version": version,
+                    "clause_id": None,
+                    "publication_date": pub_date,
+                    "page_no": None,
+                    "chunk_index": None,
+                    "char_offset_start": None,
+                    "char_offset_end": None,
+                    "chunked_at": None,
+                    "score": 0.0,
+                    "cited_by_llm": True,
+                    "superseded": superseded,
+                    "superseded_by": superseded_by,
+                    "source_local_path": None,
+                    "source_url": "",
+                })
+
+            cur.close()
+            conn.close()
+
+            if not answer_parts:
+                answer = "No matching documents found in the document registry."
+            else:
+                answer = "\n".join(answer_parts)
+        except Exception as e:
+            logger.exception("Metadata version query failed")
+            answer = f"Unable to look up document versions: {e}"
+
+    elif is_list:
+        # Scroll through Qdrant to list matching documents
+        scroll_result = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter=qdrant_filter,
+            limit=20,
+            with_payload=True,
+        )
+        points, _ = scroll_result
+        seen_docs = {}
+        for point in points:
+            payload = point.payload or {}
+            doc_id = payload.get("document_id", "")
+            if doc_id and doc_id not in seen_docs:
+                seen_docs[doc_id] = payload
+
+        items = []
+        for i, (doc_id, payload) in enumerate(seen_docs.items(), 1):
+            title = strip_title_suffix(payload.get("document_title", "Unknown"))
+            agency = normalise_agency(payload.get("issuing_body", "Unknown"))
+            version = payload.get("document_version", "")
+            pub_date = payload.get("publication_date", "")
+            doc_type = payload.get("document_type", "")
+
+            items.append(f"{i}. {title} — {agency}{', ' + version if version else ''}{' (' + pub_date + ')' if pub_date else ''}")
+
+            citations.append({
+                "index": i,
+                "chunk_id": str(point.id),
+                "document_id": doc_id,
+                "chunk_text": "",
+                "document_title": title,
+                "issuing_body": agency,
+                "document_version": version,
+                "clause_id": payload.get("clause_id"),
+                "publication_date": pub_date,
+                "page_no": payload.get("page_no"),
+                "chunk_index": payload.get("chunk_index"),
+                "char_offset_start": payload.get("char_offset_start"),
+                "char_offset_end": payload.get("char_offset_end"),
+                "chunked_at": payload.get("chunked_at"),
+                "score": 0.0,
+                "cited_by_llm": True,
+                "superseded": False,
+                "superseded_by": None,
+                "source_local_path": payload.get("source_local_path"),
+                "source_url": payload.get("source_url", ""),
+            })
+
+        if items:
+            answer = "Documents matching your query:\n\n" + "\n".join(items)
+        else:
+            answer = "No documents found matching your criteria."
+    else:
+        # General metadata: count and overview
+        count_result = client.count(
+            collection_name=QDRANT_COLLECTION,
+            count_filter=qdrant_filter,
+            exact=True,
+        )
+        total = count_result.count if count_result else 0
+        agency_str = f"from {filters.agency}" if filters.agency else "across all agencies"
+        answer = f"Found {total} document chunks {agency_str} in the indexed corpus."
+
     return {
         "query_id": query_id,
         "timestamp": timestamp,
         "routing_path": "METADATA",
         "sub_queries": [],
-        "answer": "Metadata query processing is being implemented.",
-        "citations": [],
+        "answer": answer.strip(),
+        "citations": citations,
         "retrieval_params_applied": {
             "query_depth": retrieval.query_depth,
             "top_k": retrieval.top_k,
