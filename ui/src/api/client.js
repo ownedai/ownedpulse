@@ -1,33 +1,64 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-export async function submitQuery(query, filters) {
-  const res = await fetch(`${API_BASE}/api/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, filters }),
+async function request(path, options = {}) {
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+    ...options,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Server responded with ${res.status}`);
+    const detail = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(detail.detail || `HTTP ${res.status}`);
   }
   return res.json();
 }
 
-export async function fetchHistory() {
-  const res = await fetch(`${API_BASE}/api/query/history`);
-  if (!res.ok) throw new Error('Failed to fetch history');
-  return res.json();
+export function submitQuery(body, signal) {
+  return request('/api/query', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    signal,
+  });
 }
 
-export async function fetchCorpusStats() {
-  const res = await fetch(`${API_BASE}/api/corpus/stats`);
-  if (!res.ok) throw new Error('Failed to fetch corpus stats');
-  return res.json();
+export function getQueryHistory(limit = 10, offset = 0) {
+  return request(`/api/query/history?limit=${limit}&offset=${offset}`);
 }
 
-export async function fetchPdfPage(filePath, pageNumber) {
-  const url = `${API_BASE}/api/pdf/page?file_path=${encodeURIComponent(filePath)}&page_number=${pageNumber}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('PDF page not available');
-  return res.blob();
+export function exportQuery(queryId, format = 'json') {
+  const url = `${API_BASE}/api/query/${queryId}/export?format=${format}`;
+  return fetch(url).then(r => {
+    if (!r.ok) throw new Error(`Export failed: ${r.status}`);
+    return format === 'json' ? r.json() : r.blob();
+  });
+}
+
+export function exportHistory(format = 'json') {
+  const url = `${API_BASE}/api/query/history/export?format=${format}`;
+  return fetch(url).then(r => {
+    if (!r.ok) throw new Error(`History export failed: ${r.status}`);
+    return format === 'json' ? r.json() : r.blob();
+  });
+}
+
+export function getTrace(traceId) {
+  return request(`/api/trace/${traceId}`);
+}
+
+export function getPdfPage(filePath, pageNo) {
+  return `/api/pdf/page?file_path=${encodeURIComponent(filePath)}&page_no=${pageNo}`;
+}
+
+export function getCorpusStats() {
+  return request('/api/corpus/stats');
+}
+
+export function getCorpusDocuments(params) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+  return request(`/api/corpus/documents?${qs.toString()}`);
+}
+
+export function getHealth() {
+  return request('/api/health');
 }

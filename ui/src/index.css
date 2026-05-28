@@ -1,77 +1,62 @@
 @import '@fontsource/inter/400.css';
+@import '@fontsource/inter/400-italic.css';
 @import '@fontsource/inter/500.css';
-@import '@fontsource/inter/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Brand tokens — will be expanded in step 3 */
 :root {
   --shell-bg: #0F172A;
   --shell-surface: #1E293B;
   --shell-border: #334155;
-  --shell-muted: #94A3B8;
-  --accent-dark: #60A5FA;
-  --accent-light: #2563EB;
-  --accent-hover: #1D4ED8;
-  --accent-bg: #DBEAFE;
+  --shell-muted-text: #94A3B8;
+  --shell-accent: #60A5FA;
+
   --panel-bg: #F8FAFC;
   --panel-surface: #FFFFFF;
-  --primary-text: #0F172A;
-  --secondary-text: #64748B;
+  --panel-text: #0F172A;
+  --panel-text-secondary: #64748B;
+  --panel-accent: #2563EB;
+  --panel-accent-hover: #1D4ED8;
+  --panel-accent-bg: #DBEAFE;
+
   --success: #10B981;
   --warning: #F59E0B;
   --error: #EF4444;
+
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-* {
-  margin: 0;
-  padding: 0;
+[data-theme="dark"] :root {
+  --panel-bg: #1E293B;
+  --panel-surface: #0F172A;
+  --panel-text: #F8FAFC;
+  --panel-text-secondary: #94A3B8;
+}
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html, body, #root {
   height: 100%;
-  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
-}
-
-/* Citation markers */
-.citation-marker {
-  color: #2563EB;
-  font-weight: 600;
-  cursor: pointer;
-  vertical-align: super;
-  font-size: 0.75em;
-}
-.citation-marker:hover {
-  text-decoration: underline;
-}
-
-/* Answer prose */
-.answer-prose {
+  font-family: var(--sans);
   font-size: 15px;
-  line-height: 1.65;
-  color: #0F172A;
-}
-.answer-prose p {
-  margin-bottom: 0.75em;
-}
-.answer-prose p:last-child {
-  margin-bottom: 0;
+  line-height: 1.6;
+  color: var(--panel-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background: var(--shell-bg);
 }
