@@ -1,6 +1,11 @@
 import Tooltip, { InfoIcon } from '../common/Tooltip';
 
 const AGENCIES = ['All', 'FDA', 'EMA', 'ICH'];
+const AGENCY_TIPS = {
+  FDA: 'U.S. Food & Drug Administration',
+  EMA: 'European Medicines Agency',
+  ICH: 'International Council for Harmonisation',
+};
 const DOC_TYPES = [
   { label: 'All', value: null },
   { label: 'Guidance', value: 'guidance' },
@@ -56,7 +61,7 @@ export default function FilterBar({
           <InfoIcon tip="Filter to documents from a specific regulatory agency" />
         </span>
         {AGENCIES.map((a) => (
-          <Tooltip key={a} tip={a === 'All' ? 'No agency filter — search across all indexed regulators' : ''} placement="below">
+          <Tooltip key={a} tip={a === 'All' ? 'No agency filter — search across all indexed regulators' : AGENCY_TIPS[a] || ''} placement="below">
             <button
               className={`pill${activeAgency === a ? ' on' : ''}`}
               onClick={() => setAgency(a)}

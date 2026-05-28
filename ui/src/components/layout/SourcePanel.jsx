@@ -2,6 +2,12 @@ import { useState } from 'react';
 import Tooltip from '../common/Tooltip';
 import { getPdfPage } from '../../api/client';
 
+const AGENCY_SOURCE_TIPS = {
+  FDA: 'U.S. Food & Drug Administration',
+  EMA: 'European Medicines Agency',
+  ICH: 'International Council for Harmonisation',
+};
+
 export default function SourcePanel({ citation, onClose, onPrevChunk, onNextChunk, hasPrev, hasNext }) {
   const [pdfPage, setPdfPage] = useState(citation?.page_no ?? null);
   const [pdfError, setPdfError] = useState(false);
@@ -57,7 +63,9 @@ export default function SourcePanel({ citation, onClose, onPrevChunk, onNextChun
             <h3>{displayTitle}</h3>
           </Tooltip>
           <div className="sub">
-            <span className="v">{agency}</span>
+            <Tooltip tip={AGENCY_SOURCE_TIPS[agency] || agency}>
+              <span className="v" style={{ cursor: 'help' }}>{agency}</span>
+            </Tooltip>
             {' · '}
             <span className="v">{version}</span>
             {' · '}

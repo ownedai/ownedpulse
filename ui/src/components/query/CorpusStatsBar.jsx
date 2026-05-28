@@ -22,7 +22,7 @@ export default function CorpusStatsBar() {
           </span>
         </Tooltip>
 
-        <Tooltip tip="Click to browse all FDA documents in the corpus.">
+        <Tooltip tip="U.S. Food & Drug Administration — click to browse all FDA documents in the corpus.">
           <span className="stat">
             <span className="k">FDA</span>
             <Link to="/corpus?agency=FDA" data-testid="corpus-stats-fda">
@@ -31,7 +31,7 @@ export default function CorpusStatsBar() {
           </span>
         </Tooltip>
 
-        <Tooltip tip="Click to browse all EMA documents in the corpus.">
+        <Tooltip tip="European Medicines Agency — click to browse all EMA documents in the corpus.">
           <span className="stat">
             <span className="k">EMA</span>
             <Link to="/corpus?agency=EMA" data-testid="corpus-stats-ema">
@@ -40,7 +40,7 @@ export default function CorpusStatsBar() {
           </span>
         </Tooltip>
 
-        <Tooltip tip="Click to browse all ICH documents in the corpus.">
+        <Tooltip tip="International Council for Harmonisation — click to browse all ICH documents in the corpus.">
           <span className="stat">
             <span className="k">ICH</span>
             <Link to="/corpus?agency=ICH" data-testid="corpus-stats-ich">

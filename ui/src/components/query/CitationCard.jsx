@@ -1,7 +1,7 @@
 import Tooltip from '../common/Tooltip';
 
 const AGENCY_TIPS = {
-  FDA: 'US Food and Drug Administration',
+  FDA: 'U.S. Food & Drug Administration',
   EMA: 'European Medicines Agency',
   ICH: 'International Council for Harmonisation',
 };

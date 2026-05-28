@@ -4,6 +4,11 @@ import DocumentViewer from './DocumentViewer';
 import Tooltip from '../common/Tooltip';
 
 const AGENCY_TABS = ['All', 'FDA', 'EMA', 'ICH'];
+const AGENCY_TIPS = {
+  FDA: 'U.S. Food & Drug Administration',
+  EMA: 'European Medicines Agency',
+  ICH: 'International Council for Harmonisation',
+};
 const DOC_TYPES = [
   { label: 'All', value: null },
   { label: 'Guidance', value: 'guidance' },
@@ -73,7 +78,7 @@ export default function CorpusPage() {
         {/* Agency tabs */}
         <div className="rp-tabs">
           {AGENCY_TABS.map((a) => (
-            <Tooltip key={a} tip={a === 'All' ? 'Show all documents across all agencies' : 'Click to browse all documents from this agency'} placement="below">
+            <Tooltip key={a} tip={a === 'All' ? 'Show all documents across all agencies' : `${AGENCY_TIPS[a]} — click to browse all documents from this agency`} placement="below">
               <button
                 className={`tab${agency === a ? ' on' : ''}`}
                 onClick={() => { setAgency(a); setOffset(0); }}
@@ -148,7 +153,11 @@ export default function CorpusPage() {
                 <td>
                   <span className="truncate" title={doc.document_title}>{doc.document_title}</span>
                 </td>
-                <td><span className="agency-mini">{doc.issuing_body}</span></td>
+                <td>
+                  <Tooltip tip={AGENCY_TIPS[doc.issuing_body] || doc.issuing_body}>
+                    <span className="agency-mini" style={{ cursor: 'help' }}>{doc.issuing_body}</span>
+                  </Tooltip>
+                </td>
                 <td className="mono">{doc.doc_type?.replace(/_/g, ' ') || '—'}</td>
                 <td className="mono">{doc.document_version || '—'}</td>
                 <td className="mono">{formatDate(doc.publication_date)}</td>
