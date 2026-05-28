@@ -49,6 +49,109 @@ OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 
+
+# ── Database init ─────────────────────────────────────────────────────────────
+
+
+def get_pg_conn():
+    """Get a PostgreSQL connection. Raises on failure."""
+    import psycopg2
+    return psycopg2.connect(
+        host=POSTGRES_HOST, port=POSTGRES_PORT,
+        dbname=POSTGRES_DB, user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD, connect_timeout=10
+    )
+
+
+def init_db():
+    """Initialise the query_history table. Raises on failure."""
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS query_history (
+                query_id          UUID PRIMARY KEY,
+                query_text        TEXT NOT NULL,
+                routing_path      VARCHAR(20),
+                answer            TEXT,
+                citations         JSONB,
+                sub_queries       JSONB,
+                filters_applied   JSONB,
+                retrieval_params  JSONB,
+                langfuse_trace_id TEXT,
+                timestamp         TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        # Migrate old schema — add missing columns if they don't exist
+        migrations = [
+            ("sub_queries", "JSONB"),
+            ("retrieval_params", "JSONB"),
+            ("langfuse_trace_id", "TEXT"),
+        ]
+        for col_name, col_type in migrations:
+            cur.execute(
+                f"""DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'query_history' AND column_name = '{col_name}'
+                    ) THEN
+                        ALTER TABLE query_history ADD COLUMN {col_name} {col_type};
+                    END IF;
+                END $$;"""
+            )
+        conn.commit()
+        cur.close()
+        logger.info("query_history table ready")
+    except Exception as e:
+        logger.error("init_db failed: %s", e)
+        raise
+    finally:
+        conn.close()
+
+
+def persist_query(
+    query_id: str,
+    query_text: str,
+    routing_path: str,
+    answer: str,
+    citations: list,
+    sub_queries: list,
+    filters_applied: dict,
+    retrieval_params: dict,
+    langfuse_trace_id: str = "",
+):
+    """Persist a query result to query_history. Raises on failure."""
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO query_history
+               (query_id, query_text, routing_path, answer, citations,
+                sub_queries, filters_applied, retrieval_params, langfuse_trace_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                query_id, query_text, routing_path, answer,
+                json.dumps(citations), json.dumps(sub_queries),
+                json.dumps(filters_applied), json.dumps(retrieval_params),
+                langfuse_trace_id,
+            )
+        )
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error("persist_query failed: %s", e)
+        raise
+    finally:
+        conn.close()
+
+
+# ── Startup ──────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup():
+    init_db()
+
 # ── System prompt V6 ──────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_V6 = (
@@ -453,7 +556,7 @@ async def submit_query(request: QueryRequest):
     """Execute a regulatory intelligence query.
 
     Routes to CONTENT path (semantic RAG) or METADATA path based on
-    query text analysis.
+    query text analysis. Every query is persisted to query_history.
     """
     query_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -462,9 +565,30 @@ async def submit_query(request: QueryRequest):
 
     # Determine routing
     if is_metadata_query(request.query):
-        return await _run_metadata_query(query_id, timestamp, request, filters, retrieval)
+        result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval)
+    else:
+        result = await _run_content_query(query_id, timestamp, request, filters, retrieval)
 
-    return await _run_content_query(query_id, timestamp, request, filters, retrieval)
+    # Persist to query_history
+    filters_dict = filters.model_dump() if filters else {}
+    retrieval_dict = retrieval.model_dump() if retrieval else {}
+    try:
+        persist_query(
+            query_id=query_id,
+            query_text=request.query,
+            routing_path=result["routing_path"],
+            answer=result["answer"],
+            citations=result["citations"],
+            sub_queries=result.get("sub_queries", []),
+            filters_applied=filters_dict,
+            retrieval_params=retrieval_dict,
+            langfuse_trace_id=result.get("langfuse_trace_id", ""),
+        )
+    except Exception as e:
+        logger.error("Failed to persist query %s: %s", query_id, e)
+        # Query still returns to user even if persistence fails
+
+    return result
 
 
 async def _run_content_query(
@@ -762,7 +886,37 @@ async def _run_metadata_query(
 
 @app.get("/api/query/history")
 async def query_history(limit: int = 10, offset: int = 0):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    """Return paginated query history from PostgreSQL."""
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT query_id, query_text, timestamp, routing_path,
+                      citations, filters_applied
+               FROM query_history
+               ORDER BY timestamp DESC
+               LIMIT %s OFFSET %s""",
+            (limit, offset)
+        )
+        rows = cur.fetchall()
+        items = []
+        for row in rows:
+            qid, qtext, ts, routing, citations, filters_json = row
+            cits = citations if isinstance(citations, list) else json.loads(citations or "[]")
+            filts = filters_json if isinstance(filters_json, dict) else json.loads(filters_json or "{}")
+            items.append({
+                "query_id": qid,
+                "query_text": qtext,
+                "timestamp": ts.isoformat() if ts else "",
+                "routing_path": routing or "",
+                "citation_count": len(cits),
+                "filters_applied": filts,
+                "agency_filter": filts.get("agency", "All"),
+            })
+        cur.close()
+        return items
+    finally:
+        conn.close()
 
 
 # ── GET /api/query/{query_id}/export ──────────────────────────────────────────
