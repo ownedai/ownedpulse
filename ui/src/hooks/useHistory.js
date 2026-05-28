@@ -1,21 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchHistory } from '../api/client';
+import { useState, useEffect } from 'react';
+import { getQueryHistory } from '../api/client';
 
-export function useHistory() {
-  const [history, setHistory] = useState([]);
+export default function useHistory(limit = 10) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await fetchHistory();
-      setHistory(data);
-    } catch {
-      // silent fail
-    }
-  }, []);
+  function refresh() {
+    setLoading(true);
+    getQueryHistory(limit, 0)
+      .then(setItems)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useEffect(() => { refresh(); }, [limit]);
 
-  return { history, refresh };
+  return { items, loading, refresh };
 }

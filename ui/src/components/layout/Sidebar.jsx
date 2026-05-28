@@ -1,71 +1,82 @@
+import { Link } from 'react-router-dom';
 import Logo from '../common/Logo';
+import useHistory from '../../hooks/useHistory';
+import useCorpusStats from '../../hooks/useCorpusStats';
 
-export default function Sidebar({ history, stats, onHistorySelect, onNewQuery }) {
+function relativeTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now - d;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return d.toLocaleDateString('en-GB');
+}
+
+export default function Sidebar({ activeQueryId, onNewQuery }) {
+  const { items } = useHistory(10);
+  const { stats } = useCorpusStats();
+
   return (
-    <aside className="w-[240px] min-w-[240px] bg-shell-bg flex flex-col h-full border-r border-shell-border">
-      <div className="px-4 py-4 border-b border-shell-border">
-        <Logo />
+    <aside className="rp-sidebar">
+      <div className="brand">
+        <Logo showWordmark />
       </div>
 
-      <div className="px-3 py-3">
-        <button
-          onClick={onNewQuery}
-          className="w-full py-2 bg-accent-dark text-white rounded-lg font-medium text-sm hover:bg-[#4B8FE0] transition-colors"
-        >
-          New query
-        </button>
+      <button className="newq" onClick={onNewQuery}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M8 3v10M3 8h10" />
+        </svg>
+        New query
+      </button>
+
+      <div className="grp-lbl">
+        <span>Recent queries</span>
+        <Link to="/history">View all &rarr;</Link>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-1">
-        <h3 className="text-[10px] font-semibold text-shell-muted uppercase tracking-wider px-1 mb-2">
-          Query History
-        </h3>
-        {history.length === 0 ? (
-          <p className="text-xs text-shell-muted px-1">No queries yet.</p>
-        ) : (
-          <div className="space-y-0.5">
-            {history.map((item) => (
-              <button
-                key={item.query_id}
-                onClick={() => onHistorySelect(item)}
-                className="w-full text-left px-2.5 py-2 rounded-md hover:bg-shell-surface transition-colors group"
-              >
-                <p className="text-xs text-slate-300 truncate">{item.query_text}</p>
-                <p className="text-[10px] text-shell-muted mt-0.5">
-                  {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ''}
-                  {item.routing_path && ` · ${item.routing_path}`}
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="rp-history">
+        {items.map((h) => (
+          <Link
+            key={h.query_id}
+            to={`/?q=${h.query_id}`}
+            className={`item${h.query_id === activeQueryId ? ' active' : ''}`}
+            style={{ textDecoration: 'none' }}
+          >
+            <div className="q">{h.query_text}</div>
+            <div className="t">{relativeTime(h.timestamp)}</div>
+          </Link>
+        ))}
       </div>
 
-      <div className="px-3 py-3 border-t border-shell-border">
-        <h3 className="text-[10px] font-semibold text-shell-muted uppercase tracking-wider mb-2">
-          Corpus
-        </h3>
-        {stats ? (
-          <div className="space-y-1 text-xs text-slate-400">
-            <div className="flex justify-between">
-              <span>Documents</span>
-              <span className="text-slate-200 font-medium">{stats.total_documents || 0}</span>
-            </div>
-            {stats.per_agency && Object.entries(stats.per_agency).map(([agency, count]) => (
-              <div key={agency} className="flex justify-between">
-                <span>{agency}</span>
-                <span className="text-slate-200 font-medium">{count}</span>
-              </div>
-            ))}
-            {stats.last_pipeline_run && (
-              <div className="pt-1 text-[10px] text-shell-muted">
-                Last pipeline: {new Date(stats.last_pipeline_run).toLocaleDateString()}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-shell-muted">Connecting...</p>
-        )}
+      <div className="rp-status">
+        <div className="grp-lbl" style={{ padding: 0, marginBottom: 8 }}>System</div>
+        <div className="row">
+          <span className="k">Pipeline</span>
+          <span className="v ok">
+            {stats?.last_pipeline_run
+              ? new Date(stats.last_pipeline_run).toLocaleDateString('en-GB').replace(/\//g, '/') + ' ' + new Date(stats.last_pipeline_run).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+              : '—'}
+          </span>
+        </div>
+        <div className="row">
+          <span className="k">Docs indexed</span>
+          <span className="v">{stats?.total_documents?.toLocaleString() || '—'}</span>
+        </div>
+        <div className="row">
+          <span className="k">Embed model</span>
+          <span className="v">mxbai-embed-large</span>
+        </div>
+        <div className="row">
+          <span className="k">Build</span>
+          <span className="v">v0.7.0</span>
+        </div>
       </div>
     </aside>
   );

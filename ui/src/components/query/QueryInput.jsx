@@ -1,29 +1,47 @@
-export default function QueryInput({ value, onChange, onSubmit, loading }) {
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && value.trim() && !loading) {
-      e.preventDefault();
-      onSubmit(value.trim());
+import { useState } from 'react';
+
+export default function QueryInput({ value, onChange, onSubmit, disabled }) {
+  const [local, setLocal] = useState(value || '');
+
+  function handleChange(e) {
+    setLocal(e.target.value);
+    onChange?.(e.target.value);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !disabled && local.trim()) {
+      onSubmit?.(local.trim());
     }
-  };
+  }
+
+  function handleSubmit() {
+    if (!disabled && local.trim()) {
+      onSubmit?.(local.trim());
+    }
+  }
 
   return (
-    <div className="mb-6">
-      <div className="flex gap-3">
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask a regulatory question..."
-          disabled={loading}
-          className="flex-1 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-[15px] text-primary placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent-light/20 focus:border-accent-light transition-shadow disabled:opacity-60"
-        />
+    <div className="rp-landing">
+      <div className="query-row">
+        <div className="query-input">
+          <input
+            type="text"
+            placeholder="Ask a regulatory question…"
+            value={local}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+          />
+        </div>
         <button
-          onClick={() => value.trim() && onSubmit(value.trim())}
-          disabled={!value.trim() || loading}
-          className="px-5 py-2.5 bg-accent-light text-white rounded-lg font-medium text-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="query-submit"
+          onClick={handleSubmit}
+          disabled={disabled || !local.trim()}
         >
           Submit
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 8h10M9 4l4 4-4 4" />
+          </svg>
         </button>
       </div>
     </div>

@@ -956,7 +956,39 @@ async def pdf_page(file_path: str, page_no: int = 0):
 
 @app.get("/api/corpus/stats")
 async def corpus_stats():
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM document_registry")
+        total = cur.fetchone()[0]
+
+        cur.execute("SELECT issuing_body, count(*) FROM document_registry GROUP BY issuing_body")
+        raw_agency = dict(cur.fetchall())
+
+        # Normalise EU-Commission → EMA
+        per_agency = {}
+        for agency, count in raw_agency.items():
+            key = normalise_agency(agency)
+            per_agency[key] = per_agency.get(key, 0) + count
+
+        cur.execute(
+            "SELECT metadata_json->>'document_type', count(*) FROM document_registry GROUP BY metadata_json->>'document_type'"
+        )
+        per_doc_type = dict(cur.fetchall())
+
+        cur.execute("SELECT max(last_indexed_at) FROM document_registry")
+        last_run = cur.fetchone()[0]
+        last_run_iso = last_run.isoformat() if last_run else None
+
+        cur.close()
+        return {
+            "total_documents": total,
+            "per_agency": per_agency,
+            "per_document_type": per_doc_type,
+            "last_pipeline_run": last_run_iso,
+        }
+    finally:
+        conn.close()
 
 
 # ── GET /api/corpus/documents ─────────────────────────────────────────────────

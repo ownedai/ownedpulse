@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
-import { fetchCorpusStats } from '../api/client';
+import { getCorpusStats } from '../api/client';
 
-export function useCorpusStats() {
+export default function useCorpusStats() {
   const [stats, setStats] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchCorpusStats()
-      .then(setStats)
-      .catch(() => {});
+    let cancelled = false;
+    getCorpusStats()
+      .then(data => { if (!cancelled) setStats(data); })
+      .catch(err => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
   }, []);
 
-  return { stats };
+  return { stats, error };
 }

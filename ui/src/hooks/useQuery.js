@@ -1,29 +1,45 @@
 import { useState, useCallback } from 'react';
-import { submitQuery as apiSubmitQuery } from '../api/client';
+import { submitQuery } from '../api/client';
 
-export function useQuery() {
+export default function useQuery() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [queryText, setQueryText] = useState('');
 
-  const submitQuery = useCallback(async (queryText, filters) => {
+  const execute = useCallback(async (query, filters = {}, retrievalParams = {}) => {
     setLoading(true);
     setError(null);
     setResult(null);
+    setQueryText(query);
+
+    const controller = new AbortController();
     try {
-      const data = await apiSubmitQuery(queryText, filters);
+      const data = await submitQuery(
+        {
+          query,
+          filters: Object.keys(filters).length ? filters : {},
+          retrieval_params: Object.keys(retrievalParams).length
+            ? retrievalParams
+            : { query_depth: 'standard', top_k: 10, score_threshold: 0.60 },
+        },
+        controller.signal
+      );
       setResult(data);
-    } catch (e) {
-      setError(e.message || 'An error occurred while querying.');
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const clearResult = useCallback(() => {
+  const clear = useCallback(() => {
     setResult(null);
     setError(null);
+    setQueryText('');
   }, []);
 
-  return { result, loading, error, submitQuery, clearResult };
+  return { result, loading, error, queryText, execute, clear };
 }
