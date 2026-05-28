@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import Logo from '../common/Logo';
+import Tooltip from '../common/Tooltip';
 import useHistory from '../../hooks/useHistory';
 import useCorpusStats from '../../hooks/useCorpusStats';
 import { formatDate, formatDateTime } from '../../dateFormat';
@@ -58,13 +59,14 @@ export default function Sidebar({ activeQueryId, onNewQuery }) {
 
       <div className="rp-status">
         <div className="grp-lbl" style={{ padding: 0, marginBottom: 8 }}>System</div>
-        <div className="row">
+        <div className="row rp-tip">
           <span className="k">Pipeline</span>
           <span className="v ok">
             {stats?.last_pipeline_run
               ? formatDateTime(stats.last_pipeline_run)
               : '—'}
           </span>
+          <span className="tip-body">Last document ingestion run</span>
         </div>
         <div className="row">
           <span className="k">Docs indexed</span>

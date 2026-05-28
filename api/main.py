@@ -1560,6 +1560,7 @@ async def corpus_documents(
     document_type: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    exclude_feeds: bool = True,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -1590,6 +1591,9 @@ async def corpus_documents(
             conditions.append("metadata_json->>'publication_date' <= %s")
             params.append(date_to)
 
+        if exclude_feeds:
+            conditions.append("feed_id IS NULL")
+
         where = ""
         if conditions:
             where = " WHERE " + " AND ".join(conditions)
@@ -1602,7 +1606,9 @@ async def corpus_documents(
                        metadata_json->>'document_title' as title,
                        metadata_json->>'publication_date' as pub_date,
                        metadata_json->>'document_version' as version,
-                       document_family_id, archive_path
+                       document_family_id, archive_path,
+                       metadata_json->>'source_file_format' as source_file_format,
+                       metadata_json->>'source_url' as source_url
                 FROM document_registry{where}
                 ORDER BY last_indexed_at DESC NULLS LAST
                 LIMIT %s OFFSET %s""",
@@ -1618,7 +1624,8 @@ async def corpus_documents(
 
         results = []
         for row in rows:
-            doc_id, ib, dt, li, title, pub_date, version, fam_id, archive_path = row
+            doc_id, ib, dt, li, title, pub_date, version, fam_id, archive_path, file_format, source_url = row
+            is_html = file_format == "html"
             results.append({
                 "document_id": doc_id,
                 "issuing_body": normalise_agency(ib),
@@ -1630,7 +1637,9 @@ async def corpus_documents(
                 "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
                 "is_superseded": fam_id is not None and fam_id != "",
                 "superseded_by": None,  # would need family resolution
-                "source_local_path": f"{archive_path}/source.pdf" if archive_path else None,
+                "source_file_format": file_format,
+                "source_url": source_url,
+                "source_local_path": None if is_html else (f"{archive_path}/source.pdf" if archive_path else None),
                 "archive_path": archive_path,
             })
 

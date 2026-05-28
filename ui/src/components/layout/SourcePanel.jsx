@@ -29,8 +29,11 @@ export default function SourcePanel({ citation, onClose, onPrevChunk, onNextChun
     chunked_at,
     source_url,
     source_local_path,
+    source_file_format,
     page_no,
   } = citation;
+
+  const isHtml = source_file_format === 'html' || !source_local_path;
 
   const agency = issuing_body === 'EU-Commission' ? 'EMA' : (issuing_body || 'Unknown');
   const version = document_version || '—';
@@ -165,35 +168,59 @@ export default function SourcePanel({ citation, onClose, onPrevChunk, onNextChun
           </div>
         </div>
 
-        {/* PDF page */}
-        <div className="rp-section-lbl" style={{ marginBottom: 8 }}>PDF page</div>
-        {source_local_path ? (
-          <div className="rp-pdf">
-            <div className="head">
-              <span>Page {pdfPage != null ? pdfPage + 1 : '—'}</span>
-              <div className="pager">
-                <button onClick={() => setPdfPage((p) => Math.max(0, (p || 0) - 1))} disabled={!pdfPage || pdfPage <= 0}>
-                  &larr;
+        {/* PDF page / HTML source */}
+        {isHtml ? (
+          <>
+            <div className="rp-section-lbl" style={{ marginBottom: 8 }}>Source</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--doc-text-2)', lineHeight: 1.5 }}>
+                This document is an HTML source. Use the link below to open the original page.
+              </p>
+              {source_url ? (
+                <button
+                  className="action"
+                  onClick={() => window.open(source_url, '_blank', 'noopener,noreferrer')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  Open source page ↗
                 </button>
-                <span>{pdfPage != null ? pdfPage + 1 : '—'}</span>
-                <button onClick={() => setPdfPage((p) => (p || 0) + 1)}>
-                  &rarr;
-                </button>
-              </div>
+              ) : (
+                <div className="rp-nopdf">No source URL available</div>
+              )}
             </div>
-            {pdfUrl && !pdfError ? (
-              <img
-                src={pdfUrl}
-                alt={`PDF page ${(pdfPage || 0) + 1}`}
-                style={{ width: '100%', height: 'auto', border: '1px solid var(--doc-border)', borderRadius: 3 }}
-                onError={() => setPdfError(true)}
-              />
+          </>
+        ) : (
+          <>
+            <div className="rp-section-lbl" style={{ marginBottom: 8 }}>PDF page</div>
+            {source_local_path ? (
+              <div className="rp-pdf">
+                <div className="head">
+                  <span>Page {pdfPage != null ? pdfPage + 1 : '—'}</span>
+                  <div className="pager">
+                    <button onClick={() => setPdfPage((p) => Math.max(0, (p || 0) - 1))} disabled={!pdfPage || pdfPage <= 0}>
+                      &larr;
+                    </button>
+                    <span>{pdfPage != null ? pdfPage + 1 : '—'}</span>
+                    <button onClick={() => setPdfPage((p) => (p || 0) + 1)}>
+                      &rarr;
+                    </button>
+                  </div>
+                </div>
+                {pdfUrl && !pdfError ? (
+                  <img
+                    src={pdfUrl}
+                    alt={`PDF page ${(pdfPage || 0) + 1}`}
+                    style={{ width: '100%', height: 'auto', border: '1px solid var(--doc-border)', borderRadius: 3 }}
+                    onError={() => setPdfError(true)}
+                  />
+                ) : (
+                  <div className="rp-nopdf">PDF not available</div>
+                )}
+              </div>
             ) : (
               <div className="rp-nopdf">PDF not available</div>
             )}
-          </div>
-        ) : (
-          <div className="rp-nopdf">PDF not available</div>
+          </>
         )}
       </div>
     </aside>

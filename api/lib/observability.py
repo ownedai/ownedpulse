@@ -1,6 +1,12 @@
 """Langfuse observability — single shared client for the query pipeline."""
 
 import os
+
+# Raise the per-event size cap before the SDK reads it at import time.
+# Default is 1 MB which truncates large prompts with full regulatory context.
+os.environ.setdefault("LANGFUSE_MAX_EVENT_SIZE_BYTES", "10000000")   # 10 MB
+os.environ.setdefault("LANGFUSE_MAX_BATCH_SIZE_BYTES", "25000000")   # 25 MB
+
 import langfuse
 
 

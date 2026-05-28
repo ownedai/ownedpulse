@@ -471,6 +471,11 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  cursor: default;
+}
+
+.rp-status .row.rp-tip {
+  display: flex;
 }
 
 .rp-status .row .k {
@@ -1017,6 +1022,11 @@ body {
 }
 
 .rp-query-bar .submit svg { width: 12px; height: 12px; }
+
+.rp-query-bar .rp-landing {
+  padding: 0;
+  margin: 0;
+}
 
 .rp-query-bar.thinking {
   border-color: var(--accent-l);
@@ -2041,3 +2051,80 @@ body {
 .rp-table .status.warn { background: var(--warn-tint); color: var(--warn-text); border: 1px solid var(--warn-tint-border); }
 
 .rp-table .status.warn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+
+/* Shell (sidebar, drawer) — always dark */
+.app-shell,
+.rp-sidebar,
+.rp-drawer {
+  color-scheme: dark;
+}
+
+/* Content panel — light by default, dark when data-theme="dark" */
+.main-column,
+.rp-content-wrap,
+.rp-source-scroll,
+.rp-history-wrap,
+.rp-corpus-wrap {
+  color-scheme: light;
+}
+:root[data-theme="dark"] .main-column,
+:root[data-theme="dark"] .rp-content-wrap,
+:root[data-theme="dark"] .rp-source-scroll,
+:root[data-theme="dark"] .rp-history-wrap,
+:root[data-theme="dark"] .rp-corpus-wrap {
+  color-scheme: dark;
+}
+
+/* Custom webkit scrollbars — shell (always dark) */
+.rp-sidebar ::-webkit-scrollbar,
+.rp-drawer ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.rp-sidebar ::-webkit-scrollbar-track,
+.rp-drawer ::-webkit-scrollbar-track {
+  background: var(--shell-bg);
+}
+.rp-sidebar ::-webkit-scrollbar-thumb,
+.rp-drawer ::-webkit-scrollbar-thumb {
+  background: var(--shell-border);
+  border-radius: 3px;
+}
+.rp-sidebar ::-webkit-scrollbar-thumb:hover,
+.rp-drawer ::-webkit-scrollbar-thumb:hover {
+  background: var(--shell-muted);
+}
+
+/* Custom webkit scrollbars — content panel (theme-aware) */
+.main-column ::-webkit-scrollbar,
+.rp-content-wrap ::-webkit-scrollbar,
+.rp-source-scroll::-webkit-scrollbar,
+.rp-history-wrap ::-webkit-scrollbar,
+.rp-corpus-wrap ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.main-column ::-webkit-scrollbar-track,
+.rp-content-wrap ::-webkit-scrollbar-track,
+.rp-source-scroll::-webkit-scrollbar-track,
+.rp-history-wrap ::-webkit-scrollbar-track,
+.rp-corpus-wrap ::-webkit-scrollbar-track {
+  background: var(--doc-bg);
+}
+.main-column ::-webkit-scrollbar-thumb,
+.rp-content-wrap ::-webkit-scrollbar-thumb,
+.rp-source-scroll::-webkit-scrollbar-thumb,
+.rp-history-wrap ::-webkit-scrollbar-thumb,
+.rp-corpus-wrap ::-webkit-scrollbar-thumb {
+  background: var(--doc-border-strong);
+  border-radius: 3px;
+}
+.main-column ::-webkit-scrollbar-thumb:hover,
+.rp-content-wrap ::-webkit-scrollbar-thumb:hover,
+.rp-source-scroll::-webkit-scrollbar-thumb:hover,
+.rp-history-wrap ::-webkit-scrollbar-thumb:hover,
+.rp-corpus-wrap ::-webkit-scrollbar-thumb:hover {
+  background: var(--doc-text-2);
+}

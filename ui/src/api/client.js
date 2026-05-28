@@ -63,7 +63,9 @@ export function getCorpusStats() {
 
 export function getCorpusDocuments(params) {
   const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') qs.set(k, v);
+  });
   return request(`/api/corpus/documents?${qs.toString()}`);
 }
 

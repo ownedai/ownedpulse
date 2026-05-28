@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Routes, Route, useSearchParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import TopNav from './components/layout/TopNav';
 import Sidebar from './components/layout/Sidebar';
 import FilterBar from './components/layout/FilterBar';
@@ -8,6 +8,7 @@ import RetrievalSettings from './components/layout/RetrievalSettings';
 import SourcePanel from './components/layout/SourcePanel';
 import LangfuseDrawer from './components/layout/LangfuseDrawer';
 import EmptyState from './components/query/EmptyState';
+import QueryInput from './components/query/QueryInput';
 import AnswerPanel from './components/query/AnswerPanel';
 import CitationCard from './components/query/CitationCard';
 import QueryExpansion from './components/query/QueryExpansion';
@@ -170,19 +171,12 @@ function MainPage() {
             <div className="container">
               {/* Query bar */}
               <div className={`rp-query-bar${loading ? ' thinking' : ''}`}>
-                <div className="q-row">
-                  <div className="q-text">{queryText}</div>
-                  <button
-                    className="submit"
-                    onClick={() => handleSubmit(queryText)}
-                    disabled={loading}
-                  >
-                    Submit
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 8h10M9 4l4 4-4 4" />
-                    </svg>
-                  </button>
-                </div>
+                <QueryInput
+                  key={queryText}
+                  value={queryText}
+                  onSubmit={handleSubmit}
+                  disabled={loading}
+                />
                 {loading && (
                   <>
                     <div className="rp-thinking-bar" />
@@ -336,16 +330,23 @@ function MainPage() {
 
 export default function App() {
   const [resetKey, setResetKey] = useState(0);
+  const navigate = useNavigate();
+
+  const handleNewQuery = useCallback(() => {
+    navigate('/', { replace: true });
+    setResetKey((k) => k + 1);
+  }, [navigate]);
 
   return (
     <div className="app-shell">
-      <Sidebar onNewQuery={() => setResetKey((k) => k + 1)} />
+      <Sidebar onNewQuery={handleNewQuery} />
       <div className="main-column">
         <TopNav />
         <Routes>
           <Route path="/" element={<MainPage key={resetKey} />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/corpus" element={<CorpusPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </div>

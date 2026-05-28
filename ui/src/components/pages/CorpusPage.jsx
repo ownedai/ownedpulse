@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getCorpusDocuments, getCorpusStats } from '../../api/client';
 import DocumentViewer from './DocumentViewer';
+import CorpusStatsBar from '../query/CorpusStatsBar';
 import Tooltip from '../common/Tooltip';
 import { formatDate, formatDateTime } from '../../dateFormat';
 
@@ -18,13 +20,24 @@ const DOC_TYPES = [
 ];
 
 export default function CorpusPage() {
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
-  const [agency, setAgency] = useState('All');
+  const [agency, setAgency] = useState(() => {
+    const a = searchParams.get('agency');
+    return AGENCY_TABS.includes(a) ? a : 'All';
+  });
+
+  useEffect(() => {
+    const a = searchParams.get('agency');
+    setAgency(AGENCY_TABS.includes(a) ? a : 'All');
+    setOffset(0);
+  }, [searchParams]);
   const [docType, setDocType] = useState(null);
   const [offset, setOffset] = useState(0);
+  const [showFeeds, setShowFeeds] = useState(false);
   const [viewerDoc, setViewerDoc] = useState(null);
   const limit = 50;
 
@@ -35,6 +48,7 @@ export default function CorpusPage() {
       offset,
       agency: agency === 'All' ? null : agency,
       document_type: docType,
+      exclude_feeds: showFeeds ? 'false' : 'true',
     };
     getCorpusDocuments(params)
       .then((data) => {
@@ -43,7 +57,7 @@ export default function CorpusPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [agency, docType, offset]);
+  }, [agency, docType, offset, showFeeds]);
 
   useEffect(() => {
     getCorpusStats().then(setStats).catch(() => {});
@@ -60,11 +74,7 @@ export default function CorpusPage() {
       <div className="rp-page-head">
         <div>
           <h1>Corpus</h1>
-          <p>All indexed regulatory documents.{' '}
-            <Tooltip tip="Last time new regulatory documents were ingested via RSS">
-              <span style={{ cursor: 'help' }}>Last pipeline run: {lastRun}</span>
-            </Tooltip>
-          </p>
+          <p>All indexed regulatory documents.</p>
         </div>
       </div>
 
@@ -109,6 +119,15 @@ export default function CorpusPage() {
             </button>
           ))}
           <div className="spacer" style={{ flex: 1 }} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)', cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={showFeeds}
+              onChange={(e) => { setShowFeeds(e.target.checked); setOffset(0); }}
+              style={{ accentColor: 'var(--accent-l)', cursor: 'pointer' }}
+            />
+            Show feed items
+          </label>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
             {total.toLocaleString()} documents
           </span>
@@ -163,7 +182,18 @@ export default function CorpusPage() {
                   )}
                 </td>
                 <td>
-                  <button className="action" onClick={() => setViewerDoc(doc)}>View</button>
+                  {doc.source_file_format === 'html' || !doc.source_local_path ? (
+                    <button
+                      className="action"
+                      onClick={() => doc.source_url && window.open(doc.source_url, '_blank', 'noopener,noreferrer')}
+                      disabled={!doc.source_url}
+                      title={doc.source_url || 'No source URL available'}
+                    >
+                      View ↗
+                    </button>
+                  ) : (
+                    <button className="action" onClick={() => setViewerDoc(doc)}>View</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -186,6 +216,8 @@ export default function CorpusPage() {
       {viewerDoc && (
         <DocumentViewer document={viewerDoc} onClose={() => setViewerDoc(null)} />
       )}
+
+      <CorpusStatsBar />
     </>
   );
 }

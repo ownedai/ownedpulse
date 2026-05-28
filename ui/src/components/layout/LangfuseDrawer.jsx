@@ -1,6 +1,25 @@
 import { useState, useEffect } from 'react';
 import { getTrace } from '../../api/client';
 
+const PREVIEW_LEN = 200;
+
+function ExpandableValue({ value }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!value || value.length <= PREVIEW_LEN) return <span className="v">{value}</span>;
+  return (
+    <span className="v">
+      {expanded ? value : value.slice(0, PREVIEW_LEN) + '…'}
+      {' '}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 11, padding: 0 }}
+      >
+        {expanded ? 'show less' : 'show more'}
+      </button>
+    </span>
+  );
+}
+
 function Step({ number, name, latency, open: defaultOpen, children }) {
   const [open, setOpen] = useState(defaultOpen !== false);
 
@@ -88,10 +107,16 @@ export default function LangfuseDrawer({ traceId, onClose }) {
               >
                 {obs.model && <Row label="model" value={obs.model} />}
                 {obs.input && (
-                  <Row label="input" value={typeof obs.input === 'string' ? obs.input.slice(0, 200) : JSON.stringify(obs.input).slice(0, 200)} />
+                  <div className="row">
+                    <span className="k">input</span>
+                    <ExpandableValue value={typeof obs.input === 'string' ? obs.input : JSON.stringify(obs.input)} />
+                  </div>
                 )}
                 {obs.output && (
-                  <Row label="output" value={typeof obs.output === 'string' ? obs.output.slice(0, 200) : JSON.stringify(obs.output).slice(0, 200)} />
+                  <div className="row">
+                    <span className="k">output</span>
+                    <ExpandableValue value={typeof obs.output === 'string' ? obs.output : JSON.stringify(obs.output)} />
+                  </div>
                 )}
                 {obs.usage && (obs.usage.promptTokens || obs.usage.completionTokens) && (
                   <Row label="tokens" value={`${obs.usage.promptTokens || 0} prompt + ${obs.usage.completionTokens || 0} completion`} />
