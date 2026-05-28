@@ -13,8 +13,9 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from pydantic import BaseModel
+from fastapi.responses import Response, JSONResponse
+from pydantic import BaseModel, Field
+from typing import Literal
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,7 @@ def persist_query(
     filters_applied: dict,
     retrieval_params: dict,
     langfuse_trace_id: str = "",
+    timestamp: str = "",
 ):
     """Persist a query result to query_history. Raises on failure."""
     conn = get_pg_conn()
@@ -129,13 +131,13 @@ def persist_query(
         cur.execute(
             """INSERT INTO query_history
                (query_id, query_text, routing_path, answer, citations,
-                sub_queries, filters_applied, retrieval_params, langfuse_trace_id)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 query_id, query_text, routing_path, answer,
                 json.dumps(citations), json.dumps(sub_queries),
                 json.dumps(filters_applied), json.dumps(retrieval_params),
-                langfuse_trace_id,
+                langfuse_trace_id, timestamp,
             )
         )
         conn.commit()
@@ -159,14 +161,19 @@ SYSTEM_PROMPT_V6 = (
     "You are a regulatory intelligence assistant for the pharmaceutical and "
     "life sciences industry. You answer questions based exclusively on the "
     "provided regulatory source documents (FDA, EMA, ICH guidance).\n\n"
+    "IMPORTANT — Citation format:\n"
+    "- You MUST cite EVERY factual claim with a numeric citation marker [N] "
+    "that matches the source chunk numbers in the context.\n"
+    "- Start with [1] for your first citation. Every sentence that states a "
+    "regulatory requirement or fact MUST include at least one [N] marker.\n"
+    "- Example: \"The FDA requires audit trails to be secure [1] and tamper-evident [2].\"\n"
+    "- Never use descriptive markers like \"(see source)\" or \"(FDA guidance)\" — "
+    "only [N] with the chunk number.\n\n"
     "Rules:\n"
     "- Answer only from the provided context chunks. Do not use prior knowledge.\n"
-    "- Cite EVERY factual claim with a numeric citation marker [N] corresponding "
-    "to the source chunks.\n"
-    "- Never use descriptive citation markers like \"(see source)\" — only [N].\n"
     "- If the context does not contain enough information, say so explicitly.\n"
     "- Use precise regulatory language. Do not simplify or paraphrase requirements.\n"
-    "- If a cited document is marked as superseded, note this in your answer.\n"
+    "- If a cited document is marked as SUPERSEDED, note this in your answer.\n"
     "- Format your answer as clean prose paragraphs separated by blank lines.\n"
     "- Do NOT use markdown bold headings. Do NOT use numbered lists unless the "
     "user explicitly asked for a list.\n"
@@ -185,13 +192,13 @@ class QueryFilters(BaseModel):
 
 
 class RetrievalParams(BaseModel):
-    query_depth: str = "standard"
-    top_k: int = 10
-    score_threshold: float = 0.60
+    query_depth: Literal["low", "standard", "deep"] = "standard"
+    top_k: int = Field(10, ge=5, le=20)
+    score_threshold: float = Field(0.60, ge=0.40, le=0.90)
 
 
 class QueryRequest(BaseModel):
-    query: str
+    query: str = Field(..., min_length=1)
     filters: QueryFilters | None = None
     retrieval_params: RetrievalParams | None = None
 
@@ -199,8 +206,8 @@ class QueryRequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 TITLE_SUFFIX_PATTERNS = [
-    re.compile(r'\s*\|\s*European\s+Medicines\s+Agency\s*$', re.IGNORECASE),
-    re.compile(r'\s*\|\s*EMA\s*$', re.IGNORECASE),
+    re.compile(r'\s*\|\s*European\s+Medicines\s+Agency(\s*\(\s*EMA\s*\))?\s*$', re.IGNORECASE),
+    re.compile(r'\s*\|\s*EMA(\s*\(\s*European\s+Medicines\s+Agency\s*\))?\s*$', re.IGNORECASE),
     re.compile(r'\s*\|\s*FDA\s*$', re.IGNORECASE),
     re.compile(r'\s*\|\s*ICH\s*$', re.IGNORECASE),
 ]
@@ -459,6 +466,12 @@ def parse_citations(answer: str, num_chunks: int) -> set[int]:
 def build_citation(chunk: dict, index: int, cited_by_llm: bool) -> dict:
     """Build a citation response object from a chunk."""
     title = chunk.get("document_title", "")
+    if not title:
+        section_path = chunk.get("section_path", [])
+        if section_path:
+            title = section_path[0]
+    if not title:
+        title = "Untitled"
     return {
         "index": index,
         "chunk_id": chunk.get("chunk_id", ""),
@@ -544,9 +557,13 @@ async def health():
         v == "ok" or v.startswith("disabled")
         for v in components.values()
     )
-    status_code = 200 if all_ok else 503
+    status = "ok" if all_ok else "degraded"
+    http_status = 200 if all_ok else 503
 
-    return {"status": "ok" if all_ok else "degraded", **components}, status_code
+    return JSONResponse(
+        content={"status": status, **components},
+        status_code=http_status,
+    )
 
 
 # ── POST /api/query ───────────────────────────────────────────────────────────
@@ -584,6 +601,7 @@ async def submit_query(request: QueryRequest):
             filters_applied=filters_dict,
             retrieval_params=retrieval_dict,
             langfuse_trace_id=result.get("langfuse_trace_id", ""),
+            timestamp=timestamp,
         )
     except Exception as e:
         logger.error("Failed to persist query %s: %s", query_id, e)
@@ -645,7 +663,11 @@ async def _run_content_query(
     # Step 6: Determine which chunks were cited
     cited_indices = parse_citations(answer, len(deduped_chunks))
 
-    # Step 7: Build citations array — cited first (by score), then uncited (by score)
+    # Fallback: if LLM didn't use any [N] markers, treat top 3 as cited
+    if not cited_indices and deduped_chunks:
+        cited_indices = set(range(1, min(4, len(deduped_chunks) + 1)))
+
+    # Step 7: Build citations array
     cited_chunks = []
     uncited_chunks = []
     for i, chunk in enumerate(deduped_chunks, 1):
@@ -655,13 +677,16 @@ async def _run_content_query(
         else:
             uncited_chunks.append(citation)
 
+    # Sort by index so [1], [2], ... are sequential regardless of cited order
+    all_citations = sorted(cited_chunks + uncited_chunks, key=lambda c: c["index"])
+
     return {
         "query_id": query_id,
         "timestamp": timestamp,
         "routing_path": "CONTENT",
         "sub_queries": sub_queries,
         "answer": answer.strip(),
-        "citations": cited_chunks + uncited_chunks,
+        "citations": all_citations,
         "retrieval_params_applied": {
             "query_depth": retrieval.query_depth,
             "top_k": retrieval.top_k,
@@ -701,6 +726,43 @@ async def _run_metadata_query(
             exact=True,
         )
         total = count_result.count if count_result else 0
+
+        # Scroll for a few representative chunks as citations
+        scroll_result = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter=qdrant_filter,
+            limit=min(5, total),
+            with_payload=True,
+        )
+        points, _ = scroll_result
+        for i, point in enumerate(points, 1):
+            payload = point.payload or {}
+            title = payload.get("document_title", "")
+            if not title:
+                sp = payload.get("section_path", [])
+                title = sp[0] if sp else "Untitled"
+            citations.append({
+                "index": i,
+                "chunk_id": str(point.id),
+                "document_id": payload.get("document_id", ""),
+                "chunk_text": payload.get("chunk_text", ""),
+                "document_title": strip_title_suffix(title) or "Untitled",
+                "issuing_body": normalise_agency(payload.get("issuing_body", "")),
+                "document_version": payload.get("document_version"),
+                "clause_id": payload.get("clause_id"),
+                "publication_date": payload.get("publication_date"),
+                "page_no": payload.get("page_no"),
+                "chunk_index": payload.get("chunk_index"),
+                "char_offset_start": payload.get("char_offset_start"),
+                "char_offset_end": payload.get("char_offset_end"),
+                "chunked_at": payload.get("chunked_at"),
+                "score": 1.0,
+                "cited_by_llm": True,
+                "superseded": False,
+                "superseded_by": None,
+                "source_local_path": payload.get("source_local_path"),
+                "source_url": payload.get("source_url", ""),
+            })
 
         agency_str = f"from {filters.agency}" if filters.agency else "across all agencies"
         type_str = f" of type {filters.document_type}" if filters.document_type else ""
@@ -772,7 +834,7 @@ async def _run_metadata_query(
                     "chunk_id": "",
                     "document_id": doc_id,
                     "chunk_text": "",
-                    "document_title": title_clean,
+                    "document_title": title_clean or "Untitled",
                     "issuing_body": agency_norm,
                     "document_version": version,
                     "clause_id": None,
@@ -782,7 +844,7 @@ async def _run_metadata_query(
                     "char_offset_start": None,
                     "char_offset_end": None,
                     "chunked_at": None,
-                    "score": 0.0,
+                    "score": 1.0,
                     "cited_by_llm": True,
                     "superseded": superseded,
                     "superseded_by": superseded_by,
@@ -832,7 +894,7 @@ async def _run_metadata_query(
                 "chunk_id": str(point.id),
                 "document_id": doc_id,
                 "chunk_text": "",
-                "document_title": title,
+                "document_title": title or "Untitled",
                 "issuing_body": agency,
                 "document_version": version,
                 "clause_id": payload.get("clause_id"),
@@ -842,7 +904,7 @@ async def _run_metadata_query(
                 "char_offset_start": payload.get("char_offset_start"),
                 "char_offset_end": payload.get("char_offset_end"),
                 "chunked_at": payload.get("chunked_at"),
-                "score": 0.0,
+                "score": 1.0,
                 "cited_by_llm": True,
                 "superseded": False,
                 "superseded_by": None,
@@ -1011,29 +1073,36 @@ async def export_query(query_id: str, format: str = "json"):
         sub_queries_list = json.loads(sub_queries) if isinstance(sub_queries, str) else (sub_queries or [])
 
         routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
-        ts_iso = timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp)
+        # Normalise to UTC for consistency with query response timestamp
+        if hasattr(timestamp, 'isoformat'):
+            ts = timestamp
+            if ts.tzinfo is not None:
+                from datetime import timezone as tz
+                ts = ts.astimezone(tz.utc)
+            ts_iso = ts.isoformat()
+        else:
+            ts_iso = str(timestamp)
 
         if format == "json":
             export = {
+                "query_id": query_id,
+                "query_text": query_text,
+                "timestamp": ts_iso,
+                "routing_path": routing_label,
+                "answer": answer,
+                "citations": citations_list,
+                "sub_queries": sub_queries_list,
+                "filters_applied": filters_dict,
+                "retrieval_params_applied": retrieval_dict,
+                "uncited_chunks": [c for c in citations_list if not c.get("cited_by_llm")],
+                "langfuse_trace_id": langfuse_trace_id,
                 "export_timestamp": datetime.now(timezone.utc).isoformat(),
                 "regpulse_version": "0.7.0",
-                "query": {
-                    "query_id": query_id,
-                    "query_text": query_text,
-                    "timestamp": ts_iso,
-                    "routing_path": routing_label,
-                    "retrieval_params_applied": retrieval_dict,
-                    "sub_queries": sub_queries_list,
-                    "filters_applied": filters_dict,
-                },
-                "answer": answer,
-                "citations": {
-                    "cited": [c for c in citations_list if c.get("cited_by_llm")],
-                    "retrieved_but_not_cited": [c for c in citations_list if not c.get("cited_by_llm")],
-                },
-                "langfuse_trace_id": langfuse_trace_id,
             }
-            return export
+            return JSONResponse(
+                content=export,
+                headers={"Content-Disposition": f'attachment; filename="regpulse-export-{query_id}.json"'},
+            )
 
         elif format == "pdf":
             from io import BytesIO
@@ -1141,6 +1210,12 @@ async def export_query(query_id: str, format: str = "json"):
 
 @app.get("/api/trace/{trace_id}")
 async def get_trace(trace_id: str):
+    # Validate trace_id looks like a UUID before even checking config
+    try:
+        uuid.UUID(trace_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail="Trace not found")
+
     lf_public = os.getenv("LANGFUSE_PUBLIC_KEY", "")
     lf_secret = os.getenv("LANGFUSE_SECRET_KEY", "")
     lf_host = os.getenv("LANGFUSE_HOST", "")
@@ -1173,7 +1248,7 @@ async def get_trace(trace_id: str):
 
 
 @app.get("/api/pdf/page")
-async def pdf_page(file_path: str, page_no: int = 0):
+async def pdf_page(file_path: str, page_no: int):
     # Rewrite host archive path to container mount
     local_path = file_path.replace("/mnt/data/regulatory_archive", "/archive")
     if not os.path.isfile(local_path):
@@ -1316,15 +1391,17 @@ async def corpus_documents(
                 "document_id": doc_id,
                 "issuing_body": normalise_agency(ib),
                 "doc_type": dt,
+                "document_type": dt.replace("_", "-") if dt else None,
                 "document_title": strip_title_suffix(title) if title else "Untitled",
                 "publication_date": pub_date,
                 "document_version": version,
                 "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
-                "superseded": fam_id is not None and fam_id != "",
+                "is_superseded": fam_id is not None and fam_id != "",
                 "superseded_by": None,  # would need family resolution
                 "source_local_path": f"{archive_path}/source.pdf" if archive_path else None,
+                "archive_path": archive_path,
             })
 
-        return {"total": total, "items": results, "limit": limit, "offset": offset}
+        return {"total": total, "documents": results, "limit": limit, "offset": offset}
     finally:
         conn.close()

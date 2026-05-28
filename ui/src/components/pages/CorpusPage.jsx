@@ -38,7 +38,7 @@ export default function CorpusPage() {
     };
     getCorpusDocuments(params)
       .then((data) => {
-        setItems(data.items || []);
+        setItems(data.documents || []);
         setTotal(data.total || 0);
       })
       .catch(() => {})
