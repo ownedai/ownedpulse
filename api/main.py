@@ -1256,4 +1256,75 @@ async def corpus_documents(
     limit: int = 50,
     offset: int = 0,
 ):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        conditions = []
+        params = []
+
+        if agency:
+            if agency == "EMA":
+                conditions.append("issuing_body IN (%s, %s)")
+                params.extend(["EMA", "EU-Commission"])
+            else:
+                conditions.append("issuing_body = %s")
+                params.append(agency)
+
+        if document_type:
+            conditions.append("(doc_type = %s OR metadata_json->>'document_type' = %s)")
+            doc_type_underscored = document_type.replace("-", "_")
+            params.extend([doc_type_underscored, document_type])
+
+        if date_from:
+            conditions.append("metadata_json->>'publication_date' >= %s")
+            params.append(date_from)
+
+        if date_to:
+            conditions.append("metadata_json->>'publication_date' <= %s")
+            params.append(date_to)
+
+        where = ""
+        if conditions:
+            where = " WHERE " + " AND ".join(conditions)
+
+        cur.execute(f"SELECT count(*) FROM document_registry{where}", params)
+        total = cur.fetchone()[0]
+
+        cur.execute(
+            f"""SELECT document_id, issuing_body, doc_type, last_indexed_at,
+                       metadata_json->>'document_title' as title,
+                       metadata_json->>'publication_date' as pub_date,
+                       metadata_json->>'document_version' as version,
+                       document_family_id, archive_path
+                FROM document_registry{where}
+                ORDER BY last_indexed_at DESC NULLS LAST
+                LIMIT %s OFFSET %s""",
+            params + [limit, offset]
+        )
+        rows = cur.fetchall()
+        cur.close()
+
+        superseded_ids = set()
+        for row in rows:
+            if row[7]:  # document_family_id
+                superseded_ids.add(row[0])
+
+        results = []
+        for row in rows:
+            doc_id, ib, dt, li, title, pub_date, version, fam_id, archive_path = row
+            results.append({
+                "document_id": doc_id,
+                "issuing_body": normalise_agency(ib),
+                "doc_type": dt,
+                "document_title": strip_title_suffix(title) if title else "Untitled",
+                "publication_date": pub_date,
+                "document_version": version,
+                "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
+                "superseded": fam_id is not None and fam_id != "",
+                "superseded_by": None,  # would need family resolution
+                "source_local_path": f"{archive_path}/source.pdf" if archive_path else None,
+            })
+
+        return {"total": total, "items": results, "limit": limit, "offset": offset}
+    finally:
+        conn.close()

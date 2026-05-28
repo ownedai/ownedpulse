@@ -12,6 +12,7 @@ import CitationCard from './components/query/CitationCard';
 import QueryExpansion from './components/query/QueryExpansion';
 import AuditFooter from './components/query/AuditFooter';
 import HistoryPage from './components/pages/HistoryPage';
+import CorpusPage from './components/pages/CorpusPage';
 import useQuery from './hooks/useQuery';
 
 function MainPage() {
@@ -258,6 +259,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<MainPage key={resetKey} />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/corpus" element={<CorpusPage />} />
         </Routes>
       </div>
     </div>

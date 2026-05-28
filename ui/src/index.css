@@ -2004,3 +2004,24 @@ body {
 .rp-pager .pages button:hover:not(.on) { background: var(--doc-hover); }
 
 .rp-pager .pages button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.rp-table .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+.rp-table .status.ok { background: var(--ok-tint); color: var(--ok-text); border: 1px solid var(--ok-tint-border); }
+
+.rp-table .status.ok::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+
+.rp-table .status.warn { background: var(--warn-tint); color: var(--warn-text); border: 1px solid var(--warn-tint-border); }
+
+.rp-table .status.warn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
