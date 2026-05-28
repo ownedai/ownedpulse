@@ -50,12 +50,29 @@ export default function FilterBar({
     }
   }
 
+  // Convert ISO → dd.mm.yyyy for display
+  function isoToEu(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    if (!y || !m || !d) return iso;
+    return `${d}.${m}.${y}`;
+  }
+
+  // Convert dd.mm.yyyy → ISO for API; returns null on invalid
+  function euToIso(eu) {
+    const trimmed = eu.trim();
+    if (!trimmed) return null;
+    const m = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (!m) return trimmed; // return as-is if not matching format (user still typing)
+    return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  }
+
   function setDateFrom(v) {
-    onChange?.({ ...filters, date_from: v || null });
+    onChange?.({ ...filters, date_from: euToIso(v) });
   }
 
   function setDateTo(v) {
-    onChange?.({ ...filters, date_to: v || null });
+    onChange?.({ ...filters, date_to: euToIso(v) });
   }
 
   const activeAgency = filters.agency || 'All';
@@ -126,16 +143,18 @@ export default function FilterBar({
         <div className="grp" style={{ gap: 6 }}>
           <span className="grp-name">From</span>
           <input
-            type="date"
-            value={filters.date_from || ''}
+            type="text"
+            value={isoToEu(filters.date_from)}
             onChange={(e) => setDateFrom(e.target.value)}
+            placeholder="dd.mm.yyyy"
             className="rp-date-input"
           />
           <span className="grp-name">To</span>
           <input
-            type="date"
-            value={filters.date_to || ''}
+            type="text"
+            value={isoToEu(filters.date_to)}
             onChange={(e) => setDateTo(e.target.value)}
+            placeholder="dd.mm.yyyy"
             className="rp-date-input"
           />
         </div>
