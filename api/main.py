@@ -1141,7 +1141,32 @@ async def export_query(query_id: str, format: str = "json"):
 
 @app.get("/api/trace/{trace_id}")
 async def get_trace(trace_id: str):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    lf_public = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    lf_secret = os.getenv("LANGFUSE_SECRET_KEY", "")
+    lf_host = os.getenv("LANGFUSE_HOST", "")
+
+    if not lf_public or not lf_secret:
+        raise HTTPException(status_code=503, detail="Langfuse not configured — set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY")
+
+    import httpx
+    import base64
+
+    auth = base64.b64encode(f"{lf_public}:{lf_secret}".encode()).decode()
+    url = f"{lf_host}/api/public/traces/{trace_id}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers={"Authorization": f"Basic {auth}"})
+            if resp.status_code == 404:
+                raise HTTPException(status_code=404, detail="Trace not found")
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail=f"Langfuse returned {resp.status_code}")
+            return resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Trace fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail="Failed to fetch trace from Langfuse")
 
 
 # ── GET /api/pdf/page ─────────────────────────────────────────────────────────

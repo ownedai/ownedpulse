@@ -5,6 +5,7 @@ import Sidebar from './components/layout/Sidebar';
 import FilterBar from './components/layout/FilterBar';
 import RetrievalSettings from './components/layout/RetrievalSettings';
 import SourcePanel from './components/layout/SourcePanel';
+import LangfuseDrawer from './components/layout/LangfuseDrawer';
 import EmptyState from './components/query/EmptyState';
 import AnswerPanel from './components/query/AnswerPanel';
 import CitationCard from './components/query/CitationCard';
@@ -24,6 +25,7 @@ function MainPage() {
   });
   const [retrievalOpen, setRetrievalOpen] = useState(false);
   const [activeCitation, setActiveCitation] = useState(null);
+  const [showTrace, setShowTrace] = useState(false);
 
   const retrievalDisplay = (r) => ({
     depth: r.depth,
@@ -218,7 +220,7 @@ function MainPage() {
             queryId={result?.query_id}
             timestamp={result?.timestamp}
             routingPath={result?.routing_path}
-            onViewTrace={() => {}}
+            onViewTrace={() => setShowTrace(true)}
           />
         </div>
 
@@ -230,6 +232,13 @@ function MainPage() {
             onNextChunk={handleNextChunk}
             hasPrev={hasPrev}
             hasNext={hasNext}
+          />
+        )}
+
+        {showTrace && result?.langfuse_trace_id && (
+          <LangfuseDrawer
+            traceId={result.langfuse_trace_id}
+            onClose={() => setShowTrace(false)}
           />
         )}
       </div>
