@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getQueryHistory, exportHistory } from '../../api/client';
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-GB') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
+import { formatDateTime, todayISO } from '../../dateFormat';
 
 export default function HistoryPage() {
   const navigate = useNavigate();
@@ -36,7 +31,7 @@ export default function HistoryPage() {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `regpulse-history-export-${new Date().toISOString().split('T')[0]}.json`;
+          a.download = `regpulse-history-export-${todayISO()}.json`;
           a.click();
           URL.revokeObjectURL(url);
         } else {
@@ -45,7 +40,7 @@ export default function HistoryPage() {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `regpulse-history-export-${new Date().toISOString().split('T')[0]}.csv`;
+          a.download = `regpulse-history-export-${todayISO()}.csv`;
           a.click();
           URL.revokeObjectURL(url);
         }
@@ -148,7 +143,7 @@ export default function HistoryPage() {
                 <td>
                   <span className="truncate" title={h.query_text}>{h.query_text}</span>
                 </td>
-                <td className="mono">{formatDate(h.timestamp)}</td>
+                <td className="mono">{formatDateTime(h.timestamp)}</td>
                 <td>
                   <span className="routing">
                     {h.routing_path === 'METADATA' ? 'Metadata' : 'Semantic'}

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import Logo from '../common/Logo';
 import useHistory from '../../hooks/useHistory';
 import useCorpusStats from '../../hooks/useCorpusStats';
+import { formatDate, formatDateTime } from '../../dateFormat';
 
 function relativeTime(iso) {
   if (!iso) return '';
@@ -16,7 +17,7 @@ function relativeTime(iso) {
   const days = Math.floor(hrs / 24);
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days} days ago`;
-  return d.toLocaleDateString('en-GB');
+  return formatDate(iso);
 }
 
 export default function Sidebar({ activeQueryId, onNewQuery }) {
@@ -61,7 +62,7 @@ export default function Sidebar({ activeQueryId, onNewQuery }) {
           <span className="k">Pipeline</span>
           <span className="v ok">
             {stats?.last_pipeline_run
-              ? new Date(stats.last_pipeline_run).toLocaleDateString('en-GB').replace(/\//g, '/') + ' ' + new Date(stats.last_pipeline_run).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+              ? formatDateTime(stats.last_pipeline_run)
               : '—'}
           </span>
         </div>

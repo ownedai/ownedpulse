@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Tooltip from '../common/Tooltip';
 import { getPdfPage } from '../../api/client';
+import { formatDate, formatDateTime } from '../../dateFormat';
 
 const AGENCY_SOURCE_TIPS = {
   FDA: 'U.S. Food & Drug Administration',
@@ -35,10 +36,10 @@ export default function SourcePanel({ citation, onClose, onPrevChunk, onNextChun
   const version = document_version || '—';
   const clause = clause_id || 'Not available';
   const pubDate = publication_date
-    ? new Date(publication_date).toLocaleDateString('en-GB')
+    ? formatDate(publication_date)
     : 'Not available';
   const ingestDate = chunked_at
-    ? new Date(chunked_at).toLocaleDateString('en-GB')
+    ? formatDateTime(chunked_at)
     : 'Not available';
   const fileName = source_local_path
     ? source_local_path.split('/').pop()

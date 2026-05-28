@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { submitQuery } from '../api/client';
+import { submitQuery, getQuery } from '../api/client';
 
 export default function useQuery() {
   const [result, setResult] = useState(null);
@@ -35,11 +35,26 @@ export default function useQuery() {
     }
   }, []);
 
+  const loadCached = useCallback(async (queryId) => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const data = await getQuery(queryId);
+      setResult(data);
+      setQueryText(data.query_text || '');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const clear = useCallback(() => {
     setResult(null);
     setError(null);
     setQueryText('');
   }, []);
 
-  return { result, loading, error, queryText, execute, clear };
+  return { result, loading, error, queryText, execute, loadCached, clear };
 }

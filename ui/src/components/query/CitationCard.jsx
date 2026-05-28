@@ -1,4 +1,5 @@
 import Tooltip from '../common/Tooltip';
+import { formatDate } from '../../dateFormat';
 
 const AGENCY_TIPS = {
   FDA: 'U.S. Food & Drug Administration',
@@ -12,9 +13,7 @@ export default function CitationCard({ citation, isActive, onClick, onViewSource
   const agency = issuing_body || 'Unknown';
   const version = document_version || '—';
   const clause = clause_id || 'Not available';
-  const date = publication_date
-    ? new Date(publication_date).toLocaleDateString('en-GB')
-    : 'Not available';
+  const date = publication_date ? formatDate(publication_date) : 'Not available';
 
   let state = 'active';
   if (superseded) state = 'superseded';

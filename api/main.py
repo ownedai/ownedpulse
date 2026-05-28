@@ -155,6 +155,9 @@ def persist_query(
 async def startup():
     init_db()
 
+from lib.observability import get_langfuse
+
+
 # ── System prompt V6 ──────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_V6 = (
@@ -166,7 +169,11 @@ SYSTEM_PROMPT_V6 = (
     "that matches the source chunk numbers in the context.\n"
     "- Start with [1] for your first citation. Every sentence that states a "
     "regulatory requirement or fact MUST include at least one [N] marker.\n"
-    "- Example: \"The FDA requires audit trails to be secure [1] and tamper-evident [2].\"\n"
+    "- Place citation markers [N] at the end of the complete sentence, after "
+    "the final word but before the closing period. Never insert a citation "
+    "mid-sentence. Never place a citation after a period. Maximum one "
+    "citation per sentence.\n"
+    "- Example: \"The FDA requires audit trails to be secure and tamper-evident [1].\"\n"
     "- Never use descriptive markers like \"(see source)\" or \"(FDA guidance)\" — "
     "only [N] with the chunk number.\n\n"
     "Rules:\n"
@@ -331,7 +338,7 @@ async def expand_query(query: str, depth: int) -> list[str]:
 # ── Qdrant query ──────────────────────────────────────────────────────────────
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny, Range
+from qdrant_client.models import Filter, FieldCondition, IsEmptyCondition, PayloadField, MatchValue, MatchAny, Range
 from qdrant_client.http.models import DatetimeRange
 
 
@@ -342,40 +349,38 @@ def build_qdrant_filter(filters: QueryFilters | None) -> Optional[Filter]:
     - issuing_body (for agency)
     - document_type (hyphenated, for document type)
     - publication_date (ISO string comparison for date range)
+
+    Always excludes RSS-ingested chunks (those with feed_id set).
     """
-    if not filters:
-        return None
+    # Default: exclude RSS/HTML noise — chunks with feed_id payload set
+    conditions = [IsEmptyCondition(is_empty=PayloadField(key="feed_id"))]
 
-    conditions = []
+    if filters:
+        if filters.agency:
+            agency_values = normalise_agency_for_filter(filters.agency)
+            if len(agency_values) == 1:
+                conditions.append(
+                    FieldCondition(key="issuing_body", match=MatchValue(value=agency_values[0]))
+                )
+            else:
+                conditions.append(
+                    FieldCondition(key="issuing_body", match=MatchAny(any=agency_values))
+                )
 
-    if filters.agency:
-        agency_values = normalise_agency_for_filter(filters.agency)
-        if len(agency_values) == 1:
+        if filters.document_type:
             conditions.append(
-                FieldCondition(key="issuing_body", match=MatchValue(value=agency_values[0]))
+                FieldCondition(key="document_type", match=MatchValue(value=filters.document_type))
             )
-        else:
+
+        if filters.date_from or filters.date_to:
+            date_range = {}
+            if filters.date_from:
+                date_range["gte"] = filters.date_from
+            if filters.date_to:
+                date_range["lte"] = filters.date_to
             conditions.append(
-                FieldCondition(key="issuing_body", match=MatchAny(any=agency_values))
+                FieldCondition(key="publication_date", range=Range(**date_range))
             )
-
-    if filters.document_type:
-        conditions.append(
-            FieldCondition(key="document_type", match=MatchValue(value=filters.document_type))
-        )
-
-    if filters.date_from or filters.date_to:
-        date_range = {}
-        if filters.date_from:
-            date_range["gte"] = filters.date_from
-        if filters.date_to:
-            date_range["lte"] = filters.date_to
-        conditions.append(
-            FieldCondition(key="publication_date", range=Range(**date_range))
-        )
-
-    if not conditions:
-        return None
 
     return Filter(must=conditions)
 
@@ -538,16 +543,22 @@ async def health():
 
     # Langfuse
     try:
-        import langfuse
-        public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "")
-        secret_key = os.getenv("LANGFUSE_SECRET_KEY", "")
-        host = os.getenv("LANGFUSE_HOST", "")
-        if public_key and secret_key and host:
-            lf = langfuse.Langfuse(
-                public_key=public_key, secret_key=secret_key, host=host
-            )
-            lf.auth_check()
-            components["langfuse"] = "ok"
+        lf = get_langfuse()
+        if lf:
+            try:
+                lf.auth_check()
+                components["langfuse"] = "ok"
+            except Exception:
+                # auth_check() may fail on version mismatch (SDK vs server),
+                # so fall back to a direct HTTP health check
+                host = os.getenv("LANGFUSE_HOST", "")
+                base = host.rstrip("/")
+                health_url = f"{base}/api/public/health"
+                resp = httpx.get(health_url, timeout=5)
+                if resp.status_code == 200 and resp.json().get("status") == "OK":
+                    components["langfuse"] = "ok"
+                else:
+                    components["langfuse"] = f"error: health check returned {resp.status_code}"
         else:
             components["langfuse"] = "disabled (no credentials)"
     except Exception as e:
@@ -618,83 +629,157 @@ async def _run_content_query(
     retrieval: RetrievalParams,
 ) -> dict:
     """Execute a CONTENT-path (semantic RAG) query."""
+    import time as _time
+
     depth_map = {"low": 2, "standard": 3, "deep": 5}
     n_sub_queries = depth_map.get(retrieval.query_depth, 3)
 
-    # Step 1: Query expansion
-    sub_queries = await expand_query(request.query, n_sub_queries)
-    # Include original query too
-    all_queries = [request.query] + sub_queries
+    # Langfuse tracing
+    lf = get_langfuse()
+    lf_trace = None
+    try:
+        if lf:
+            lf_trace = lf.trace(
+                id=query_id,
+                name="query",
+                input={"query": request.query, "filters": filters.model_dump() if filters else {}},
+                metadata={"routing_path": "CONTENT", "query_depth": retrieval.query_depth},
+            )
+    except Exception:
+        lf = None
+        lf_trace = None
 
-    # Step 2: Build Qdrant filter
-    qdrant_filter = build_qdrant_filter(filters)
+    try:
+        # Step 1: Query expansion
+        t_retrieval = _time.monotonic()
+        sub_queries = await expand_query(request.query, n_sub_queries)
 
-    # Step 3: Retrieve chunks per sub-query
-    all_chunks = []
-    for sq in all_queries:
-        chunks = await retrieve_chunks(sq, qdrant_filter, retrieval.top_k, retrieval.score_threshold)
-        all_chunks.extend(chunks)
+        # Include original query too
+        all_queries = [request.query] + sub_queries
 
-    # Step 4: Deduplicate — best score per document_id, top 8
-    deduped_chunks = deduplicate_chunks(all_chunks, top_n=8)
+        # Step 2: Build Qdrant filter
+        qdrant_filter = build_qdrant_filter(filters)
 
-    # Step 5: Build context and generate answer
-    if not deduped_chunks:
-        return {
+        # Step 3: Retrieve chunks per sub-query
+        all_chunks = []
+        for sq in all_queries:
+            chunks = await retrieve_chunks(sq, qdrant_filter, retrieval.top_k, retrieval.score_threshold)
+            all_chunks.extend(chunks)
+
+        # Step 4: Deduplicate — best score per document_id, top 8
+        deduped_chunks = deduplicate_chunks(all_chunks, top_n=8)
+        t_retrieval2 = _time.monotonic()
+
+        if lf and lf_trace:
+            lf_trace.span(
+                name="retrieval",
+                input={
+                    "query": request.query,
+                    "sub_queries": sub_queries,
+                    "top_k": retrieval.top_k,
+                    "score_threshold": retrieval.score_threshold,
+                },
+                output={
+                    "chunks_retrieved": len(all_chunks),
+                    "chunks_after_dedup": len(deduped_chunks),
+                },
+                metadata={"latency_ms": round((t_retrieval2 - t_retrieval) * 1000)},
+            )
+
+        # Step 5: Build context and generate answer
+        if not deduped_chunks:
+            result = {
+                "query_id": query_id,
+                "timestamp": timestamp,
+                "routing_path": "CONTENT",
+                "sub_queries": sub_queries,
+                "answer": "No sources above the relevance threshold were found for this query.",
+                "citations": [],
+                "retrieval_params_applied": {
+                    "query_depth": retrieval.query_depth,
+                    "top_k": retrieval.top_k,
+                    "score_threshold": retrieval.score_threshold,
+                    "sub_query_count": n_sub_queries,
+                },
+            }
+            trace_id = lf_trace.id if lf_trace else ""
+            try:
+                if lf and lf_trace:
+                    lf_trace.update(output={"answer": "No sources above the relevance threshold were found for this query."})
+                    lf.flush()
+            except Exception:
+                pass
+            result["langfuse_trace_id"] = trace_id
+            return result
+
+        context = build_context(deduped_chunks)
+        prompt = f"Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
+        t_llm = _time.monotonic()
+        answer = await ollama_generate(prompt, system=SYSTEM_PROMPT_V6)
+        t_llm2 = _time.monotonic()
+
+        if lf and lf_trace:
+            lf_trace.generation(
+                name="llm_answer",
+                model=os.getenv("OLLAMA_MODEL", "phi4:14b-q8_0"),
+                input={"prompt": prompt, "system": SYSTEM_PROMPT_V6},
+                output={"answer": answer},
+                metadata={"latency_ms": round((t_llm2 - t_llm) * 1000)},
+            )
+
+        # Step 6: Determine which chunks were cited
+        cited_indices = parse_citations(answer, len(deduped_chunks))
+
+        # Fallback: if LLM didn't use any [N] markers, treat top 3 as cited
+        if not cited_indices and deduped_chunks:
+            cited_indices = set(range(1, min(4, len(deduped_chunks) + 1)))
+
+        # Step 7: Build citations array
+        cited_chunks = []
+        uncited_chunks = []
+        for i, chunk in enumerate(deduped_chunks, 1):
+            citation = build_citation(chunk, i, i in cited_indices)
+            if i in cited_indices:
+                cited_chunks.append(citation)
+            else:
+                uncited_chunks.append(citation)
+
+        # Sort: MATCHED first, NOT CITED after; score descending within each group
+        all_citations = sorted(cited_chunks + uncited_chunks, key=lambda c: (not c["cited_by_llm"], -c["score"]))
+
+        trace_id = lf_trace.id if lf_trace else ""
+
+        try:
+            if lf and lf_trace:
+                lf_trace.update(output={"answer": answer})
+                lf.flush()
+        except Exception:
+            pass
+
+        result = {
             "query_id": query_id,
             "timestamp": timestamp,
             "routing_path": "CONTENT",
             "sub_queries": sub_queries,
-            "answer": "No sources above the relevance threshold were found for this query.",
-            "citations": [],
+            "answer": answer.strip(),
+            "citations": all_citations,
             "retrieval_params_applied": {
                 "query_depth": retrieval.query_depth,
                 "top_k": retrieval.top_k,
                 "score_threshold": retrieval.score_threshold,
                 "sub_query_count": n_sub_queries,
             },
-            "langfuse_trace_id": "",
         }
-
-    context = build_context(deduped_chunks)
-    prompt = f"Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
-    answer = await ollama_generate(prompt, system=SYSTEM_PROMPT_V6)
-
-    # Step 6: Determine which chunks were cited
-    cited_indices = parse_citations(answer, len(deduped_chunks))
-
-    # Fallback: if LLM didn't use any [N] markers, treat top 3 as cited
-    if not cited_indices and deduped_chunks:
-        cited_indices = set(range(1, min(4, len(deduped_chunks) + 1)))
-
-    # Step 7: Build citations array
-    cited_chunks = []
-    uncited_chunks = []
-    for i, chunk in enumerate(deduped_chunks, 1):
-        citation = build_citation(chunk, i, i in cited_indices)
-        if i in cited_indices:
-            cited_chunks.append(citation)
-        else:
-            uncited_chunks.append(citation)
-
-    # Sort by index so [1], [2], ... are sequential regardless of cited order
-    all_citations = sorted(cited_chunks + uncited_chunks, key=lambda c: c["index"])
-
-    return {
-        "query_id": query_id,
-        "timestamp": timestamp,
-        "routing_path": "CONTENT",
-        "sub_queries": sub_queries,
-        "answer": answer.strip(),
-        "citations": all_citations,
-        "retrieval_params_applied": {
-            "query_depth": retrieval.query_depth,
-            "top_k": retrieval.top_k,
-            "score_threshold": retrieval.score_threshold,
-            "sub_query_count": n_sub_queries,
-        },
-        "langfuse_trace_id": "",
-    }
+        result["langfuse_trace_id"] = trace_id
+        return result
+    except Exception:
+        # If instrumentation fails, still try to flush
+        try:
+            if lf:
+                lf.flush()
+        except Exception:
+            pass
+        raise
 
 
 async def _run_metadata_query(
@@ -705,8 +790,26 @@ async def _run_metadata_query(
     retrieval: RetrievalParams,
 ) -> dict:
     """Execute a METADATA-path query using Qdrant scroll/count and PostgreSQL."""
+    import time as _time
+
     query_lower = request.query.lower()
     qdrant_filter = build_qdrant_filter(filters)
+
+    # Langfuse tracing
+    lf = get_langfuse()
+    lf_trace = None
+    t0 = _time.monotonic()
+    try:
+        if lf:
+            lf_trace = lf.trace(
+                id=query_id,
+                name="query",
+                input={"query": request.query, "filters": filters.model_dump() if filters else {}},
+                metadata={"routing_path": "METADATA"},
+            )
+    except Exception:
+        lf = None
+        lf_trace = None
 
     client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
@@ -927,6 +1030,22 @@ async def _run_metadata_query(
         agency_str = f"from {filters.agency}" if filters.agency else "across all agencies"
         answer = f"Found {total} document chunks {agency_str} in the indexed corpus."
 
+    trace_id = lf_trace.id if lf_trace else ""
+
+    if lf and lf_trace:
+        try:
+            t1 = _time.monotonic()
+            lf_trace.span(
+                name="retrieval",
+                input={"query": request.query},
+                output={"answer": answer, "citation_count": len(citations)},
+                metadata={"latency_ms": round((t1 - t0) * 1000)},
+            )
+            lf_trace.update(output={"answer": answer})
+            lf.flush()
+        except Exception:
+            pass
+
     return {
         "query_id": query_id,
         "timestamp": timestamp,
@@ -940,7 +1059,7 @@ async def _run_metadata_query(
             "score_threshold": retrieval.score_threshold,
             "sub_query_count": 0,
         },
-        "langfuse_trace_id": "",
+        "langfuse_trace_id": trace_id,
     }
 
 
@@ -1040,6 +1159,58 @@ async def export_history(format: str = "json"):
         else:
             raise HTTPException(status_code=400, detail="Format must be json or csv")
 
+    finally:
+        conn.close()
+
+
+# ── GET /api/query/{query_id} ──────────────────────────────────────────────────
+
+
+@app.get("/api/query/{query_id}")
+async def get_query(query_id: str):
+    """Return a cached query result from query_history."""
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT query_text, routing_path, answer, citations, sub_queries, "
+            "filters_applied, retrieval_params, langfuse_trace_id, timestamp "
+            "FROM query_history WHERE query_id = %s",
+            (query_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Query not found")
+
+        (query_text, routing_path, answer, citations, sub_queries,
+         filters_applied, retrieval_params, langfuse_trace_id, timestamp) = row
+
+        citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
+        retrieval_dict = json.loads(retrieval_params) if isinstance(retrieval_params, str) else (retrieval_params or {})
+        sub_queries_list = json.loads(sub_queries) if isinstance(sub_queries, str) else (sub_queries or [])
+
+        if hasattr(timestamp, 'isoformat'):
+            ts = timestamp
+            if ts.tzinfo is not None:
+                from datetime import timezone as _tz
+                ts = ts.astimezone(_tz.utc)
+            ts_iso = ts.isoformat()
+        else:
+            ts_iso = str(timestamp)
+
+        return JSONResponse(content={
+            "query_id": query_id,
+            "query_text": query_text,
+            "timestamp": ts_iso,
+            "routing_path": routing_path,
+            "sub_queries": sub_queries_list,
+            "answer": answer,
+            "citations": citations_list,
+            "retrieval_params_applied": retrieval_dict,
+            "langfuse_trace_id": langfuse_trace_id,
+        })
     finally:
         conn.close()
 
@@ -1236,7 +1407,42 @@ async def get_trace(trace_id: str):
                 raise HTTPException(status_code=404, detail="Trace not found")
             if resp.status_code >= 400:
                 raise HTTPException(status_code=502, detail=f"Langfuse returned {resp.status_code}")
-            return resp.json()
+            data = resp.json()
+
+            # Transform for frontend: convert latency s→ms, compute per-observation latency
+            def _obs_latency(obs):
+                # Prefer explicit latency from metadata (SDK v2 doesn't set endTime)
+                meta = obs.get("metadata") or {}
+                if "latency_ms" in meta:
+                    return meta["latency_ms"]
+                if obs.get("endTime") and obs.get("startTime"):
+                    try:
+                        from datetime import datetime as _dt
+
+                        start = _dt.fromisoformat(obs["startTime"].replace("Z", "+00:00"))
+                        end = _dt.fromisoformat(obs["endTime"].replace("Z", "+00:00"))
+                        return round((end - start).total_seconds() * 1000)
+                    except Exception:
+                        pass
+                return None
+
+            def _stringify(v):
+                if v is None:
+                    return None
+                if isinstance(v, str):
+                    return v
+                try:
+                    return json.dumps(v)
+                except Exception:
+                    return str(v)
+
+            data["latency"] = round(data.get("latency", 0) * 1000) if data.get("latency") else None
+            for obs in data.get("observations", []):
+                obs["latency"] = _obs_latency(obs)
+                obs["input"] = _stringify(obs.get("input"))
+                obs["output"] = _stringify(obs.get("output"))
+
+            return data
     except HTTPException:
         raise
     except Exception as e:
@@ -1271,6 +1477,32 @@ async def pdf_page(file_path: str, page_no: int):
     except Exception as e:
         logger.error("PDF render failed: %s", e)
         raise HTTPException(status_code=500, detail="PDF render failed")
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
+
+
+# ── GET /api/pdf/info ──────────────────────────────────────────────────────────
+
+
+@app.get("/api/pdf/info")
+async def pdf_info(file_path: str):
+    local_path = file_path.replace("/mnt/data/regulatory_archive", "/archive")
+    if not os.path.isfile(local_path):
+        raise HTTPException(status_code=404, detail="PDF file not found")
+
+    import fitz
+
+    doc = None
+    try:
+        doc = fitz.open(local_path)
+        return JSONResponse(content={"page_count": doc.page_count, "file_path": file_path})
+    except Exception as e:
+        logger.error("PDF info failed: %s", e)
+        raise HTTPException(status_code=500, detail="PDF info failed")
     finally:
         if doc is not None:
             try:

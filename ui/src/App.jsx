@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Routes, Route, useSearchParams } from 'react-router-dom';
 import TopNav from './components/layout/TopNav';
 import Sidebar from './components/layout/Sidebar';
@@ -14,10 +15,12 @@ import AuditFooter from './components/query/AuditFooter';
 import HistoryPage from './components/pages/HistoryPage';
 import CorpusPage from './components/pages/CorpusPage';
 import useQuery from './hooks/useQuery';
+import { exportQuery } from './api/client';
+import { todayISO } from './dateFormat';
 
 function MainPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { result, loading, error, queryText, execute, clear } = useQuery();
+  const { result, loading, error, queryText, execute, loadCached, clear } = useQuery();
 
   const [filters, setFilters] = useState({});
   const [retrieval, setRetrieval] = useState({
@@ -28,6 +31,9 @@ function MainPage() {
   const [retrievalOpen, setRetrievalOpen] = useState(false);
   const [activeCitation, setActiveCitation] = useState(null);
   const [showTrace, setShowTrace] = useState(false);
+  const [showFormatMenu, setShowFormatMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const chevronRef = useRef(null);
 
   const retrievalDisplay = (r) => ({
     depth: r.depth,
@@ -51,6 +57,14 @@ function MainPage() {
     setSearchParams({});
   }, [clear, setSearchParams]);
 
+  // Load cached query when ?q=<query_id> is in the URL
+  const cachedQueryId = searchParams.get('q');
+  useEffect(() => {
+    if (cachedQueryId) {
+      loadCached(cachedQueryId);
+    }
+  }, [cachedQueryId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Find active citation object
   const activeCitationObj = useMemo(() => {
     if (activeCitation == null || !result?.citations) return null;
@@ -70,6 +84,32 @@ function MainPage() {
       setActiveCitation(sameDocCitations[currentIdx - 1].index);
     }
   }, [sameDocCitations, activeCitation]);
+
+  const handleExport = useCallback(async (fmt) => {
+    setShowFormatMenu(false);
+    if (!result?.query_id) return;
+    try {
+      const data = await exportQuery(result.query_id, fmt);
+      if (fmt === 'json') {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `regpulse-export-${result.query_id}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const url = URL.createObjectURL(data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `regpulse-export-${result.query_id}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (_) {
+      // silently fail
+    }
+  }, [result?.query_id]);
 
   const handleNextChunk = useCallback(() => {
     if (sameDocCitations.length < 2) return;
@@ -169,6 +209,31 @@ function MainPage() {
                     onCitationClick={(n) => setActiveCitation(n === activeCitation ? null : n)}
                   />
 
+                  <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12, padding:'0 18px' }}>
+                    <button
+                      ref={chevronRef}
+                      onClick={() => {
+                        if (chevronRef.current) {
+                          const r = chevronRef.current.getBoundingClientRect();
+                          setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+                        }
+                        setShowFormatMenu(m => !m);
+                      }}
+                      style={{
+                        height:34, padding:'0 16px', fontSize:13,
+                        background:'var(--doc-surface)', border:'1px solid #4a5568',
+                        borderRadius:6, cursor:'pointer',
+                        display:'flex', alignItems:'center', gap:6,
+                        color: 'var(--doc-text)',
+                      }}
+                    >
+                      Export
+                      <svg width="10" height="10" viewBox="0 0 10 6" fill="currentColor">
+                        <path d="M0 0l5 6 5-6z"/>
+                      </svg>
+                    </button>
+                  </div>
+
                   <QueryExpansion subQueries={result.sub_queries} />
 
                   {/* Sources section */}
@@ -178,12 +243,6 @@ function MainPage() {
                         <div className="rp-sources-lbl">
                           Sources <span className="count">({result.citations.length})</span>
                         </div>
-                        <button className="rp-export" onClick={() => {}}>
-                          Export
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M8 3v8M4 7l4 4 4-4M3 13h10" />
-                          </svg>
-                        </button>
                       </div>
                       <div className="rp-cit-list">
                         {result.citations.map((c) => (
@@ -246,6 +305,31 @@ function MainPage() {
           />
         )}
       </div>
+
+      {showFormatMenu && createPortal(
+        <div style={{
+          position:'fixed', top:menuPos.top, right:menuPos.right,
+          border:'1px solid #4a5568', borderRadius:6,
+          background:'var(--doc-surface)', zIndex:1000,
+        }}>
+          {['PDF','JSON'].map(fmt => (
+            <div
+              key={fmt}
+              onClick={() => {
+                setShowFormatMenu(false);
+                handleExport(fmt.toLowerCase());
+              }}
+              style={{
+                padding:'8px 16px', cursor:'pointer', fontSize:13,
+                color: 'var(--doc-text)',
+              }}
+            >
+              {fmt}
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
     </>
   );
 }

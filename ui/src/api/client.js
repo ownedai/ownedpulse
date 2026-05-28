@@ -21,6 +21,10 @@ export function submitQuery(body, signal) {
   });
 }
 
+export function getQuery(queryId) {
+  return request(`/api/query/${queryId}`);
+}
+
 export function getQueryHistory(limit = 10, offset = 0) {
   return request(`/api/query/history?limit=${limit}&offset=${offset}`);
 }
@@ -47,6 +51,10 @@ export function getTrace(traceId) {
 
 export function getPdfPage(filePath, pageNo) {
   return `/api/pdf/page?file_path=${encodeURIComponent(filePath)}&page_no=${pageNo}`;
+}
+
+export function getPdfInfo(filePath) {
+  return request(`/api/pdf/info?file_path=${encodeURIComponent(filePath)}`);
 }
 
 export function getCorpusStats() {

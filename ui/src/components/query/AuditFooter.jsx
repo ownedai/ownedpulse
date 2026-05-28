@@ -1,13 +1,11 @@
 import Tooltip, { InfoIcon } from '../common/Tooltip';
+import { formatDateTime } from '../../dateFormat';
 
 export default function AuditFooter({ queryId, timestamp, routingPath, onViewTrace }) {
   if (!queryId) return null;
 
   const shortId = queryId.length > 10 ? queryId.slice(0, 8) : queryId;
-  const dateStr = timestamp
-    ? new Date(timestamp).toLocaleDateString('en-GB') + ' ' +
-      new Date(timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : '—';
+  const dateStr = timestamp ? formatDateTime(timestamp, true) : '—';
 
   const routingLabel = routingPath === 'METADATA' ? 'Metadata lookup' : 'Semantic search';
 

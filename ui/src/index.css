@@ -1073,8 +1073,8 @@ body {
   font-size: 10.5px;
   color: var(--accent-l);
   font-weight: 500;
-  vertical-align: super;
-  line-height: 0;
+  display: inline;
+  vertical-align: baseline;
   cursor: pointer;
   text-decoration: none;
   padding: 0 1px;
@@ -1092,7 +1092,6 @@ body {
   font-style: italic;
   color: var(--doc-text-2);
   line-height: 1.55;
-  max-width: 62ch;
 }
 
 /* ── Query expansion ─────────────────────────────────────────────────────── */
@@ -1390,6 +1389,8 @@ body {
 /* ── Audit footer ────────────────────────────────────────────────────────── */
 
 .rp-audit {
+  position: sticky;
+  bottom: 0;
   border-top: 1px solid var(--doc-border);
   background: var(--doc-bg);
   padding: 10px 56px;

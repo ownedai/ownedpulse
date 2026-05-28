@@ -1,46 +1,50 @@
 import { useState, useEffect } from 'react';
-import { getPdfPage } from '../../api/client';
-
-function formatDate(iso) {
-  if (!iso) return 'Not available';
-  return new Date(iso).toLocaleDateString('en-GB');
-}
+import { getPdfPage, getPdfInfo } from '../../api/client';
 
 export default function DocumentViewer({ document, onClose }) {
   const [pageNo, setPageNo] = useState(0);
   const [totalPages, setTotalPages] = useState(null);
   const [error, setError] = useState(false);
+  const [gotoInput, setGotoInput] = useState('');
 
-  // We don't know total pages until we try to load. Assume 50 max.
-  // Reset page when document changes
+  const filePath = document?.source_local_path || '';
+
+  // Fetch total page count on mount
   useEffect(() => {
+    if (!filePath) return;
     setPageNo(0);
     setError(false);
     setTotalPages(null);
-  }, [document?.document_id]);
+    setGotoInput('');
+    getPdfInfo(filePath)
+      .then((info) => setTotalPages(info.page_count))
+      .catch(() => setTotalPages(null));
+  }, [filePath]);
 
   if (!document) return null;
-
-  // We don't have the direct file path from the document listing endpoint,
-  // so we'll construct a reasonable guess from available data.
-  // The /api/pdf/page endpoint will return 404 if the file doesn't exist.
-  // For now, try source_local_path from metadata if available.
-  const filePath = document.source_local_path || '';
 
   const pdfUrl = filePath ? getPdfPage(filePath, pageNo) : null;
 
   function handlePrevPage() {
     setPageNo((p) => Math.max(0, p - 1));
+    setError(false);
+    setGotoInput('');
   }
 
   function handleNextPage() {
-    setPageNo((p) => {
-      const next = p + 1;
-      if (totalPages !== null && next >= totalPages) return p;
-      return next;
-    });
-    if (totalPages === null) {
-      setTotalPages(pageNo + 2); // optimistic
+    if (totalPages !== null && pageNo + 1 >= totalPages) return;
+    setPageNo((p) => p + 1);
+    setError(false);
+    setGotoInput('');
+  }
+
+  function handleGoto(e) {
+    e.preventDefault();
+    const n = parseInt(gotoInput, 10);
+    if (!isNaN(n) && n >= 1 && totalPages !== null && n <= totalPages) {
+      setPageNo(n - 1);
+      setError(false);
+      setGotoInput('');
     }
   }
 
@@ -119,7 +123,7 @@ export default function DocumentViewer({ document, onClose }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 16,
+        gap: 12,
         fontFamily: 'var(--mono)',
         fontSize: 12,
         color: 'var(--doc-text-2)',
@@ -140,21 +144,48 @@ export default function DocumentViewer({ document, onClose }) {
         >
           &larr;
         </button>
-        <span>Page {pageNo + 1}</span>
+        <span>
+          Page {pageNo + 1}{totalPages ? ` of ${totalPages}` : ''}
+        </span>
         <button
           onClick={handleNextPage}
+          disabled={totalPages !== null && pageNo + 1 >= totalPages}
           style={{
             background: 'var(--doc-surface)',
             border: '1px solid var(--doc-border)',
             width: 28, height: 28,
             borderRadius: 3,
-            cursor: 'pointer',
+            cursor: (totalPages !== null && pageNo + 1 >= totalPages) ? 'not-allowed' : 'pointer',
             color: 'var(--doc-text-2)',
             fontSize: 12,
+            opacity: (totalPages !== null && pageNo + 1 >= totalPages) ? 0.4 : 1,
           }}
         >
           &rarr;
         </button>
+
+        {/* Go to page */}
+        <form onSubmit={handleGoto} style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 12 }}>
+          <span style={{ fontSize: 11, color: 'var(--doc-text-3)' }}>Go to</span>
+          <input
+            type="text"
+            value={gotoInput}
+            onChange={(e) => setGotoInput(e.target.value)}
+            placeholder="#"
+            style={{
+              width: 44,
+              height: 26,
+              textAlign: 'center',
+              fontFamily: 'var(--mono)',
+              fontSize: 12,
+              border: '1px solid var(--doc-border)',
+              borderRadius: 3,
+              background: 'var(--doc-surface)',
+              color: 'var(--doc-text)',
+              outline: 'none',
+            }}
+          />
+        </form>
       </div>
 
       {/* PDF content */}

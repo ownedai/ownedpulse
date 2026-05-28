@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import Tooltip from '../common/Tooltip';
 import useCorpusStats from '../../hooks/useCorpusStats';
+import { formatDateTime } from '../../dateFormat';
 
 export default function CorpusStatsBar() {
   const { stats } = useCorpusStats();
@@ -8,8 +9,7 @@ export default function CorpusStatsBar() {
   if (!stats) return null;
 
   const lastRun = stats.last_pipeline_run
-    ? new Date(stats.last_pipeline_run).toLocaleDateString('en-GB') + ' ' +
-      new Date(stats.last_pipeline_run).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    ? formatDateTime(stats.last_pipeline_run)
     : '—';
 
   return (
@@ -53,7 +53,7 @@ export default function CorpusStatsBar() {
       <div className="right">
         <Tooltip tip="Last time new regulatory documents were automatically checked and ingested via the RSS feed pipeline.">
           <span className="stat" style={{ cursor: 'help' }}>
-            <span className="k">Last updated</span>
+            <span className="k">KB last updated</span>
             <span className="v" data-testid="last-pipeline-run">{lastRun}</span>
           </span>
         </Tooltip>

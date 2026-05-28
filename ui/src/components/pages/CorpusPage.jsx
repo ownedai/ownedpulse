@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getCorpusDocuments, getCorpusStats } from '../../api/client';
 import DocumentViewer from './DocumentViewer';
 import Tooltip from '../common/Tooltip';
+import { formatDate, formatDateTime } from '../../dateFormat';
 
 const AGENCY_TABS = ['All', 'FDA', 'EMA', 'ICH'];
 const AGENCY_TIPS = {
@@ -15,12 +16,6 @@ const DOC_TYPES = [
   { label: 'Press Release', value: 'press-release' },
   { label: 'Reflection Paper', value: 'reflection-paper' },
 ];
-
-function formatDate(iso) {
-  if (!iso) return 'Not available';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-GB');
-}
 
 export default function CorpusPage() {
   const [items, setItems] = useState([]);
@@ -57,8 +52,7 @@ export default function CorpusPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const lastRun = stats?.last_pipeline_run
-    ? new Date(stats.last_pipeline_run).toLocaleDateString('en-GB') + ' ' +
-      new Date(stats.last_pipeline_run).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    ? formatDateTime(stats.last_pipeline_run)
     : '—';
 
   return (

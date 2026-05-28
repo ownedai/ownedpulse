@@ -1,48 +1,49 @@
-export default function AnswerPanel({ answer, onCitationClick, activeCitation }) {
-  if (!answer) return null;
-
-  // Split answer text into segments, converting [N] markers to clickable spans
+function renderInline(text, activeCitation, onCitationClick) {
   const parts = [];
   let lastIndex = 0;
   const regex = /\[(\d+)\]/g;
   let match;
-
-  while ((match = regex.exec(answer)) !== null) {
-    // Text before this citation
+  while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      parts.push({ type: 'text', key: `t-${lastIndex}`, text: answer.slice(lastIndex, match.index) });
+      parts.push(text.slice(lastIndex, match.index));
     }
     const n = parseInt(match[1], 10);
-    parts.push({ type: 'cite', key: `c-${match.index}`, n, active: activeCitation === n });
+    parts.push(
+      <button
+        key={`c-${match.index}`}
+        className={`rp-cite${activeCitation === n ? ' active' : ''}`}
+        onClick={() => onCitationClick?.(n)}
+      >
+        [{n}]
+      </button>
+    );
     lastIndex = match.index + match[0].length;
   }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
 
-  // Remaining text
-  if (lastIndex < answer.length) {
-    parts.push({ type: 'text', key: `t-${lastIndex}`, text: answer.slice(lastIndex) });
-  }
+export default function AnswerPanel({ answer, onCitationClick, activeCitation }) {
+  if (!answer) return null;
+
+  const normalised = answer
+    .replace(/\n{1,2}(\[\d+\])\n([.,])/g, ' $1$2')
+    .replace(/(\[\d+\])\s*\./g,  '$1.')
+    .replace(/\s*\.\s*(\[\d+\])/g, '$1.');
+
+  const paragraphs = normalised.split('\n\n').filter(p => p.trim());
 
   return (
     <div className="rp-answer">
-      {parts.map((p) => {
-        if (p.type === 'text') {
-          // Split text into paragraphs
-          return p.text.split('\n\n').map((para, i) =>
-            para ? <p key={`${p.key}-p${i}`}>{para.split('\n').map((line, j) => j > 0 ? [<br key={`br-${j}`} />, line] : line)}</p> : null
-          );
-        }
-        return (
-          <button
-            key={p.key}
-            className={`rp-cite${p.active ? ' active' : ''}`}
-            onClick={() => onCitationClick?.(p.n)}
-          >
-            [{p.n}]
-          </button>
-        );
-      })}
+      {paragraphs.map((para, i) => (
+        <p key={`p-${i}`}>
+          {renderInline(para.replace(/\n/g, ' '), activeCitation, onCitationClick)}
+        </p>
+      ))}
       <div className="rp-disclaimer">
-        AI-generated answer based on retrieved regulatory documents. Verify critical requirements against current source documents. Queries requiring legal interpretation should be referred to a qualified regulatory professional.
+        AI-generated answer based on retrieved regulatory documents. Verify critical
+        requirements against current source documents. Queries requiring legal
+        interpretation should be referred to a qualified regulatory professional.
       </div>
     </div>
   );
