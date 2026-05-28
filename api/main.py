@@ -920,20 +920,220 @@ async def query_history(limit: int = 10, offset: int = 0):
         conn.close()
 
 
-# ── GET /api/query/{query_id}/export ──────────────────────────────────────────
-
-
-@app.get("/api/query/{query_id}/export")
-async def export_query(query_id: str, format: str = "json"):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
-
-
 # ── GET /api/query/history/export ─────────────────────────────────────────────
 
 
 @app.get("/api/query/history/export")
 async def export_history(format: str = "json"):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT query_id, query_text, routing_path, timestamp, citations, "
+            "filters_applied FROM query_history ORDER BY timestamp DESC LIMIT 1000"
+        )
+        rows = cur.fetchall()
+        cur.close()
+
+        if format == "json":
+            results = []
+            for row in rows:
+                qid, qtext, routing, ts, citations, filters_applied = row
+                citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
+                results.append({
+                    "query_id": qid,
+                    "query_text": qtext,
+                    "routing_path": routing,
+                    "timestamp": ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
+                    "citation_count": len(citations_list),
+                    "filters_applied": json.loads(filters_applied) if isinstance(filters_applied, str) else (filters_applied or {}),
+                })
+            return results
+
+        elif format == "csv":
+            import csv
+            from io import StringIO
+
+            buf = StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(["query_id", "query_text", "routing_path", "timestamp", "citation_count", "agency_filter"])
+            for row in rows:
+                qid, qtext, routing, ts, citations, filters_applied = row
+                citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
+                filters_dict = json.loads(filters_applied) if isinstance(filters_applied, str) else (filters_applied or {})
+                agency = filters_dict.get("agency") or "All"
+                writer.writerow([
+                    qid, qtext, routing,
+                    ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
+                    len(citations_list), agency,
+                ])
+
+            filename = f"regpulse-history-export-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+            return Response(
+                content=buf.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
+
+        else:
+            raise HTTPException(status_code=400, detail="Format must be json or csv")
+
+    finally:
+        conn.close()
+
+
+# ── GET /api/query/{query_id}/export ──────────────────────────────────────────
+
+
+@app.get("/api/query/{query_id}/export")
+async def export_query(query_id: str, format: str = "json"):
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT query_text, routing_path, answer, citations, sub_queries, "
+            "filters_applied, retrieval_params, langfuse_trace_id, timestamp "
+            "FROM query_history WHERE query_id = %s",
+            (query_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Query not found")
+
+        (query_text, routing_path, answer, citations, sub_queries,
+         filters_applied, retrieval_params, langfuse_trace_id, timestamp) = row
+
+        citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
+        filters_dict = json.loads(filters_applied) if isinstance(filters_applied, str) else (filters_applied or {})
+        retrieval_dict = json.loads(retrieval_params) if isinstance(retrieval_params, str) else (retrieval_params or {})
+        sub_queries_list = json.loads(sub_queries) if isinstance(sub_queries, str) else (sub_queries or [])
+
+        routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
+        ts_iso = timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp)
+
+        if format == "json":
+            export = {
+                "export_timestamp": datetime.now(timezone.utc).isoformat(),
+                "regpulse_version": "0.7.0",
+                "query": {
+                    "query_id": query_id,
+                    "query_text": query_text,
+                    "timestamp": ts_iso,
+                    "routing_path": routing_label,
+                    "retrieval_params_applied": retrieval_dict,
+                    "sub_queries": sub_queries_list,
+                    "filters_applied": filters_dict,
+                },
+                "answer": answer,
+                "citations": {
+                    "cited": [c for c in citations_list if c.get("cited_by_llm")],
+                    "retrieved_but_not_cited": [c for c in citations_list if not c.get("cited_by_llm")],
+                },
+                "langfuse_trace_id": langfuse_trace_id,
+            }
+            return export
+
+        elif format == "pdf":
+            from io import BytesIO
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import mm
+            from reportlab.platypus import (
+                SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+            )
+            from reportlab.lib import colors
+            from reportlab.lib.enums import TA_LEFT
+
+            buf = BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=A4,
+                                    leftMargin=20*mm, rightMargin=20*mm,
+                                    topMargin=20*mm, bottomMargin=20*mm)
+            styles = getSampleStyleSheet()
+            story = []
+
+            # Title
+            story.append(Paragraph("regpulse — Query Export", styles['Title']))
+            story.append(Spacer(1, 6*mm))
+
+            # Query details
+            detail_style = ParagraphStyle('Detail', parent=styles['Normal'], fontSize=9, fontName='Courier')
+            story.append(Paragraph(f"Query ID: {query_id}", detail_style))
+            story.append(Paragraph(f"Timestamp: {ts_iso}", detail_style))
+            story.append(Paragraph(f"Routing: {routing_label}", detail_style))
+            story.append(Paragraph(f"Export date: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M:%S UTC')}", detail_style))
+            story.append(Spacer(1, 4*mm))
+
+            # Query text
+            story.append(Paragraph("<b>Query</b>", styles['Heading2']))
+            story.append(Paragraph(query_text, styles['Normal']))
+            story.append(Spacer(1, 4*mm))
+
+            # Answer
+            story.append(Paragraph("<b>Answer</b>", styles['Heading2']))
+            for para in (answer or '').split('\n\n'):
+                if para.strip():
+                    story.append(Paragraph(para.strip().replace('\n', '<br/>'), styles['Normal']))
+                    story.append(Spacer(1, 2*mm))
+            story.append(Spacer(1, 4*mm))
+
+            # Filter/retrieval info
+            story.append(Paragraph("<b>Retrieval Parameters</b>", styles['Heading2']))
+            story.append(Paragraph(f"Filters: {json.dumps(filters_dict)}", detail_style))
+            story.append(Paragraph(f"Params: {json.dumps(retrieval_dict)}", detail_style))
+            if sub_queries_list:
+                story.append(Paragraph(f"Sub-queries: {', '.join(sub_queries_list)}", detail_style))
+            story.append(Spacer(1, 4*mm))
+
+            # Citations — cited
+            cited = [c for c in citations_list if c.get("cited_by_llm")]
+            if cited:
+                story.append(Paragraph(f"<b>Cited Sources ({len(cited)})</b>", styles['Heading2']))
+                for c in cited:
+                    title = c.get('document_title', 'Unknown')
+                    story.append(Paragraph(f"[{c.get('index', '?')}] {title}", styles['Normal']))
+                    story.append(Paragraph(
+                        f"Agency: {c.get('issuing_body', '—')} · "
+                        f"Version: {c.get('document_version', '—')} · "
+                        f"Clause: {c.get('clause_id') or 'Not available'} · "
+                        f"Score: {c.get('score', 0):.2f} · "
+                        f"Published: {c.get('publication_date') or 'Not available'}",
+                        detail_style
+                    ))
+                    if c.get('chunk_text'):
+                        story.append(Paragraph(c['chunk_text'][:300] + ('...' if len(c['chunk_text']) > 300 else ''), detail_style))
+                    story.append(Spacer(1, 3*mm))
+
+            # Citations — uncited
+            uncited = [c for c in citations_list if not c.get("cited_by_llm")]
+            if uncited:
+                story.append(Paragraph(f"<b>Retrieved but Not Cited ({len(uncited)})</b>", styles['Heading2']))
+                for c in uncited:
+                    title = c.get('document_title', 'Unknown')
+                    story.append(Paragraph(f"[{c.get('index', '?')}] {title} (score: {c.get('score', 0):.2f})", detail_style))
+                    story.append(Spacer(1, 1*mm))
+
+            # Trace ID
+            if langfuse_trace_id:
+                story.append(Spacer(1, 4*mm))
+                story.append(Paragraph(f"Langfuse Trace ID: {langfuse_trace_id}", detail_style))
+
+            doc.build(story)
+            buf.seek(0)
+
+            filename = f"regpulse-export-{query_id[:8]}.pdf"
+            return Response(
+                content=buf.getvalue(),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
+
+        else:
+            raise HTTPException(status_code=400, detail="Format must be json or pdf")
+
+    finally:
+        conn.close()
 
 
 # ── GET /api/trace/{trace_id} ─────────────────────────────────────────────────
