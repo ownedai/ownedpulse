@@ -37,7 +37,9 @@ function MainPage() {
 
   const handleSubmit = useCallback((text) => {
     setActiveCitation(null);
-    execute(text, filters, {
+    // Strip internal-only filter keys before sending to API
+    const { _datePreset, ...apiFilters } = filters;
+    execute(text, apiFilters, {
       query_depth: retrieval.depth,
       top_k: retrieval.topK,
       score_threshold: retrieval.scoreThreshold,

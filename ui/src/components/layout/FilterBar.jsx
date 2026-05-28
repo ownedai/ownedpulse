@@ -38,18 +38,30 @@ export default function FilterBar({
     if (v === '30d') {
       const d = new Date();
       d.setDate(d.getDate() - 30);
-      onChange?.({ ...filters, date_from: d.toISOString().split('T')[0], date_to: null });
+      onChange?.({ ...filters, date_from: d.toISOString().split('T')[0], date_to: null, _datePreset: '30d' });
     } else if (v === '90d') {
       const d = new Date();
       d.setDate(d.getDate() - 90);
-      onChange?.({ ...filters, date_from: d.toISOString().split('T')[0], date_to: null });
+      onChange?.({ ...filters, date_from: d.toISOString().split('T')[0], date_to: null, _datePreset: '90d' });
+    } else if (v === 'custom') {
+      onChange?.({ ...filters, date_from: null, date_to: null, _datePreset: 'custom' });
     } else {
-      onChange?.({ ...filters, date_from: null, date_to: null });
+      onChange?.({ ...filters, date_from: null, date_to: null, _datePreset: null });
     }
+  }
+
+  function setDateFrom(v) {
+    onChange?.({ ...filters, date_from: v || null });
+  }
+
+  function setDateTo(v) {
+    onChange?.({ ...filters, date_to: v || null });
   }
 
   const activeAgency = filters.agency || 'All';
   const activeDocType = filters.document_type || null;
+  const datePreset = filters._datePreset || null;
+  const hasCustomDate = datePreset === 'custom';
   const hasDateRange = !!(filters.date_from || filters.date_to);
 
   return (
@@ -95,16 +107,39 @@ export default function FilterBar({
           Date
           <InfoIcon tip="Filter by document publication date, not ingestion date" />
         </span>
-        {DATE_RANGES.map((dr) => (
-          <button
-            key={dr.label}
-            className={`pill${(!hasDateRange && dr.value === null) || (hasDateRange && dr.value !== null) ? '' : ''}${(!hasDateRange && dr.value === null) ? ' on' : ''}`}
-            onClick={() => setDateRange(dr.value)}
-          >
-            {dr.label}
-          </button>
-        ))}
+        {DATE_RANGES.map((dr) => {
+          const isActive = dr.value === null ? !datePreset : datePreset === dr.value;
+          return (
+            <button
+              key={dr.label}
+              className={`pill${isActive ? ' on' : ''}`}
+              onClick={() => setDateRange(dr.value)}
+            >
+              {dr.label}
+            </button>
+          );
+        })}
       </div>
+
+      {/* Custom date inputs */}
+      {hasCustomDate && (
+        <div className="grp" style={{ gap: 6 }}>
+          <span className="grp-name">From</span>
+          <input
+            type="date"
+            value={filters.date_from || ''}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="rp-date-input"
+          />
+          <span className="grp-name">To</span>
+          <input
+            type="date"
+            value={filters.date_to || ''}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="rp-date-input"
+          />
+        </div>
+      )}
 
       {/* Retrieval settings toggle */}
       <div className="grp" style={{ borderLeft: '1px solid var(--shell-border-soft)', paddingLeft: 18 }}>

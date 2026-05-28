@@ -65,7 +65,7 @@
 }
 
 /* Dark content panel theme */
-[data-theme="dark"] :root {
+:root[data-theme="dark"] {
   --doc-bg: #1E293B;
   --doc-surface: #0F172A;
   --doc-text: #F8FAFC;
@@ -590,6 +590,21 @@ body {
 
 .rp-filter .spacer {
   flex: 1;
+}
+
+.rp-date-input {
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  color: var(--shell-on);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  outline: none;
+}
+
+.rp-date-input:focus {
+  border-color: var(--accent-d);
 }
 
 /* ── Retrieval settings row ─────────────────────────────────────────────── */
