@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 # ── App init ──────────────────────────────────────────────────────────────────
@@ -948,7 +949,34 @@ async def get_trace(trace_id: str):
 
 @app.get("/api/pdf/page")
 async def pdf_page(file_path: str, page_no: int = 0):
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    # Rewrite host archive path to container mount
+    local_path = file_path.replace("/mnt/data/regulatory_archive", "/archive")
+    if not os.path.isfile(local_path):
+        raise HTTPException(status_code=404, detail="PDF file not found")
+
+    import fitz
+
+    doc = None
+    try:
+        doc = fitz.open(local_path)
+        if page_no < 0 or page_no >= doc.page_count:
+            raise HTTPException(status_code=404, detail=f"Page {page_no} out of range (0-{doc.page_count - 1})")
+
+        page = doc.load_page(page_no)
+        pix = page.get_pixmap(dpi=150)
+        img_bytes = pix.tobytes("png")
+        return Response(content=img_bytes, media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("PDF render failed: %s", e)
+        raise HTTPException(status_code=500, detail="PDF render failed")
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
 
 
 # ── GET /api/corpus/stats ─────────────────────────────────────────────────────
