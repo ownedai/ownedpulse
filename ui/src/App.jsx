@@ -11,6 +11,7 @@ import AnswerPanel from './components/query/AnswerPanel';
 import CitationCard from './components/query/CitationCard';
 import QueryExpansion from './components/query/QueryExpansion';
 import AuditFooter from './components/query/AuditFooter';
+import HistoryPage from './components/pages/HistoryPage';
 import useQuery from './hooks/useQuery';
 
 function MainPage() {
@@ -256,6 +257,7 @@ export default function App() {
         <TopNav />
         <Routes>
           <Route path="/" element={<MainPage key={resetKey} />} />
+          <Route path="/history" element={<HistoryPage />} />
         </Routes>
       </div>
     </div>
