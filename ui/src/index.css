@@ -8,36 +8,98 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Brand tokens — will be expanded in step 3 */
+/* ── Brand tokens ───────────────────────────────────────────────────────── */
+
 :root {
+  /* Shell — always dark */
   --shell-bg: #0F172A;
   --shell-surface: #1E293B;
+  --shell-surface-2: #172033;
   --shell-border: #334155;
-  --shell-muted-text: #94A3B8;
-  --shell-accent: #60A5FA;
+  --shell-border-soft: #1F2A40;
+  --shell-muted: #94A3B8;
+  --shell-dim: #64748B;
+  --shell-on: #E2E8F0;
+  --accent-d: #60A5FA;
 
-  --panel-bg: #F8FAFC;
-  --panel-surface: #FFFFFF;
-  --panel-text: #0F172A;
-  --panel-text-secondary: #64748B;
-  --panel-accent: #2563EB;
-  --panel-accent-hover: #1D4ED8;
-  --panel-accent-bg: #DBEAFE;
+  /* Content panel — light (default) */
+  --doc-bg: #F8FAFC;
+  --doc-surface: #FFFFFF;
+  --doc-text: #0F172A;
+  --doc-text-2: #64748B;
+  --doc-text-3: #94A3B8;
+  --doc-border: #E2E8F0;
+  --doc-border-strong: #CBD5E1;
+  --doc-hover: #F1F5F9;
 
-  --success: #10B981;
-  --warning: #F59E0B;
-  --error: #EF4444;
+  --accent-l: #2563EB;
+  --accent-l-hover: #1D4ED8;
+  --accent-tint: #DBEAFE;
+  --accent-tint-deep: #BFDBFE;
 
+  /* Status */
+  --ok: #10B981;
+  --ok-text: #047857;
+  --ok-tint: #ECFDF5;
+  --ok-tint-deep: #D1FAE5;
+  --ok-tint-border: #A7F3D0;
+
+  --warn: #F59E0B;
+  --warn-text: #92400E;
+  --warn-tint: #FEF3C7;
+  --warn-tint-deep: #FDE68A;
+  --warn-tint-border: #FCD34D;
+
+  --err: #EF4444;
+  --err-text: #991B1B;
+  --err-tint: #FEF2F2;
+  --err-tint-deep: #FEE2E2;
+  --err-tint-border: #FECACA;
+
+  --hl-bg: #D1FAE5;
+  --hl-border: #6EE7B7;
+
+  /* Typography */
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Dark content panel theme */
 [data-theme="dark"] :root {
-  --panel-bg: #1E293B;
-  --panel-surface: #0F172A;
-  --panel-text: #F8FAFC;
-  --panel-text-secondary: #94A3B8;
+  --doc-bg: #1E293B;
+  --doc-surface: #0F172A;
+  --doc-text: #F8FAFC;
+  --doc-text-2: #94A3B8;
+  --doc-text-3: #64748B;
+  --doc-border: #334155;
+  --doc-border-strong: #475569;
+  --doc-hover: #172033;
+
+  --accent-l: #60A5FA;
+  --accent-l-hover: #93C5FD;
+  --accent-tint: rgba(96, 165, 250, 0.14);
+  --accent-tint-deep: rgba(96, 165, 250, 0.28);
+
+  --ok-tint: rgba(16, 185, 129, 0.12);
+  --ok-tint-deep: rgba(16, 185, 129, 0.22);
+  --ok-tint-border: rgba(16, 185, 129, 0.45);
+  --ok-text: #34D399;
+
+  --warn-tint: rgba(245, 158, 11, 0.12);
+  --warn-tint-deep: rgba(245, 158, 11, 0.22);
+  --warn-tint-border: rgba(245, 158, 11, 0.45);
+  --warn-text: #FBBF24;
+
+  --err-tint: rgba(239, 68, 68, 0.10);
+  --err-tint-deep: rgba(239, 68, 68, 0.18);
+  --err-tint-border: rgba(239, 68, 68, 0.45);
+  --err-text: #FCA5A5;
+
+  --hl-bg: rgba(16, 185, 129, 0.32);
+  --hl-border: rgba(16, 185, 129, 0.7);
 }
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
 
 *,
 *::before,
@@ -55,8 +117,230 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   line-height: 1.6;
-  color: var(--panel-text);
+  color: var(--doc-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* ── App shell ──────────────────────────────────────────────────────────── */
+
+.app-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
   background: var(--shell-bg);
+  overflow: hidden;
+}
+
+.app-shell .main-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--doc-bg);
+}
+
+/* ── Brand mark / logo ──────────────────────────────────────────────────── */
+
+.rp-mark {
+  display: inline-block;
+  aspect-ratio: 1/1;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.rp-mark .sq {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--accent-d);
+  background: transparent;
+}
+
+.rp-mark .ci {
+  position: absolute;
+  width: 56%;
+  height: 56%;
+  left: 22%;
+  top: 22%;
+  background: var(--accent-d);
+  border-radius: 50%;
+}
+
+.rp-mark.on-light .sq {
+  border-color: var(--accent-l);
+}
+
+.rp-mark.on-light .ci {
+  background: var(--accent-l);
+}
+
+.rp-mark.sz-16 { width: 16px; }
+.rp-mark.sz-16 .sq { border-width: 1px; }
+.rp-mark.sz-20 { width: 20px; }
+.rp-mark.sz-20 .sq { border-width: 1px; }
+.rp-mark.sz-24 { width: 24px; }
+.rp-mark.sz-24 .sq { border-width: 1px; }
+.rp-mark.sz-28 { width: 28px; }
+.rp-mark.sz-32 { width: 32px; }
+
+.rp-wm {
+  font-family: var(--sans);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.rp-wm em {
+  font-style: normal;
+  color: var(--accent-d);
+}
+
+.rp-wm.on-light {
+  color: var(--doc-text);
+}
+
+.rp-wm.on-light em {
+  color: var(--accent-l);
+}
+
+/* ── Top nav bar ────────────────────────────────────────────────────────── */
+
+.top-nav {
+  height: 52px;
+  flex: 0 0 52px;
+  background: var(--shell-bg);
+  border-bottom: 1px solid var(--shell-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+}
+
+.top-nav .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.top-nav .brand .rp-wm {
+  font-size: 17px;
+}
+
+/* ── Theme toggle ───────────────────────────────────────────────────────── */
+
+.theme-toggle {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--shell-border);
+  border-radius: 4px;
+  color: var(--shell-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+
+.theme-toggle:hover {
+  color: #fff;
+  background: var(--shell-bg);
+  border-color: var(--accent-d);
+}
+
+.theme-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ── Tooltip ────────────────────────────────────────────────────────────── */
+
+.rp-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.rp-tip > .tip-body {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #1E293B;
+  color: #F8FAFC;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 4px;
+  max-width: 280px;
+  width: max-content;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease 0ms, transform 120ms ease 0ms;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04) inset;
+  letter-spacing: -0.003em;
+  text-transform: none;
+  font-weight: 400;
+  white-space: normal;
+  text-align: left;
+}
+
+.rp-tip > .tip-body::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1E293B;
+}
+
+.rp-tip:hover > .tip-body {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  transition-delay: 300ms;
+}
+
+.rp-tip.placement-below > .tip-body {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.rp-tip.placement-below > .tip-body::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: #1E293B;
+}
+
+.rp-tip.placement-below:hover > .tip-body {
+  transform: translateX(-50%) translateY(0);
+}
+
+.rp-i {
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  color: var(--doc-text-3);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  border-radius: 50%;
+  cursor: help;
+  line-height: 1;
+  letter-spacing: 0;
+  padding: 0 0 1px;
+  vertical-align: 1px;
+}
+
+.rp-i:hover {
+  color: var(--doc-text-2);
 }
