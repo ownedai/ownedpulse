@@ -1,60 +1,78 @@
-import Badge from '../common/Badge';
+import Tooltip from '../common/Tooltip';
 
-export default function CitationCard({ citation, highlighted, onClick, onViewSource }) {
+const AGENCY_TIPS = {
+  FDA: 'US Food and Drug Administration',
+  EMA: 'European Medicines Agency',
+  ICH: 'International Council for Harmonisation',
+};
+
+export default function CitationCard({ citation, isActive, onClick, onViewSource }) {
+  const { index, document_title, issuing_body, document_version, clause_id, publication_date, score, cited_by_llm, superseded, superseded_by } = citation;
+
+  const agency = issuing_body || 'Unknown';
+  const version = document_version || '—';
+  const clause = clause_id || 'Not available';
+  const date = publication_date
+    ? new Date(publication_date).toLocaleDateString('en-GB')
+    : 'Not available';
+
+  let state = 'active';
+  if (superseded) state = 'superseded';
+  else if (!cited_by_llm) state = 'dimmed';
+
+  const classes = ['rp-cit'];
+  if (state === 'active') classes.push('active');
+  if (state === 'dimmed') classes.push('dimmed');
+  if (state === 'superseded') classes.push('superseded');
+  if (isActive) classes.push('active');
+
   return (
-    <div
-      onClick={onClick}
-      className={`bg-white border rounded-lg p-4 transition-all cursor-pointer ${
-        highlighted
-          ? 'border-accent-light ring-2 ring-accent-light/20 shadow-sm'
-          : 'border-slate-200 hover:border-slate-300'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold text-accent-light bg-accent-bg rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
-              {citation.index}
-            </span>
-            <h4 className="text-sm font-semibold text-slate-800 truncate">{citation.title}</h4>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-secondary ml-7">
-            <Badge type="agency" value={citation.agency} />
-            {citation.document_version && (
-              <span>v{citation.document_version}</span>
-            )}
-            {citation.publication_date && (
-              <span>{citation.publication_date}</span>
-            )}
-            {citation.clause_id && (
-              <span>Clause {citation.clause_id}</span>
-            )}
-          </div>
-          {citation.superseded && (
-            <div className="ml-7 mt-1.5">
-              <Badge type="superseded" value={`Superseded${citation.superseded_by ? ` by ${citation.superseded_by}` : ''}`} />
-            </div>
+    <div className={classes.join(' ')} onClick={onClick}>
+      <div className="num">[{index}]</div>
+      <div className="body">
+        <div className="title-row">
+          <Tooltip tip={AGENCY_TIPS[agency] || agency} placement="below">
+            <span className="agency-tag">{agency}</span>
+          </Tooltip>
+          <div className="title">{document_title}</div>
+          {superseded ? (
+            <Tooltip tip="This document version has been superseded. Verify currency before relying on this source.">
+              <span className="badge warn">Superseded</span>
+            </Tooltip>
+          ) : cited_by_llm ? (
+            <Tooltip tip="This source was cited by the AI in its answer.">
+              <span className="badge matched">Matched</span>
+            </Tooltip>
+          ) : (
+            <Tooltip tip="Retrieved but not used by the AI in its answer.">
+              <span className="badge notcited">Not cited</span>
+            </Tooltip>
           )}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onViewSource(); }}
-          className="text-xs font-medium text-accent-light hover:text-accent-hover flex-shrink-0"
-        >
-          View source →
-        </button>
-      </div>
-      <div className="mt-2 ml-7">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-accent-light rounded-full transition-all"
-              style={{ width: `${Math.min((citation.score || 0) * 100, 100)}%` }}
-            />
-          </div>
-          <span className="text-[10px] text-slate-400 w-8 text-right">
-            {Math.round((citation.score || 0) * 100)}%
-          </span>
+        <div className="meta">
+          <span><span className="k">version</span><span className="v">{version}</span></span>
+          <span><span className="k">clause</span><span className="v clause">{clause}</span></span>
+          <span><span className="k">published</span><span className="v">{date}</span></span>
         </div>
+        {superseded && superseded_by && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--err-text)', marginTop: 6 }}>
+            &rarr; current version: <span style={{ textDecoration: 'underline' }}>{superseded_by}</span>
+          </div>
+        )}
+      </div>
+      <div className="right">
+        <Tooltip tip={`Semantic similarity. Minimum threshold: 0.60.`}>
+          <div className="rp-score">
+            <div className="bar"><div className="fill" style={{ width: (score * 100) + '%' }} /></div>
+            <span className="v">{score?.toFixed(2)}</span>
+          </div>
+        </Tooltip>
+        <button className="view-src" onClick={(e) => { e.stopPropagation(); onViewSource?.(); }}>
+          View source
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M5 3h4v4M4 8l5-5" />
+          </svg>
+        </button>
       </div>
     </div>
   );

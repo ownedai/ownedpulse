@@ -5,6 +5,10 @@ import Sidebar from './components/layout/Sidebar';
 import FilterBar from './components/layout/FilterBar';
 import RetrievalSettings from './components/layout/RetrievalSettings';
 import EmptyState from './components/query/EmptyState';
+import AnswerPanel from './components/query/AnswerPanel';
+import CitationCard from './components/query/CitationCard';
+import QueryExpansion from './components/query/QueryExpansion';
+import AuditFooter from './components/query/AuditFooter';
 import useQuery from './hooks/useQuery';
 
 function MainPage() {
@@ -18,6 +22,7 @@ function MainPage() {
     scoreThreshold: 0.60,
   });
   const [retrievalOpen, setRetrievalOpen] = useState(false);
+  const [activeCitation, setActiveCitation] = useState(null);
 
   const retrievalDisplay = (r) => ({
     depth: r.depth,
@@ -26,6 +31,7 @@ function MainPage() {
   });
 
   const handleSubmit = useCallback((text) => {
+    setActiveCitation(null);
     execute(text, filters, {
       query_depth: retrieval.depth,
       top_k: retrieval.topK,
@@ -82,79 +88,105 @@ function MainPage() {
       )}
       <div className="rp-content">
         <div className="rp-content-inner">
-          <div style={{ maxWidth: 760, margin: '0 auto' }}>
-            {loading && (
-              <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--doc-text-2)' }}>
-                <p>Searching across regulatory documents...</p>
+          <div className="container">
+            {/* Query bar */}
+            <div className={`rp-query-bar${loading ? ' thinking' : ''}`}>
+              <div className="q-row">
+                <div className="q-text">{queryText}</div>
+                <button
+                  className="submit"
+                  onClick={() => handleSubmit(queryText)}
+                  disabled={loading}
+                >
+                  Submit
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 8h10M9 4l4 4-4 4" />
+                  </svg>
+                </button>
               </div>
-            )}
+              {loading && (
+                <>
+                  <div className="rp-thinking-bar" />
+                  <div className="rp-thinking-meta">
+                    Searching {result?.retrieval_params_applied?.sub_query_count || retrieval.topK} variations across indexed documents...
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Error state */}
             {error && (
               <div style={{ padding: 24, background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', borderRadius: 4, color: 'var(--err-text)' }}>
                 {error}
               </div>
             )}
+
+            {/* Result */}
             {result && (
-              <div>
-                <div style={{ fontSize: 13, color: 'var(--doc-text-2)', marginBottom: 8 }}>
-                  Query: {queryText}
-                </div>
-                <div style={{
-                  whiteSpace: 'pre-wrap',
-                  fontFamily: 'var(--sans)',
-                  fontSize: 16,
-                  lineHeight: 1.75,
-                  color: 'var(--doc-text)',
-                }}>
-                  {result.answer}
-                </div>
+              <>
+                <AnswerPanel
+                  answer={result.answer}
+                  activeCitation={activeCitation}
+                  onCitationClick={(n) => setActiveCitation(n === activeCitation ? null : n)}
+                />
+
+                <QueryExpansion subQueries={result.sub_queries} />
+
+                {/* Sources section */}
                 {result.citations && result.citations.length > 0 && (
-                  <div style={{ marginTop: 32 }}>
-                    <div style={{
-                      fontFamily: 'var(--mono)',
-                      fontSize: 11,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      color: 'var(--doc-text-2)',
-                      marginBottom: 12,
-                    }}>
-                      Sources ({result.citations.length})
-                    </div>
-                    {result.citations.map((c) => (
-                      <div key={c.index} style={{
-                        padding: 12,
-                        marginBottom: 8,
-                        background: 'var(--doc-surface)',
-                        border: '1px solid var(--doc-border)',
-                        borderRadius: 4,
-                        fontSize: 13,
-                      }}>
-                        <div style={{ fontWeight: 500, marginBottom: 4 }}>
-                          [{c.index}] {c.document_title}
-                        </div>
-                        <div style={{ color: 'var(--doc-text-2)', fontSize: 12 }}>
-                          {c.issuing_body} &middot; Score: {c.score?.toFixed(2)}
-                          {c.cited_by_llm ? ' · Cited' : ' · Not cited'}
-                        </div>
+                  <>
+                    <div className="rp-sources-head">
+                      <div className="rp-sources-lbl">
+                        Sources <span className="count">({result.citations.length})</span>
                       </div>
-                    ))}
-                  </div>
+                      <button className="rp-export" onClick={() => {}}>
+                        Export
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M8 3v8M4 7l4 4 4-4M3 13h10" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="rp-cit-list">
+                      {result.citations.map((c) => (
+                        <CitationCard
+                          key={c.index}
+                          citation={c}
+                          isActive={activeCitation === c.index}
+                          onClick={() => setActiveCitation(c.index === activeCitation ? null : c.index)}
+                          onViewSource={() => setActiveCitation(c.index)}
+                        />
+                      ))}
+                    </div>
+                  </>
                 )}
-                {result.query_id && (
+
+                {/* No sources message */}
+                {(!result.citations || result.citations.length === 0) && result.answer && (
                   <div style={{
                     marginTop: 24,
-                    paddingTop: 16,
-                    borderTop: '1px solid var(--doc-border)',
+                    padding: 16,
+                    background: 'var(--doc-bg)',
+                    border: '1px solid var(--doc-border)',
+                    borderRadius: 4,
                     fontFamily: 'var(--mono)',
-                    fontSize: 11,
-                    color: 'var(--doc-text-3)',
+                    fontSize: 12,
+                    color: 'var(--doc-text-2)',
+                    textAlign: 'center',
                   }}>
-                    Query ID: {result.query_id} &middot; {new Date(result.timestamp).toLocaleDateString('en-GB')} {new Date(result.timestamp).toLocaleTimeString('en-GB')} &middot; {result.routing_path}
+                    No sources above the relevance threshold were found for this query.
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
+
+        <AuditFooter
+          queryId={result?.query_id}
+          timestamp={result?.timestamp}
+          routingPath={result?.routing_path}
+          onViewTrace={() => {}}
+        />
       </div>
     </>
   );
