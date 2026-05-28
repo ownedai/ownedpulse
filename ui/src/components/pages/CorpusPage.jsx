@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getCorpusDocuments, getCorpusStats } from '../../api/client';
 import DocumentViewer from './DocumentViewer';
+import Tooltip from '../common/Tooltip';
 
 const AGENCY_TABS = ['All', 'FDA', 'EMA', 'ICH'];
 const DOC_TYPES = [
@@ -60,7 +61,11 @@ export default function CorpusPage() {
       <div className="rp-page-head">
         <div>
           <h1>Corpus</h1>
-          <p>All indexed regulatory documents. Last pipeline run: {lastRun}</p>
+          <p>All indexed regulatory documents.{' '}
+            <Tooltip tip="Last time new regulatory documents were ingested via RSS">
+              <span style={{ cursor: 'help' }}>Last pipeline run: {lastRun}</span>
+            </Tooltip>
+          </p>
         </div>
       </div>
 
@@ -68,15 +73,16 @@ export default function CorpusPage() {
         {/* Agency tabs */}
         <div className="rp-tabs">
           {AGENCY_TABS.map((a) => (
-            <button
-              key={a}
-              className={`tab${agency === a ? ' on' : ''}`}
-              onClick={() => { setAgency(a); setOffset(0); }}
-            >
-              {a}
-              {stats && a === 'All' && <span className="count">{stats.total_documents?.toLocaleString()}</span>}
-              {stats && a !== 'All' && <span className="count">{stats.per_agency?.[a]?.toLocaleString() || '0'}</span>}
-            </button>
+            <Tooltip key={a} tip={a === 'All' ? 'Show all documents across all agencies' : 'Click to browse all documents from this agency'} placement="below">
+              <button
+                className={`tab${agency === a ? ' on' : ''}`}
+                onClick={() => { setAgency(a); setOffset(0); }}
+              >
+                {a}
+                {stats && a === 'All' && <span className="count">{stats.total_documents?.toLocaleString()}</span>}
+                {stats && a !== 'All' && <span className="count">{stats.per_agency?.[a]?.toLocaleString() || '0'}</span>}
+              </button>
+            </Tooltip>
           ))}
         </div>
 
