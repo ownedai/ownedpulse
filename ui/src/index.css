@@ -460,6 +460,7 @@ body {
 }
 
 .rp-status {
+  margin-top: auto;
   border-top: 1px solid var(--shell-border);
   padding: 12px 18px 14px;
   font-family: var(--mono);
@@ -617,11 +618,10 @@ body {
 .rp-dropdown-btn:hover { background: var(--doc-hover); color: var(--doc-text); }
 .rp-dropdown-btn.open { border-color: var(--accent-l); color: var(--accent-l); }
 
-/* Gear icon button (retrieval settings) */
+/* Gear icon button (retrieval settings) — matches dropdown button height */
 .rp-gear-btn {
   position: relative;
-  width: 30px;
-  height: 30px;
+  padding: 4px 8px;
   background: transparent;
   border: 1px solid var(--doc-border);
   border-radius: 3px;
@@ -630,18 +630,19 @@ body {
   align-items: center;
   justify-content: center;
   color: var(--doc-text-2);
+  line-height: 1;
 }
 
 .rp-gear-btn:hover { background: var(--doc-hover); color: var(--doc-text); }
-.rp-gear-btn.active { border-color: var(--accent-l); color: var(--accent-l); }
+.rp-gear-btn.active { background: var(--accent-l); border-color: var(--accent-l); color: #fff; }
 
 .rp-gear-dot {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 3px;
+  right: 3px;
   width: 5px;
   height: 5px;
-  background: var(--accent-l);
+  background: #fff;
   border-radius: 50%;
 }
 
@@ -677,6 +678,22 @@ body {
   color: var(--doc-text-2);
   margin-bottom: 6px;
 }
+
+/* Standalone pill — usable outside .rp-filter (e.g. inside popovers) */
+.pill {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--doc-text-2);
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--doc-border);
+  line-height: 1;
+  font-weight: 400;
+}
+.pill:hover { color: var(--doc-text); background: var(--doc-hover); }
+.pill.on { background: var(--accent-l); color: #fff; border-color: var(--accent-l); font-weight: 500; }
 
 .rp-popover-apply {
   display: block;

@@ -1,5 +1,3 @@
-import CorpusStatsBar from './CorpusStatsBar';
-
 const EXAMPLE_QUERIES = [
   { agency: 'EMA', text: 'What are the Annex 11 requirements for audit trails?' },
   { agency: 'ICH', text: 'Summarise ICH Q9(R1) changes from the 2005 version.' },
@@ -32,7 +30,6 @@ export default function EmptyState({ onSubmit, disabled }) {
           ))}
         </div>
       </div>
-      <CorpusStatsBar />
     </div>
   );
 }

@@ -75,7 +75,7 @@ function TypeDropdown({ value, onChange }) {
   const btnRef = useRef(null);
   const current = DOC_TYPES.find((d) => d.value === value) || DOC_TYPES[0];
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
       <button ref={btnRef} className={`rp-dropdown-btn${open ? ' open' : ''}`} onClick={() => setOpen((v) => !v)}>
         <span>{current.label}</span>
         <svg width="9" height="9" viewBox="0 0 10 6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
@@ -120,7 +120,7 @@ function DateDropdown({ filters, onChange }) {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
       <button ref={btnRef} className={`rp-dropdown-btn${open || customOpen ? ' open' : ''}`} onClick={() => setOpen((v) => !v)}>
         <span>{current.label}</span>
         <svg width="9" height="9" viewBox="0 0 10 6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
@@ -183,10 +183,17 @@ function DateDropdown({ filters, onChange }) {
 
 /* ── Retrieval settings gear popover ─────────────────────────────────────── */
 const DEPTH_OPTIONS = [
-  { label: 'Low', value: 'low', desc: 'N=2 variations' },
-  { label: 'Standard', value: 'standard', desc: 'N=3 (default)' },
-  { label: 'Deep', value: 'deep', desc: 'N=5 variations' },
+  { label: 'Low (N=2)', value: 'low', tip: 'N=2 sub-query variations' },
+  { label: 'Standard (N=3)', value: 'standard', tip: 'N=3 variations (default)' },
+  { label: 'Deep (N=5)', value: 'deep', tip: 'N=5 variations — slower, higher recall' },
 ];
+
+const GearIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
 
 function RetrievalPopover({ retrieval, onChange }) {
   const [open, setOpen] = useState(false);
@@ -199,30 +206,44 @@ function RetrievalPopover({ retrieval, onChange }) {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
-      <Tooltip tip="Query depth, sources per variation, minimum relevance threshold" placement="below">
-        <button
-          ref={btnRef}
-          className={`rp-gear-btn${isNonDefault ? ' active' : ''}`}
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Retrieval settings"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-          {isNonDefault && <span className="rp-gear-dot" />}
-        </button>
-      </Tooltip>
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <button
+        ref={btnRef}
+        className={`rp-gear-btn${isNonDefault ? ' active' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Retrieval settings"
+        title="Retrieval settings"
+      >
+        <GearIcon />
+        {isNonDefault && <span className="rp-gear-dot" />}
+      </button>
       <Popover anchorRef={btnRef} open={open} onClose={() => setOpen(false)}>
-        <div style={{ padding: '12px 14px', minWidth: 240 }}>
-          <div className="rp-popover-section-lbl">Query Depth</div>
+        <div style={{ padding: '14px 16px', minWidth: 260 }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--doc-text-2)', fontWeight: 600 }}>
+              Retrieval Settings
+            </span>
+            {isNonDefault && (
+              <button onClick={reset} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-l)', fontSize: 12, padding: 0, fontFamily: 'var(--sans)' }}>
+                Reset
+              </button>
+            )}
+          </div>
+
+          {/* Query Depth */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+            <span className="rp-popover-section-lbl" style={{ margin: 0 }}>Query Depth</span>
+            <Tooltip tip="More variations = better recall, slower response" placement="below">
+              <span className="rp-i">i</span>
+            </Tooltip>
+          </div>
           <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
             {DEPTH_OPTIONS.map((d) => (
-              <Tooltip key={d.value} tip={d.desc} placement="below">
+              <Tooltip key={d.value} tip={d.tip} placement="below">
                 <button
                   className={`pill${retrieval.depth === d.value ? ' on' : ''}`}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, fontSize: 11, padding: '4px 6px' }}
                   onClick={() => onChange({ ...retrieval, depth: d.value })}
                 >
                   {d.label}
@@ -231,30 +252,38 @@ function RetrievalPopover({ retrieval, onChange }) {
             ))}
           </div>
 
-          <div className="rp-popover-section-lbl">Sources per Variation (K={retrieval.topK})</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          {/* Sources per Variation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+            <span className="rp-popover-section-lbl" style={{ margin: 0 }}>Sources per Variation</span>
+            <Tooltip tip="Source chunks retrieved per search variation before filtering" placement="below">
+              <span className="rp-i">i</span>
+            </Tooltip>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <button className="rp-stepper-btn" onClick={() => onChange({ ...retrieval, topK: Math.max(5, retrieval.topK - 1) })}>−</button>
-            <span style={{ fontSize: 13, fontFamily: 'var(--mono)', minWidth: 20, textAlign: 'center' }}>{retrieval.topK}</span>
+            <span style={{ fontSize: 13, fontFamily: 'var(--mono)', minWidth: 24, textAlign: 'center' }}>{retrieval.topK}</span>
             <button className="rp-stepper-btn" onClick={() => onChange({ ...retrieval, topK: Math.min(20, retrieval.topK + 1) })}>+</button>
           </div>
 
-          <div className="rp-popover-section-lbl">Min. Relevance ({retrieval.scoreThreshold.toFixed(2)})</div>
-          <input
-            type="range"
-            min="0.40" max="0.90" step="0.05"
-            value={retrieval.scoreThreshold}
-            onChange={(e) => onChange({ ...retrieval, scoreThreshold: parseFloat(e.target.value) })}
-            style={{ width: '100%', marginBottom: 12 }}
-          />
-
-          {isNonDefault && (
-            <button
-              onClick={reset}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-l)', fontSize: 12, padding: 0 }}
-            >
-              Reset to defaults
-            </button>
-          )}
+          {/* Min Relevance */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+            <span className="rp-popover-section-lbl" style={{ margin: 0 }}>Min. Relevance</span>
+            <Tooltip tip="Below threshold = excluded from results entirely" placement="below">
+              <span className="rp-i">i</span>
+            </Tooltip>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input
+              type="range"
+              min="0.40" max="0.90" step="0.05"
+              value={retrieval.scoreThreshold}
+              onChange={(e) => onChange({ ...retrieval, scoreThreshold: parseFloat(e.target.value) })}
+              style={{ flex: 1 }}
+            />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 12, minWidth: 32, textAlign: 'right', color: 'var(--doc-text)' }}>
+              {retrieval.scoreThreshold.toFixed(2)}
+            </span>
+          </div>
         </div>
       </Popover>
     </div>
@@ -272,30 +301,25 @@ export default function FilterBar({ filters = {}, onChange, retrieval, onRetriev
 
   return (
     <div className="rp-filter">
-      {/* Agency — compact button group */}
-      <div className="grp">
-        {AGENCIES.map((a) => (
-          <Tooltip key={a} tip={a === 'All' ? 'No agency filter — search across all indexed regulators' : (AGENCY_TIPS[a] || '')} placement="below">
-            <button className={`pill${activeAgency === a ? ' on' : ''}`} onClick={() => setAgency(a)}>
-              {a}
-            </button>
-          </Tooltip>
-        ))}
-      </div>
+      {/* Agency pills */}
+      {AGENCIES.map((a) => (
+        <Tooltip key={a} tip={a === 'All' ? 'No agency filter — search across all indexed regulators' : (AGENCY_TIPS[a] || '')} placement="below">
+          <button className={`pill${activeAgency === a ? ' on' : ''}`} onClick={() => setAgency(a)}>
+            {a}
+          </button>
+        </Tooltip>
+      ))}
 
-      {/* Type — dropdown */}
-      <div className="grp">
-        <TypeDropdown value={filters.document_type || null} onChange={(v) => onChange?.({ ...filters, document_type: v })} />
-      </div>
+      {/* Thin separator */}
+      <span style={{ width: 1, height: 16, background: 'var(--doc-border)', display: 'inline-block' }} />
 
-      {/* Date — dropdown with custom popover */}
-      <div className="grp">
-        <DateDropdown filters={filters} onChange={onChange} />
-      </div>
+      {/* Type dropdown */}
+      <TypeDropdown value={filters.document_type || null} onChange={(v) => onChange?.({ ...filters, document_type: v })} />
 
-      <div className="spacer" />
+      {/* Date dropdown */}
+      <DateDropdown filters={filters} onChange={onChange} />
 
-      {/* Retrieval — gear icon popover */}
+      {/* Retrieval gear popover */}
       {retrieval && onRetrievalChange && (
         <RetrievalPopover retrieval={retrieval} onChange={onRetrievalChange} />
       )}

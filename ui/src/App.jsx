@@ -18,6 +18,7 @@ import RunLogPage from './components/pages/RunLogPage';
 import AdminPage from './components/pages/AdminPage';
 import useQuery from './hooks/useQuery';
 import { exportQuery } from './api/client';
+import CorpusStatsBar from './components/query/CorpusStatsBar';
 
 function MainPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -275,15 +276,18 @@ export default function App() {
       <Sidebar onNewQuery={handleNewQuery} />
       <div className="main-column">
         <TopNav />
-        <Routes>
-          <Route path="/" element={<MainPage key={resetKey} />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/corpus" element={<CorpusPage />} />
-          <Route path="/corpus/:docId" element={<DocumentDetailPage />} />
-          <Route path="/corpus/runs" element={<RunLogPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Routes>
+            <Route path="/" element={<MainPage key={resetKey} />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/corpus" element={<CorpusPage />} />
+            <Route path="/corpus/:docId" element={<DocumentDetailPage />} />
+            <Route path="/corpus/runs" element={<RunLogPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+        <CorpusStatsBar />
       </div>
     </div>
   );
