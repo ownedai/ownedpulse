@@ -527,10 +527,11 @@ body {
 }
 
 .rp-nav-item.active {
-  background: var(--shell-surface);
+  background: var(--accent-d);
   color: #fff;
-  border-left: 2px solid var(--accent-d);
-  padding-left: 8px;
+  border-left: none;
+  padding-left: 10px;
+  font-weight: 500;
 }
 
 .rp-nav-sep {

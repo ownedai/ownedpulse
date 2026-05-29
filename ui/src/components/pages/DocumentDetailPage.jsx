@@ -1,12 +1,43 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getDocumentDetail, getDocumentChunks, getSupersedeChain } from '../../api/client';
 import Tooltip from '../common/Tooltip';
-import { formatDate } from '../../dateFormat';
+import { formatDate, formatDateTime } from '../../dateFormat';
+
+function SectionLabel({ children }) {
+  return (
+    <div style={{
+      fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.1em',
+      textTransform: 'uppercase', color: 'var(--accent-l)', fontWeight: 600,
+      marginBottom: 10, marginTop: 24,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function MetaRow({ label, children }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16, fontSize: 13 }}>
+      <span style={{ color: 'var(--doc-text-2)', flexShrink: 0, minWidth: 120 }}>{label}</span>
+      <span style={{ textAlign: 'right', wordBreak: 'break-all' }}>{children}</span>
+    </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const isOk = status === 'indexed' || status === 'success';
+  const isError = status === 'error';
+  const isSuperseded = status === 'superseded';
+  if (isOk) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ok-text)', border: '1px solid var(--ok-tint-border)', background: 'var(--ok-tint)', padding: '2px 7px', borderRadius: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--ok)' }} />INDEXED</span>;
+  if (isError) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--err-text)', border: '1px solid var(--err-tint-border)', background: 'var(--err-tint)', padding: '2px 7px', borderRadius: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--err)' }} />ERROR</span>;
+  if (isSuperseded) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)', border: '1px solid var(--doc-border)', padding: '2px 7px', borderRadius: 3 }}>SUPERSEDED</span>;
+  return <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>{status || '—'}</span>;
+}
 
 function hashAbbr(h) {
   if (!h) return '—';
-  return h.length > 16 ? h.substring(0, 16) + '...' : h;
+  return h.length > 20 ? h.substring(0, 20) + '…' : h;
 }
 
 export default function DocumentDetailPage() {
@@ -30,26 +61,17 @@ export default function DocumentDetailPage() {
 
   useEffect(() => {
     if (!docId) return;
-    getDocumentChunks(docId, chunkPage, chunkPageSize)
-      .then(setChunks)
-      .catch(() => {});
+    getDocumentChunks(docId, chunkPage, chunkPageSize).then(setChunks).catch(() => {});
   }, [docId, chunkPage]);
 
   useEffect(() => {
     if (doc?.document_family_id) {
-      getSupersedeChain(doc.document_family_id)
-        .then(setChain)
-        .catch(() => {});
+      getSupersedeChain(doc.document_family_id).then(setChain).catch(() => {});
     }
   }, [doc?.document_family_id]);
 
   if (loading) {
-    return (
-      <div className="rp-page-head">
-        <h1>Document Detail</h1>
-        <p>Loading...</p>
-      </div>
-    );
+    return <div className="rp-page-head"><h1>Document Detail</h1><p>Loading...</p></div>;
   }
 
   if (!doc) {
@@ -65,158 +87,113 @@ export default function DocumentDetailPage() {
   const totalChunkPages = Math.ceil(chunks.total / chunkPageSize);
 
   return (
-    <>
-      <div className="rp-page-head">
-        <Link to="/corpus" style={{ color: 'var(--accent-l)', fontSize: 13, marginBottom: 4, display: 'inline-block' }}>
-          &larr; Back to corpus
-        </Link>
-        <h1>{doc.document_title}</h1>
-        <p>{doc.issuing_body} · {doc.document_type || doc.doc_type} · {doc.document_version || '—'}</p>
-      </div>
+    <div style={{ padding: '28px 32px', maxWidth: 1200 }}>
+      <Link to="/corpus" style={{ color: 'var(--accent-l)', fontSize: 13, marginBottom: 16, display: 'inline-block' }}>
+        &larr; Back to corpus
+      </Link>
 
-      <div className="rp-table-wrap">
-        {/* Metadata panel */}
-        <div className="rp-section">
-          <h3>Metadata</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '8px 16px', fontSize: 13 }}>
-            <span style={{ color: 'var(--doc-text-2)' }}>Document ID</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{doc.document_id}</span>
+      <h1 style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.015em', margin: '8px 0 4px', color: 'var(--doc-text)', lineHeight: 1.3 }}>
+        {doc.document_title}
+      </h1>
+      <p style={{ fontSize: 13, color: 'var(--doc-text-2)', margin: '0 0 24px' }}>
+        {doc.issuing_body} · {(doc.document_type || doc.doc_type || '').replace(/-/g, ' ')} · {doc.document_version || 'v1'}
+      </p>
 
-            <span style={{ color: 'var(--doc-text-2)' }}>Issuing Body</span>
-            <span>{doc.issuing_body}</span>
+      {/* 2-column layout */}
+      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+        {/* Left column — 60% */}
+        <div style={{ flex: '0 0 60%', minWidth: 0 }}>
+          <SectionLabel>Metadata</SectionLabel>
+          <MetaRow label="Document ID">
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_id}</span>
+          </MetaRow>
+          <MetaRow label="Issuing Body">{doc.issuing_body}</MetaRow>
+          <MetaRow label="Document Type">{(doc.document_type || doc.doc_type || '—').replace(/-/g, ' ')}</MetaRow>
+          <MetaRow label="Version">{doc.document_version || '—'}</MetaRow>
+          <MetaRow label="Publication Date">{formatDate(doc.publication_date)}</MetaRow>
+          <MetaRow label="Status"><StatusBadge status={doc.ingestion_status} /></MetaRow>
+          <MetaRow label="Feed">{doc.feed_id || '—'}</MetaRow>
+          <MetaRow label="Source URL">
+            {doc.source_url ? (
+              <a href={doc.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-l)', fontSize: 12 }}>
+                View source ↗
+              </a>
+            ) : '—'}
+          </MetaRow>
+          <MetaRow label="Run ID">
+            {doc.run_id ? (
+              <Link to={`/corpus/runs?run=${doc.run_id}`} style={{ color: 'var(--accent-l)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                {doc.run_id.substring(0, 12)}…
+              </Link>
+            ) : '—'}
+          </MetaRow>
 
-            <span style={{ color: 'var(--doc-text-2)' }}>Document Type</span>
-            <span>{doc.document_type || doc.doc_type}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Version</span>
-            <span>{doc.document_version || '—'}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Publication Date</span>
-            <span>{formatDate(doc.publication_date)}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Status</span>
-            <span>
-              {doc.ingestion_status === 'indexed' || doc.ingestion_status === 'success' ? (
-                <span className="status ok">Current</span>
-              ) : doc.ingestion_status === 'superseded' ? (
-                <span className="status warn">Superseded</span>
-              ) : (
-                <span className="status warn">{doc.ingestion_status}</span>
-              )}
-            </span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Chunk Count</span>
-            <span>{doc.chunk_count}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Qdrant Points</span>
-            <span>{doc.qdrant_point_count}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Last Indexed</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{doc.last_indexed_at}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Run ID</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
-              {doc.run_id ? (
-                <Link to={`/corpus/runs?run=${doc.run_id}`} style={{ color: 'var(--accent-l)' }}>
-                  {doc.run_id.substring(0, 8)}...
-                </Link>
-              ) : '—'}
-            </span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Source URL</span>
-            <span>
-              {doc.source_url ? (
-                <a href={doc.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-l)', fontSize: 12 }}>
-                  View source ↗
-                </a>
-              ) : '—'}
-            </span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Feed Source</span>
-            <span>{doc.feed_id || '—'}</span>
-
-            <span style={{ color: 'var(--doc-text-2)' }}>Archive Path</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, wordBreak: 'break-all' }}>{doc.archive_path || '—'}</span>
-          </div>
-
-          {/* Hash comparison */}
-          <div style={{ marginTop: 20, padding: 16, background: 'var(--doc-bg)', borderRadius: 6, border: '1px solid var(--doc-border)' }}>
-            <h3 style={{ marginTop: 0 }}>Hash Comparison</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 1fr', alignItems: 'center', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 4 }}>PostgreSQL</div>
-                <Tooltip tip={doc.pg_source_hash || ''}>
-                  <code style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{hashAbbr(doc.pg_source_hash)}</code>
-                </Tooltip>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                {doc.hash_match ? (
-                  <span style={{ color: '#22c55e', fontSize: 24 }}>✓</span>
-                ) : (
-                  <span style={{ color: '#ef4444', fontSize: 24 }}>✗</span>
-                )}
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 4 }}>Qdrant</div>
-                <Tooltip tip={doc.qdrant_source_hash || ''}>
-                  <code style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{hashAbbr(doc.qdrant_source_hash)}</code>
-                </Tooltip>
-              </div>
+          <SectionLabel>Source Integrity</SectionLabel>
+          <div style={{ fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
+              <span style={{ color: 'var(--doc-text-2)' }}>PostgreSQL</span>
+              <Tooltip tip={doc.pg_source_hash || ''}>
+                <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.pg_source_hash)}</code>
+              </Tooltip>
             </div>
-            <div style={{ marginTop: 8, fontSize: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
+              <span style={{ color: 'var(--doc-text-2)' }}>Qdrant</span>
+              <Tooltip tip={doc.qdrant_source_hash || ''}>
+                <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.qdrant_source_hash)}</code>
+              </Tooltip>
+            </div>
+            <div style={{ marginTop: 10 }}>
               {doc.hash_match ? (
-                <span style={{ color: '#22c55e' }}>Hashes match</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--ok-text)', fontSize: 12, background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '4px 10px', borderRadius: 4 }}>
+                  <span style={{ fontSize: 16 }}>✓</span> Hashes match
+                </span>
               ) : (
-                <span style={{ color: '#ef4444' }}>Hash mismatch — investigate</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--err-text)', fontSize: 12, background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '4px 10px', borderRadius: 4 }}>
+                  ✗ Hash mismatch — investigate
+                </span>
               )}
             </div>
           </div>
 
-          {/* Supersede chain */}
           {chain && chain.chain && chain.chain.length > 1 && (
-            <div style={{ marginTop: 20, padding: 16, background: 'var(--doc-bg)', borderRadius: 6, border: '1px solid var(--doc-border)' }}>
-              <h3 style={{ marginTop: 0 }}>Version Chain</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <>
+              <SectionLabel>Version Chain</SectionLabel>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 {chain.chain.map((v, i) => (
-                  <span key={v.document_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span key={v.document_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Link
                       to={`/corpus/${v.document_id}`}
                       style={{
-                        padding: '6px 12px',
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontFamily: 'var(--mono)',
+                        padding: '4px 10px', borderRadius: 999,
+                        fontSize: 11, fontFamily: 'var(--mono)',
                         textDecoration: 'none',
                         background: v.document_id === docId ? 'var(--accent-l)' : 'transparent',
-                        color: v.document_id === docId ? '#fff' : 'var(--doc-text)',
+                        color: v.document_id === docId ? '#fff' : 'var(--doc-text-2)',
                         border: v.document_id === docId ? '1px solid var(--accent-l)' : '1px solid var(--doc-border)',
-                        opacity: v.is_superseded ? 0.6 : 1,
+                        opacity: v.is_superseded && v.document_id !== docId ? 0.6 : 1,
                       }}
                       title={`${v.document_version} · ${formatDate(v.publication_date)}`}
                     >
-                      {v.document_version || v.document_id.substring(0, 12)}
+                      {v.document_version || v.document_id.substring(0, 10)}
                     </Link>
-                    {i < chain.chain.length - 1 && <span style={{ color: 'var(--doc-text-3)' }}>→</span>}
+                    {i < chain.chain.length - 1 && <span style={{ color: 'var(--doc-text-3)', fontSize: 12 }}>›</span>}
                   </span>
                 ))}
               </div>
-            </div>
+            </>
           )}
         </div>
 
-        {/* Chunk list */}
-        <div className="rp-section" style={{ marginTop: 24 }}>
-          <h3>Chunks ({chunks.total})</h3>
-          <div className="rp-table-wrap" style={{ maxHeight: 500, overflowY: 'auto' }}>
-            <table className="rp-table">
+        {/* Right column — 40% */}
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <SectionLabel>Chunks ({chunks.total})</SectionLabel>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="rp-table" style={{ margin: 0 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 60 }}>Index</th>
-                  <th style={{ width: 200 }}>Clause ID</th>
+                  <th style={{ width: 50 }}>#</th>
+                  <th>Clause ID</th>
                   <th style={{ width: 80 }}>Status</th>
-                  <th style={{ width: 80 }}>Char Start</th>
-                  <th style={{ width: 80 }}>Char End</th>
-                  <th style={{ width: 80 }}>Cross-refs</th>
                 </tr>
               </thead>
               <tbody>
@@ -228,32 +205,22 @@ export default function DocumentDetailPage() {
                       style={{ cursor: 'pointer' }}
                     >
                       <td className="mono">{ch.chunk_index}</td>
-                      <td className="mono">{ch.clause_id || '—'}</td>
+                      <td className="mono" style={{ fontSize: 11 }}>{ch.clause_id || '—'}</td>
                       <td>
                         <span className={`status ${ch.chunk_status === 'active' ? 'ok' : 'warn'}`}>
                           {ch.chunk_status}
                         </span>
                       </td>
-                      <td className="mono">{ch.char_offset_start}</td>
-                      <td className="mono">{ch.char_offset_end}</td>
-                      <td className="mono">{ch.cross_refs?.length || 0}</td>
                     </tr>
                     {expandedChunk === ch.chunk_id && (
                       <tr key={`${ch.chunk_id}-exp`}>
-                        <td colSpan={6} style={{ padding: '12px 16px', background: 'var(--doc-bg)' }}>
+                        <td colSpan={3} style={{ padding: '10px 12px', background: 'var(--doc-bg)' }}>
                           <pre style={{
-                            fontFamily: 'var(--mono)',
-                            fontSize: 12,
-                            lineHeight: 1.6,
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word',
-                            maxHeight: 300,
-                            overflowY: 'auto',
-                            margin: 0,
-                            padding: 12,
-                            background: 'var(--doc-surface)',
-                            border: '1px solid var(--doc-border)',
-                            borderRadius: 4,
+                            fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.6,
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                            maxHeight: 240, overflowY: 'auto', margin: 0,
+                            padding: 10, background: 'var(--doc-surface)',
+                            border: '1px solid var(--doc-border)', borderRadius: 4,
                           }}>
                             {ch.chunk_text}
                           </pre>
@@ -270,17 +237,13 @@ export default function DocumentDetailPage() {
             <div className="rp-pager" style={{ marginTop: 12 }}>
               <span>{((chunkPage - 1) * chunkPageSize) + 1}–{Math.min(chunkPage * chunkPageSize, chunks.total)} of {chunks.total}</span>
               <div className="pages">
-                <button onClick={() => setChunkPage(Math.max(1, chunkPage - 1))} disabled={chunkPage <= 1}>
-                  &larr;
-                </button>
-                <button onClick={() => setChunkPage(chunkPage + 1)} disabled={chunkPage >= totalChunkPages}>
-                  &rarr;
-                </button>
+                <button onClick={() => setChunkPage(Math.max(1, chunkPage - 1))} disabled={chunkPage <= 1}>&larr;</button>
+                <button onClick={() => setChunkPage(chunkPage + 1)} disabled={chunkPage >= totalChunkPages}>&rarr;</button>
               </div>
             </div>
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

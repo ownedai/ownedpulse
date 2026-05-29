@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import Tooltip, { InfoIcon } from '../common/Tooltip';
+import Tooltip from '../common/Tooltip';
 
 const AGENCIES = ['All', 'FDA', 'EMA', 'ICH'];
 const AGENCY_TIPS = {
@@ -274,10 +274,6 @@ export default function FilterBar({ filters = {}, onChange, retrieval, onRetriev
     <div className="rp-filter">
       {/* Agency — compact button group */}
       <div className="grp">
-        <span className="grp-name">
-          Agency
-          <InfoIcon tip="Filter to documents from a specific regulatory agency" />
-        </span>
         {AGENCIES.map((a) => (
           <Tooltip key={a} tip={a === 'All' ? 'No agency filter — search across all indexed regulators' : (AGENCY_TIPS[a] || '')} placement="below">
             <button className={`pill${activeAgency === a ? ' on' : ''}`} onClick={() => setAgency(a)}>
@@ -289,19 +285,11 @@ export default function FilterBar({ filters = {}, onChange, retrieval, onRetriev
 
       {/* Type — dropdown */}
       <div className="grp">
-        <span className="grp-name">
-          Type
-          <InfoIcon tip="Guidance is normative; press releases are informational" />
-        </span>
         <TypeDropdown value={filters.document_type || null} onChange={(v) => onChange?.({ ...filters, document_type: v })} />
       </div>
 
       {/* Date — dropdown with custom popover */}
       <div className="grp">
-        <span className="grp-name">
-          Date
-          <InfoIcon tip="Filter by document publication date, not ingestion date" />
-        </span>
         <DateDropdown filters={filters} onChange={onChange} />
       </div>
 
