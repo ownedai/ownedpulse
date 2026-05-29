@@ -302,20 +302,29 @@ import httpx
 OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
 
-async def ollama_generate(prompt: str, system: str = "", model: str = None) -> str:
-    """Call Ollama generate API and return the response text."""
+async def ollama_generate(
+    prompt: str,
+    system: str = "",
+    model: str = None,
+    temperature: float | None = None,
+) -> str:
+    """Call Ollama generate API and return the response text.
+
+    temperature: None = model default (for answer generation).
+                 0.0  = deterministic (for query expansion).
+    """
     if model is None:
         model = get_active_model()
+    payload: dict = {
+        "model": model,
+        "prompt": prompt,
+        "system": system,
+        "stream": False,
+    }
+    if temperature is not None:
+        payload["options"] = {"temperature": temperature}
     async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(
-            f"{OLLAMA_BASE}/api/generate",
-            json={
-                "model": model,
-                "prompt": prompt,
-                "system": system,
-                "stream": False,
-            },
-        )
+        resp = await client.post(f"{OLLAMA_BASE}/api/generate", json=payload)
         resp.raise_for_status()
         return resp.json()["response"]
 
@@ -353,7 +362,7 @@ QUERY_EXPANSION_PROMPT = (
 async def expand_query(query: str, depth: int) -> list[str]:
     """Generate N sub-queries via Ollama query expansion."""
     prompt = QUERY_EXPANSION_PROMPT.format(N=depth, query=query)
-    response = await ollama_generate(prompt)
+    response = await ollama_generate(prompt, temperature=0.0)
     lines = [line.strip() for line in response.strip().split("\n") if line.strip()]
     # Remove any numbering/bullet prefixes
     cleaned = []
