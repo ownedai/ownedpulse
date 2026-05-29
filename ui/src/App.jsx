@@ -33,6 +33,7 @@ function MainPage() {
   const [activeCitation, setActiveCitation] = useState(null);
   const [showTrace, setShowTrace] = useState(false);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
+  const [exportFormat, setExportFormat] = useState('pdf');
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const chevronRef = useRef(null);
 
@@ -204,28 +205,48 @@ function MainPage() {
                   />
 
                   <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12, padding:'0 18px' }}>
-                    <button
-                      ref={chevronRef}
-                      onClick={() => {
-                        if (chevronRef.current) {
-                          const r = chevronRef.current.getBoundingClientRect();
-                          setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
-                        }
-                        setShowFormatMenu(m => !m);
-                      }}
-                      style={{
-                        height:34, padding:'0 16px', fontSize:13,
-                        background:'var(--doc-surface)', border:'1px solid #4a5568',
-                        borderRadius:6, cursor:'pointer',
-                        display:'flex', alignItems:'center', gap:6,
-                        color: 'var(--doc-text)',
-                      }}
-                    >
-                      Export
-                      <svg width="10" height="10" viewBox="0 0 10 6" fill="currentColor">
-                        <path d="M0 0l5 6 5-6z"/>
-                      </svg>
-                    </button>
+                    <div style={{
+                      display:'flex', height:34, borderRadius:6,
+                      border:'1px solid #4a5568', overflow:'hidden',
+                    }}>
+                      <button onClick={() => handleExport(exportFormat)}
+                        style={{
+                          height:34, padding:'0 14px', fontSize:13,
+                          background:'transparent', border:'none',
+                          borderRight:'1px solid #4a5568', cursor:'pointer',
+                          display:'flex', alignItems:'center', gap:6,
+                          color: 'var(--doc-text)',
+                        }}
+                      >
+                        Export
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                             stroke="currentColor" strokeWidth="1.5"
+                             strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M8 3v8M4 7l4 4 4-4M3 13h10"/>
+                        </svg>
+                      </button>
+                      <button
+                        ref={chevronRef}
+                        onClick={() => {
+                          if (chevronRef.current) {
+                            const r = chevronRef.current.getBoundingClientRect();
+                            setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+                          }
+                          setShowFormatMenu(m => !m);
+                        }}
+                        style={{
+                          height:34, padding:'0 8px', fontSize:13,
+                          background:'transparent', border:'none',
+                          cursor:'pointer', display:'flex',
+                          alignItems:'center',
+                          color: 'var(--doc-text)',
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 10 6" fill="currentColor">
+                          <path d="M0 0l5 6 5-6z"/>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
 
                   <QueryExpansion subQueries={result.sub_queries} />
@@ -310,8 +331,8 @@ function MainPage() {
             <div
               key={fmt}
               onClick={() => {
+                setExportFormat(fmt.toLowerCase());
                 setShowFormatMenu(false);
-                handleExport(fmt.toLowerCase());
               }}
               style={{
                 padding:'8px 16px', cursor:'pointer', fontSize:13,
