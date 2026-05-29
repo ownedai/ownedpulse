@@ -1,6 +1,5 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Logo from '../common/Logo';
-import Tooltip from '../common/Tooltip';
 import useHistory from '../../hooks/useHistory';
 import useCorpusStats from '../../hooks/useCorpusStats';
 import { formatDate, formatDateTime } from '../../dateFormat';
@@ -21,9 +20,48 @@ function relativeTime(iso) {
   return formatDate(iso);
 }
 
-export default function Sidebar({ activeQueryId, onNewQuery }) {
-  const { items } = useHistory(10);
+function isNavActive(to, pathname) {
+  if (to === '/') return pathname === '/';
+  if (to === '/corpus') {
+    return pathname === '/corpus' || (pathname.startsWith('/corpus/') && !pathname.startsWith('/corpus/runs'));
+  }
+  return pathname === to || pathname.startsWith(to + '/');
+}
+
+const SearchIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+  </svg>
+);
+const DatabaseIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+  </svg>
+);
+const ClockIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+);
+const SettingsIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
+
+const NAV_ITEMS = [
+  { to: '/', label: 'Query', Icon: SearchIcon },
+  { to: '/corpus', label: 'Corpus', Icon: DatabaseIcon },
+  { to: '/corpus/runs', label: 'Run Log', Icon: ClockIcon },
+  { to: '/admin', label: 'Admin', Icon: SettingsIcon, separator: true },
+];
+
+export default function Sidebar({ onNewQuery }) {
+  const { pathname } = useLocation();
+  const { items } = useHistory(5);
   const { stats } = useCorpusStats();
+  const isQueryPage = pathname === '/';
 
   return (
     <aside className="rp-sidebar">
@@ -38,58 +76,49 @@ export default function Sidebar({ activeQueryId, onNewQuery }) {
         New query
       </button>
 
-      <div className="grp-lbl">
-        <span>Recent queries</span>
-        <Link to="/history">View all &rarr;</Link>
-      </div>
-
-      <div className="rp-history">
-        {items.map((h) => (
-          <Link
-            key={h.query_id}
-            to={`/?q=${h.query_id}`}
-            className={`item${h.query_id === activeQueryId ? ' active' : ''}`}
-            style={{ textDecoration: 'none' }}
-          >
-            <div className="q">{h.query_text}</div>
-            <div className="t">{relativeTime(h.timestamp)}</div>
-          </Link>
+      <nav className="rp-nav">
+        {NAV_ITEMS.map(({ to, label, Icon, separator }) => (
+          <div key={to}>
+            {separator && <div className="rp-nav-sep" />}
+            <Link
+              to={to}
+              className={`rp-nav-item${isNavActive(to, pathname) ? ' active' : ''}`}
+            >
+              <Icon />
+              {label}
+            </Link>
+          </div>
         ))}
-      </div>
+      </nav>
 
-      <div className="rp-nav-links" style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--doc-border)' }}>
-        <Link to="/corpus" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', color: 'var(--doc-text-2)', textDecoration: 'none', fontSize: 13 }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <rect x="1" y="1" width="6" height="14" rx="1" />
-            <rect x="9" y="1" width="6" height="6" rx="1" />
-            <rect x="9" y="9" width="6" height="6" rx="1" />
-          </svg>
-          Corpus
-        </Link>
-        <Link to="/corpus/runs" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', color: 'var(--doc-text-2)', textDecoration: 'none', fontSize: 13 }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <circle cx="8" cy="8" r="6" />
-            <path d="M8 4v4l3 2" />
-          </svg>
-          Feed Runs
-        </Link>
-        <Link to="/admin" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', color: 'var(--doc-text-3)', textDecoration: 'none', fontSize: 12, fontWeight: 300, marginTop: 8 }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <circle cx="8" cy="8" r="6" />
-            <path d="M8 4v8M4 8h8" />
-          </svg>
-          Admin
-        </Link>
-      </div>
+      {isQueryPage && (
+        <>
+          <div className="grp-lbl">
+            <span>Recent queries</span>
+            <Link to="/history">View all &rarr;</Link>
+          </div>
+          <div className="rp-history">
+            {items.slice(0, 5).map((h) => (
+              <Link
+                key={h.query_id}
+                to={`/?q=${h.query_id}`}
+                className="item"
+                style={{ textDecoration: 'none' }}
+              >
+                <div className="q">{h.query_text}</div>
+                <div className="t">{relativeTime(h.timestamp)}</div>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="rp-status">
         <div className="grp-lbl" style={{ padding: 0, marginBottom: 8 }}>System</div>
         <div className="row rp-tip">
           <span className="k">Pipeline</span>
           <span className="v ok">
-            {stats?.last_pipeline_run
-              ? formatDateTime(stats.last_pipeline_run)
-              : '—'}
+            {stats?.last_pipeline_run ? formatDateTime(stats.last_pipeline_run) : '—'}
           </span>
           <span className="tip-body">Last document ingestion run</span>
         </div>

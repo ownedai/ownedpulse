@@ -208,24 +208,25 @@ body {
 /* ── Top nav bar ────────────────────────────────────────────────────────── */
 
 .top-nav {
-  height: 52px;
-  flex: 0 0 52px;
+  height: 44px;
+  flex: 0 0 44px;
   background: var(--shell-bg);
   border-bottom: 1px solid var(--shell-border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 18px;
+  justify-content: flex-end;
+  padding: 0 14px;
+  gap: 12px;
 }
 
-.top-nav .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.top-nav .brand .rp-wm {
-  font-size: 17px;
+.top-nav-title {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--shell-muted);
+  padding-left: 4px;
 }
 
 /* ── Theme toggle ───────────────────────────────────────────────────────── */
@@ -497,18 +498,56 @@ body {
   vertical-align: 1px;
 }
 
-/* ── Filter bar ─────────────────────────────────────────────────────────── */
+/* ── Sidebar nav ────────────────────────────────────────────────────────── */
 
-.rp-filter {
-  background: var(--shell-surface);
-  border-bottom: 1px solid var(--shell-border);
-  color: var(--shell-on);
-  padding: 0 14px 0 24px;
-  height: 52px;
-  flex: 0 0 52px;
+.rp-nav {
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rp-nav-item {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--sans);
+  color: var(--shell-muted);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.rp-nav-item:hover {
+  background: var(--shell-surface);
+  color: var(--shell-on);
+}
+
+.rp-nav-item.active {
+  background: var(--shell-surface);
+  color: #fff;
+  border-left: 2px solid var(--accent-d);
+  padding-left: 8px;
+}
+
+.rp-nav-sep {
+  height: 1px;
+  background: var(--shell-border-soft);
+  margin: 6px 10px;
+}
+
+/* ── Filter bar ─────────────────────────────────────────────────────────── */
+
+/* FilterBar now lives inside the content panel (light bg), not the shell */
+.rp-filter {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0 0;
+  flex-wrap: wrap;
 }
 
 .rp-filter .grp {
@@ -517,18 +556,13 @@ body {
   gap: 4px;
 }
 
-.rp-filter .grp + .grp {
-  padding-left: 18px;
-  border-left: 1px solid var(--shell-border-soft);
-}
-
 .rp-filter .grp-name {
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--shell-dim);
+  color: var(--doc-text-2);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-right: 6px;
+  margin-right: 4px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -536,71 +570,146 @@ body {
 
 .rp-filter .pill {
   font-family: var(--sans);
-  font-size: 12.5px;
-  color: var(--shell-muted);
-  padding: 5px 11px;
+  font-size: 12px;
+  color: var(--doc-text-2);
+  padding: 4px 10px;
   border-radius: 3px;
   cursor: pointer;
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--doc-border);
   line-height: 1;
   font-weight: 400;
-  letter-spacing: -0.005em;
 }
 
 .rp-filter .pill:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--doc-text);
+  background: var(--doc-hover);
 }
 
 .rp-filter .pill.on {
-  background: var(--accent-d);
-  color: var(--shell-bg);
-  border-color: var(--accent-d);
+  background: var(--accent-l);
+  color: #fff;
+  border-color: var(--accent-l);
   font-weight: 500;
-}
-
-.rp-filter .retrieval-toggle {
-  font-family: var(--sans);
-  font-size: 12.5px;
-  color: var(--shell-on);
-  background: transparent;
-  border: 1px solid var(--shell-border);
-  padding: 5px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  letter-spacing: -0.005em;
-}
-
-.rp-filter .retrieval-toggle:hover {
-  background: var(--shell-bg);
-}
-
-.rp-filter .retrieval-toggle.on {
-  background: rgba(96, 165, 250, 0.10);
-  border-color: rgba(96, 165, 250, 0.4);
-  color: var(--accent-d);
-}
-
-.rp-filter .retrieval-toggle .summary {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--shell-dim);
-  padding-left: 8px;
-  border-left: 1px solid var(--shell-border-soft);
 }
 
 .rp-filter .spacer {
   flex: 1;
 }
 
+/* Dropdown button (Type, Date) */
+.rp-dropdown-btn {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--doc-text-2);
+  background: transparent;
+  border: 1px solid var(--doc-border);
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+.rp-dropdown-btn:hover { background: var(--doc-hover); color: var(--doc-text); }
+.rp-dropdown-btn.open { border-color: var(--accent-l); color: var(--accent-l); }
+
+/* Gear icon button (retrieval settings) */
+.rp-gear-btn {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid var(--doc-border);
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--doc-text-2);
+}
+
+.rp-gear-btn:hover { background: var(--doc-hover); color: var(--doc-text); }
+.rp-gear-btn.active { border-color: var(--accent-l); color: var(--accent-l); }
+
+.rp-gear-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  background: var(--accent-l);
+  border-radius: 50%;
+}
+
+/* Floating popover */
+.rp-popover {
+  position: fixed;
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border-strong);
+  border-radius: 5px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  min-width: 140px;
+}
+
+.rp-popover-item {
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--doc-text);
+  border-radius: 0;
+}
+
+.rp-popover-item:first-child { border-radius: 5px 5px 0 0; }
+.rp-popover-item:last-child { border-radius: 0 0 5px 5px; }
+.rp-popover-item:hover { background: var(--doc-hover); }
+.rp-popover-item.active { color: var(--accent-l); font-weight: 500; }
+
+.rp-popover-section-lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--doc-text-2);
+  margin-bottom: 6px;
+}
+
+.rp-popover-apply {
+  display: block;
+  width: 100%;
+  background: var(--accent-l);
+  color: #fff;
+  border: none;
+  padding: 6px 0;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--sans);
+  cursor: pointer;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.rp-stepper-btn {
+  width: 26px;
+  height: 26px;
+  background: var(--doc-bg);
+  border: 1px solid var(--doc-border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--doc-text);
+}
+
 .rp-date-input {
-  background: var(--shell-surface);
-  border: 1px solid var(--shell-border);
-  color: var(--shell-on);
+  background: var(--doc-bg);
+  border: 1px solid var(--doc-border);
+  color: var(--doc-text);
   font-family: var(--mono);
   font-size: 11px;
   padding: 5px 8px;
@@ -608,9 +717,7 @@ body {
   outline: none;
 }
 
-.rp-date-input:focus {
-  border-color: var(--accent-d);
-}
+.rp-date-input:focus { border-color: var(--accent-l); }
 
 /* ── Retrieval settings row ─────────────────────────────────────────────── */
 
@@ -951,6 +1058,7 @@ body {
 
 /* ── Content area ───────────────────────────────────────────────────────── */
 
+/* Legacy — kept for non-MainPage routes that still use it */
 .rp-content-wrap {
   flex: 1 1 auto;
   min-height: 0;
@@ -967,14 +1075,56 @@ body {
   flex-direction: column;
 }
 
+/* Main query page — full height, scrollable */
+.rp-main-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--doc-bg);
+}
+
+/* Landing: vertically centre the query area */
+.rp-main-page.landing .rp-content-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 44px - 60px);
+}
+
 .rp-content-inner {
   flex: 1 1 auto;
   padding: 36px 56px 32px;
 }
 
-.rp-content .container {
+.rp-content .container,
+.rp-main-page .container {
   max-width: 880px;
   margin: 0 auto;
+}
+
+/* Query area (input + filter row, always together) */
+.rp-query-area {
+  margin-bottom: 24px;
+}
+
+/* Ask label on landing */
+.rp-ask-lbl {
+  font-size: 13px;
+  color: var(--doc-text-2);
+  margin-bottom: 10px;
+}
+
+/* Empty state: suggestions + stats bar */
+.rp-empty-state {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.rp-empty-suggestions {
+  padding-bottom: 24px;
 }
 
 /* ── Query result page ───────────────────────────────────────────────────── */
@@ -1465,17 +1615,80 @@ body {
 
 .rp-audit .spacer { flex: 1; }
 
-/* ── Source panel ────────────────────────────────────────────────────────── */
+/* ── Overlay drawer (source + trace) ─────────────────────────────────────── */
 
-.rp-source {
-  width: 42%;
-  flex: 0 0 42%;
+/* Backdrop — semi-transparent, clicking closes drawer */
+.rp-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+/* Drawer — slides over content, no layout shift */
+.rp-overlay-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 480px;
+  min-width: 420px;
   background: var(--doc-surface);
   border-left: 1px solid var(--doc-border-strong);
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  z-index: 101;
+  animation: rp-slide-in 250ms ease-out;
+}
+
+@keyframes rp-slide-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+/* Tab bar */
+.rp-drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--doc-border);
+  background: var(--doc-bg);
+  flex: 0 0 auto;
+}
+
+.rp-drawer-tab {
+  flex: 1;
+  padding: 9px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--doc-text-2);
+  transition: color 80ms ease;
+}
+
+.rp-drawer-tab:hover { color: var(--doc-text); }
+.rp-drawer-tab.active { color: var(--accent-l); border-bottom-color: var(--accent-l); }
+
+/* Scrollable tab content */
+.rp-drawer-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.rp-drawer-empty {
+  padding: 24px 20px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--doc-text-2);
+}
+
+/* Legacy alias — rp-source-head/nav used by drawer header */
+.rp-source {
+  /* kept for legacy references — not used in overlay mode */
+  display: none;
 }
 
 .rp-source-head {
@@ -1657,12 +1870,79 @@ body {
   color: var(--doc-text-2);
 }
 
-/* Content area shrinks when source panel is open */
-.rp-content.with-source .rp-content-inner { padding: 36px 40px 32px; }
+/* with-source no longer used — overlay drawer does not shift layout */
 
-.rp-content.with-source .rp-audit { padding-left: 40px; padding-right: 40px; }
+/* ── Trace tab content ──────────────────────────────────────────────────── */
 
-.rp-content.with-source .rp-corpus-bar { padding-left: 40px; padding-right: 40px; }
+.rp-trace-content {
+  padding: 14px 18px 24px;
+}
+
+.rp-trace-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--doc-text-2);
+  margin-bottom: 14px;
+  line-height: 1.7;
+}
+
+.rp-trace-meta .v { color: var(--doc-text); }
+
+.rp-trace-step {
+  border: 1px solid var(--doc-border);
+  border-radius: 3px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.rp-trace-step-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--doc-bg);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.rp-trace-step-head:hover { background: var(--doc-hover); }
+
+.rp-trace-step-head .name { color: var(--doc-text); display: flex; align-items: center; gap: 8px; }
+.rp-trace-step-head .ord {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--accent-tint);
+  color: var(--accent-l);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.rp-trace-step-head .latency { color: var(--doc-text-2); display: flex; align-items: center; gap: 6px; }
+
+.rp-trace-step-body {
+  padding: 8px 12px;
+  border-top: 1px solid var(--doc-border);
+  background: var(--doc-surface);
+}
+
+.rp-trace-row {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 0;
+  gap: 8px;
+  border-bottom: 1px solid var(--doc-border);
+}
+
+.rp-trace-row:last-child { border-bottom: none; }
+.rp-trace-row .k { color: var(--doc-text-2); }
+.rp-trace-row .v { color: var(--doc-text); word-break: break-word; }
 
 /* ── Trace drawer ────────────────────────────────────────────────────────── */
 
