@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { getCorpusDocuments, getCorpusStats } from '../../api/client';
-import DocumentViewer from './DocumentViewer';
-import CorpusStatsBar from '../query/CorpusStatsBar';
+import { useSearchParams, Link } from 'react-router-dom';
+import { getCorpusDocumentsV2, getCorpusStats } from '../../api/client';
 import Tooltip from '../common/Tooltip';
 import { formatDate, formatDateTime } from '../../dateFormat';
 
@@ -17,6 +15,17 @@ const DOC_TYPES = [
   { label: 'Guidance', value: 'guidance' },
   { label: 'Press Release', value: 'press-release' },
   { label: 'Reflection Paper', value: 'reflection-paper' },
+  { label: 'Safety Comms', value: 'safety-communication' },
+  { label: 'Reg. Decision', value: 'regulatory-decision' },
+  { label: 'News', value: 'news' },
+  { label: 'Other', value: 'other' },
+];
+const STATUS_OPTS = [
+  { label: 'All', value: null },
+  { label: 'Indexed', value: 'indexed' },
+  { label: 'Error', value: 'error' },
+  { label: 'Superseded', value: 'superseded' },
+  { label: 'Pending', value: 'pending' },
 ];
 
 export default function CorpusPage() {
@@ -29,52 +38,51 @@ export default function CorpusPage() {
     const a = searchParams.get('agency');
     return AGENCY_TABS.includes(a) ? a : 'All';
   });
+  const [docType, setDocType] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
 
   useEffect(() => {
     const a = searchParams.get('agency');
     setAgency(AGENCY_TABS.includes(a) ? a : 'All');
-    setOffset(0);
+    setPage(1);
   }, [searchParams]);
-  const [docType, setDocType] = useState(null);
-  const [offset, setOffset] = useState(0);
-  const [showFeeds, setShowFeeds] = useState(false);
-  const [viewerDoc, setViewerDoc] = useState(null);
-  const limit = 50;
 
   const fetchData = useCallback(() => {
     setLoading(true);
     const params = {
-      limit,
-      offset,
-      agency: agency === 'All' ? null : agency,
-      document_type: docType,
-      exclude_feeds: showFeeds ? 'false' : 'true',
+      page,
+      page_size: pageSize,
+      issuing_body: agency === 'All' ? null : agency,
+      doc_type: docType,
+      ingestion_status: status,
     };
-    getCorpusDocuments(params)
+    getCorpusDocumentsV2(params)
       .then((data) => {
-        setItems(data.documents || []);
+        setItems(data.items || []);
         setTotal(data.total || 0);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [agency, docType, offset, showFeeds]);
+  }, [agency, docType, status, page]);
 
+  useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => {
     getCorpusStats().then(setStats).catch(() => {});
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
   const lastRun = stats?.last_pipeline_run
     ? formatDateTime(stats.last_pipeline_run)
     : '—';
+  const totalPages = Math.ceil(total / pageSize);
 
   return (
     <>
       <div className="rp-page-head">
         <div>
           <h1>Corpus</h1>
-          <p>All indexed regulatory documents.</p>
+          <p>All indexed regulatory documents. Last pipeline run: {lastRun}</p>
         </div>
       </div>
 
@@ -85,7 +93,7 @@ export default function CorpusPage() {
             <Tooltip key={a} tip={a === 'All' ? 'Show all documents across all agencies' : `${AGENCY_TIPS[a]} — click to browse all documents from this agency`} placement="below">
               <button
                 className={`tab${agency === a ? ' on' : ''}`}
-                onClick={() => { setAgency(a); setOffset(0); }}
+                onClick={() => { setAgency(a); setPage(1); }}
               >
                 {a}
                 {stats && a === 'All' && <span className="count">{stats.total_documents?.toLocaleString()}</span>}
@@ -95,14 +103,14 @@ export default function CorpusPage() {
           ))}
         </div>
 
-        {/* Doc type filter */}
+        {/* Doc type and status filters */}
         <div className="rp-filter-strip">
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>Type:</span>
           {DOC_TYPES.map((dt) => (
             <button
               key={dt.label}
               className={`pill${docType === dt.value ? ' on' : ''}`}
-              onClick={() => { setDocType(dt.value); setOffset(0); }}
+              onClick={() => { setDocType(dt.value); setPage(1); }}
               style={{
                 fontFamily: 'var(--sans)',
                 fontSize: 12.5,
@@ -118,16 +126,28 @@ export default function CorpusPage() {
               {dt.label}
             </button>
           ))}
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)', marginLeft: 8 }}>Status:</span>
+          {STATUS_OPTS.map((s) => (
+            <button
+              key={s.label}
+              className={`pill${status === s.value ? ' on' : ''}`}
+              onClick={() => { setStatus(s.value); setPage(1); }}
+              style={{
+                fontFamily: 'var(--sans)',
+                fontSize: 12.5,
+                padding: '5px 11px',
+                borderRadius: 3,
+                cursor: 'pointer',
+                background: status === s.value ? 'var(--accent-l)' : 'transparent',
+                color: status === s.value ? '#fff' : 'var(--doc-text-2)',
+                border: status === s.value ? '1px solid var(--accent-l)' : '1px solid transparent',
+                fontWeight: status === s.value ? 500 : 400,
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
           <div className="spacer" style={{ flex: 1 }} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)', cursor: 'pointer', userSelect: 'none' }}>
-            <input
-              type="checkbox"
-              checked={showFeeds}
-              onChange={(e) => { setShowFeeds(e.target.checked); setOffset(0); }}
-              style={{ accentColor: 'var(--accent-l)', cursor: 'pointer' }}
-            />
-            Show feed items
-          </label>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
             {total.toLocaleString()} documents
           </span>
@@ -141,83 +161,74 @@ export default function CorpusPage() {
               <th style={{ width: 80 }}>Agency</th>
               <th style={{ width: 120 }}>Doc Type</th>
               <th style={{ width: 80 }}>Version</th>
-              <th style={{ width: 110 }}>Publication Date</th>
+              <th style={{ width: 110 }}>Pub Date</th>
+              <th style={{ width: 60 }}>Chunks</th>
               <th style={{ width: 90 }}>Status</th>
-              <th style={{ width: 80 }}>Actions</th>
+              <th style={{ width: 60 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && items.length === 0 && (
-              <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>
-                  Loading...
-                </td>
-              </tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>Loading...</td></tr>
             )}
             {!loading && items.length === 0 && (
-              <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>
-                  No documents found.
-                </td>
-              </tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>No documents found.</td></tr>
             )}
-            {items.map((doc) => (
-              <tr key={doc.document_id}>
-                <td>
-                  <span className="truncate" title={doc.document_title}>{doc.document_title}</span>
-                </td>
-                <td>
-                  <Tooltip tip={AGENCY_TIPS[doc.issuing_body] || doc.issuing_body}>
-                    <span className="agency-mini" style={{ cursor: 'help' }}>{doc.issuing_body}</span>
-                  </Tooltip>
-                </td>
-                <td className="mono">{doc.doc_type?.replace(/_/g, ' ') || '—'}</td>
-                <td className="mono">{doc.document_version || '—'}</td>
-                <td className="mono">{formatDate(doc.publication_date)}</td>
-                <td>
-                  {doc.superseded ? (
-                    <span className="status warn">Superseded</span>
-                  ) : (
-                    <span className="status ok">Current</span>
-                  )}
-                </td>
-                <td>
-                  {doc.source_file_format === 'html' || !doc.source_local_path ? (
-                    <button
-                      className="action"
-                      onClick={() => doc.source_url && window.open(doc.source_url, '_blank', 'noopener,noreferrer')}
-                      disabled={!doc.source_url}
-                      title={doc.source_url || 'No source URL available'}
-                    >
-                      View ↗
-                    </button>
-                  ) : (
-                    <button className="action" onClick={() => setViewerDoc(doc)}>View</button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {items.map((doc) => {
+              const isOk = doc.ingestion_status === 'indexed' || doc.ingestion_status === 'success';
+              const isSuperseded = doc.ingestion_status === 'superseded';
+              return (
+                <tr key={doc.document_id}>
+                  <td>
+                    <Link to={`/corpus/${doc.document_id}`} className="truncate" title={doc.document_title} style={{ color: 'var(--accent-l)', fontSize: 13 }}>
+                      {doc.document_title}
+                    </Link>
+                  </td>
+                  <td>
+                    <Tooltip tip={AGENCY_TIPS[doc.issuing_body] || doc.issuing_body}>
+                      <span className="agency-mini" style={{ cursor: 'help' }}>{doc.issuing_body}</span>
+                    </Tooltip>
+                  </td>
+                  <td className="mono" style={{ fontSize: 11 }}>{(doc.document_type || doc.doc_type || '—').replace(/-/g, ' ')}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>{doc.document_version || '—'}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
+                  <td className="mono">{doc.chunk_count || 0}</td>
+                  <td>
+                    {isSuperseded ? (
+                      <span className="status warn">Superseded</span>
+                    ) : isOk ? (
+                      <span className="status ok">Current</span>
+                    ) : (
+                      <span className="status warn">{doc.ingestion_status || '—'}</span>
+                    )}
+                  </td>
+                  <td>
+                    {doc.source_url && (
+                      <a href={doc.source_url} target="_blank" rel="noopener noreferrer" className="action" style={{ fontSize: 11 }}>
+                        View ↗
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
-        <div className="rp-pager">
-          <span>{offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()}</span>
-          <div className="pages">
-            <button onClick={() => setOffset(Math.max(0, offset - limit))} disabled={offset === 0}>
-              &larr;
-            </button>
-            <button onClick={() => setOffset(offset + limit)} disabled={offset + limit >= total}>
-              &rarr;
-            </button>
+        {totalPages > 1 && (
+          <div className="rp-pager">
+            <span>{((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, total)} of {total.toLocaleString()}</span>
+            <div className="pages">
+              <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page <= 1}>
+                &larr;
+              </button>
+              <button onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
+                &rarr;
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-
-      {viewerDoc && (
-        <DocumentViewer document={viewerDoc} onClose={() => setViewerDoc(null)} />
-      )}
-
-      <CorpusStatsBar />
     </>
   );
 }

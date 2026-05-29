@@ -72,3 +72,69 @@ export function getCorpusDocuments(params) {
 export function getHealth() {
   return request('/api/health');
 }
+
+// ── Corpus routes ────────────────────────────────────────────────────────────
+
+export function getCorpusDocumentsV2(params) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') qs.set(k, v);
+  });
+  return request(`/api/corpus/documents?${qs.toString()}`);
+}
+
+export function getDocumentDetail(docId) {
+  return request(`/api/corpus/documents/${encodeURIComponent(docId)}`);
+}
+
+export function getDocumentChunks(docId, page = 1, pageSize = 50) {
+  return request(`/api/corpus/documents/${encodeURIComponent(docId)}/chunks?page=${page}&page_size=${pageSize}`);
+}
+
+export function getFeedRuns(params) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') qs.set(k, v);
+  });
+  return request(`/api/corpus/feed-runs?${qs.toString()}`);
+}
+
+export function getFeedRunDetail(runId) {
+  return request(`/api/corpus/feed-runs/${encodeURIComponent(runId)}`);
+}
+
+export function getSupersedeChain(familyId) {
+  return request(`/api/corpus/supersede/${encodeURIComponent(familyId)}`);
+}
+
+// ── Admin routes ─────────────────────────────────────────────────────────────
+
+export function getAdminHealth() {
+  return request('/api/admin/health');
+}
+
+export function getAdminFeeds() {
+  return request('/api/admin/feeds');
+}
+
+export function toggleFeed(feedId, enabled) {
+  return request(`/api/admin/feeds/${encodeURIComponent(feedId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function triggerPipelineRun() {
+  return request('/api/admin/trigger-run', { method: 'POST' });
+}
+
+export function getAdminModels() {
+  return request('/api/admin/models');
+}
+
+export function updateActiveModel(model) {
+  return request('/api/admin/model', {
+    method: 'PUT',
+    body: JSON.stringify({ model }),
+  });
+}

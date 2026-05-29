@@ -17,9 +17,15 @@ from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field
 from typing import Literal
 
+from routers.corpus import router as corpus_router
+from routers.admin import router as admin_router
+
 # ── App init ──────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="regpulse API", version="0.7.0")
+
+app.include_router(corpus_router, prefix="/api/corpus")
+app.include_router(admin_router, prefix="/api/admin")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +54,33 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
 OLLAMA_GEN_MODEL = os.getenv("OLLAMA_GEN_MODEL", "phi4:14b-q8_0")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
+
+# ── Active model cache (60s TTL, read from system_config) ─────────────────────
+
+_model_cache = {"value": None, "fetched_at": 0.0}
+
+
+def get_active_model() -> str:
+    import time
+    now = time.time()
+    if _model_cache["value"] is not None and (now - _model_cache["fetched_at"]) < 60:
+        return _model_cache["value"]
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM system_config WHERE key = 'active_llm_model'")
+            row = cur.fetchone()
+            cur.close()
+            if row and row[0]:
+                _model_cache["value"] = row[0]
+                _model_cache["fetched_at"] = now
+                return row[0]
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return _model_cache["value"] or OLLAMA_GEN_MODEL
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 
@@ -272,7 +305,7 @@ OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 async def ollama_generate(prompt: str, system: str = "", model: str = None) -> str:
     """Call Ollama generate API and return the response text."""
     if model is None:
-        model = OLLAMA_GEN_MODEL
+        model = get_active_model()
     async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(
             f"{OLLAMA_BASE}/api/generate",
@@ -1509,140 +1542,3 @@ async def pdf_info(file_path: str):
                 doc.close()
             except Exception:
                 pass
-
-
-# ── GET /api/corpus/stats ─────────────────────────────────────────────────────
-
-
-@app.get("/api/corpus/stats")
-async def corpus_stats():
-    conn = get_pg_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM document_registry")
-        total = cur.fetchone()[0]
-
-        cur.execute("SELECT issuing_body, count(*) FROM document_registry GROUP BY issuing_body")
-        raw_agency = dict(cur.fetchall())
-
-        # Normalise EU-Commission → EMA
-        per_agency = {}
-        for agency, count in raw_agency.items():
-            key = normalise_agency(agency)
-            per_agency[key] = per_agency.get(key, 0) + count
-
-        cur.execute(
-            "SELECT metadata_json->>'document_type', count(*) FROM document_registry GROUP BY metadata_json->>'document_type'"
-        )
-        per_doc_type = dict(cur.fetchall())
-
-        cur.execute("SELECT max(last_indexed_at) FROM document_registry")
-        last_run = cur.fetchone()[0]
-        last_run_iso = last_run.isoformat() if last_run else None
-
-        cur.close()
-        return {
-            "total_documents": total,
-            "per_agency": per_agency,
-            "per_document_type": per_doc_type,
-            "last_pipeline_run": last_run_iso,
-        }
-    finally:
-        conn.close()
-
-
-# ── GET /api/corpus/documents ─────────────────────────────────────────────────
-
-
-@app.get("/api/corpus/documents")
-async def corpus_documents(
-    agency: str | None = None,
-    document_type: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    exclude_feeds: bool = True,
-    limit: int = 50,
-    offset: int = 0,
-):
-    conn = get_pg_conn()
-    try:
-        cur = conn.cursor()
-        conditions = []
-        params = []
-
-        if agency:
-            if agency == "EMA":
-                conditions.append("issuing_body IN (%s, %s)")
-                params.extend(["EMA", "EU-Commission"])
-            else:
-                conditions.append("issuing_body = %s")
-                params.append(agency)
-
-        if document_type:
-            conditions.append("(doc_type = %s OR metadata_json->>'document_type' = %s)")
-            doc_type_underscored = document_type.replace("-", "_")
-            params.extend([doc_type_underscored, document_type])
-
-        if date_from:
-            conditions.append("metadata_json->>'publication_date' >= %s")
-            params.append(date_from)
-
-        if date_to:
-            conditions.append("metadata_json->>'publication_date' <= %s")
-            params.append(date_to)
-
-        if exclude_feeds:
-            conditions.append("feed_id IS NULL")
-
-        where = ""
-        if conditions:
-            where = " WHERE " + " AND ".join(conditions)
-
-        cur.execute(f"SELECT count(*) FROM document_registry{where}", params)
-        total = cur.fetchone()[0]
-
-        cur.execute(
-            f"""SELECT document_id, issuing_body, doc_type, last_indexed_at,
-                       metadata_json->>'document_title' as title,
-                       metadata_json->>'publication_date' as pub_date,
-                       metadata_json->>'document_version' as version,
-                       document_family_id, archive_path,
-                       metadata_json->>'source_file_format' as source_file_format,
-                       metadata_json->>'source_url' as source_url
-                FROM document_registry{where}
-                ORDER BY last_indexed_at DESC NULLS LAST
-                LIMIT %s OFFSET %s""",
-            params + [limit, offset]
-        )
-        rows = cur.fetchall()
-        cur.close()
-
-        superseded_ids = set()
-        for row in rows:
-            if row[7]:  # document_family_id
-                superseded_ids.add(row[0])
-
-        results = []
-        for row in rows:
-            doc_id, ib, dt, li, title, pub_date, version, fam_id, archive_path, file_format, source_url = row
-            is_html = file_format == "html"
-            results.append({
-                "document_id": doc_id,
-                "issuing_body": normalise_agency(ib),
-                "doc_type": dt,
-                "document_type": dt.replace("_", "-") if dt else None,
-                "document_title": strip_title_suffix(title) if title else "Untitled",
-                "publication_date": pub_date,
-                "document_version": version,
-                "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
-                "is_superseded": fam_id is not None and fam_id != "",
-                "superseded_by": None,  # would need family resolution
-                "source_file_format": file_format,
-                "source_url": source_url,
-                "source_local_path": None if is_html else (f"{archive_path}/source.pdf" if archive_path else None),
-                "archive_path": archive_path,
-            })
-
-        return {"total": total, "documents": results, "limit": limit, "offset": offset}
-    finally:
-        conn.close()

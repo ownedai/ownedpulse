@@ -1,0 +1,496 @@
+"""Corpus router — /api/corpus/ routes for document registry and run log."""
+
+import os
+import json
+from fastapi import APIRouter, HTTPException, Query
+from qdrant_client import QdrantClient
+
+router = APIRouter()
+
+QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
+
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+
+
+def get_pg_conn():
+    import psycopg2
+    return psycopg2.connect(
+        host=POSTGRES_HOST, port=POSTGRES_PORT,
+        dbname=POSTGRES_DB, user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD, connect_timeout=10
+    )
+
+
+def normalise_agency(agency: str) -> str:
+    if agency == "EU-Commission":
+        return "EMA"
+    return agency
+
+
+# ── GET /api/corpus/stats ─────────────────────────────────────────────────────
+
+@router.get("/stats")
+async def corpus_stats():
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+
+        cur.execute("SELECT count(*) FROM document_registry")
+        total = cur.fetchone()[0]
+
+        cur.execute("SELECT issuing_body, count(*) FROM document_registry GROUP BY issuing_body")
+        raw_agency = dict(cur.fetchall())
+        per_agency = {}
+        for agency, count in raw_agency.items():
+            key = normalise_agency(agency)
+            per_agency[key] = per_agency.get(key, 0) + count
+
+        cur.execute(
+            "SELECT metadata_json->>'document_type', count(*) "
+            "FROM document_registry GROUP BY metadata_json->>'document_type'"
+        )
+        per_doc_type = dict(cur.fetchall())
+
+        cur.execute("SELECT max(last_indexed_at) FROM document_registry")
+        last_run = cur.fetchone()[0]
+        last_run_iso = last_run.isoformat() if last_run else None
+
+        cur.close()
+        return {
+            "total_documents": total,
+            "per_agency": per_agency,
+            "per_document_type": per_doc_type,
+            "last_pipeline_run": last_run_iso,
+        }
+    finally:
+        conn.close()
+
+
+# ── GET /api/corpus/documents ─────────────────────────────────────────────────
+
+@router.get("/documents")
+async def corpus_documents(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    issuing_body: str | None = None,
+    doc_type: str | None = None,
+    ingestion_status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        conditions = []
+        params = []
+
+        if issuing_body:
+            if issuing_body == "EMA":
+                conditions.append("issuing_body IN (%s, %s)")
+                params.extend(["EMA", "EU-Commission"])
+            else:
+                conditions.append("issuing_body = %s")
+                params.append(issuing_body)
+
+        if doc_type:
+            conditions.append("(doc_type = %s OR metadata_json->>'document_type' = %s)")
+            doc_type_underscored = doc_type.replace("-", "_")
+            params.extend([doc_type_underscored, doc_type])
+
+        if ingestion_status:
+            conditions.append("ingestion_status = %s")
+            params.append(ingestion_status)
+
+        if date_from:
+            conditions.append("metadata_json->>'publication_date' >= %s")
+            params.append(date_from)
+
+        if date_to:
+            conditions.append("metadata_json->>'publication_date' <= %s")
+            params.append(date_to)
+
+        where = ""
+        if conditions:
+            where = " WHERE " + " AND ".join(conditions)
+
+        cur.execute(f"SELECT count(*) FROM document_registry{where}", params)
+        total = cur.fetchone()[0]
+
+        offset = (page - 1) * page_size
+        cur.execute(
+            f"""SELECT document_id, issuing_body, doc_type, ingestion_status,
+                       chunk_count, last_indexed_at, run_id,
+                       metadata_json->>'document_title' as title,
+                       metadata_json->>'publication_date' as pub_date,
+                       metadata_json->>'document_version' as version,
+                       metadata_json->>'document_type' as regulatory_type,
+                       metadata_json->>'source_url' as source_url,
+                       document_family_id
+                FROM document_registry{where}
+                ORDER BY last_indexed_at DESC NULLS LAST
+                LIMIT %s OFFSET %s""",
+            params + [page_size, offset]
+        )
+        rows = cur.fetchall()
+        cur.close()
+
+        items = []
+        for row in rows:
+            doc_id, ib, dt, status, chunk_count, li, run_id, title, pub_date, version, reg_type, source_url, fam_id = row
+            items.append({
+                "document_id": doc_id,
+                "document_title": title or "Untitled",
+                "document_type": reg_type or None,
+                "doc_type": dt,
+                "document_version": version,
+                "publication_date": pub_date,
+                "issuing_body": normalise_agency(ib),
+                "ingestion_status": status,
+                "chunk_count": chunk_count or 0,
+                "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
+                "run_id": run_id,
+                "document_family_id": fam_id,
+                "source_url": source_url,
+            })
+
+        return {"total": total, "page": page, "page_size": page_size, "items": items}
+    finally:
+        conn.close()
+
+
+# ── GET /api/corpus/documents/{doc_id} ────────────────────────────────────────
+
+@router.get("/documents/{doc_id}")
+async def document_detail(doc_id: str):
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT document_id, issuing_body, doc_type, ingestion_status,
+                      chunk_count, last_indexed_at, run_id,
+                      metadata_json->>'document_title' as title,
+                      metadata_json->>'publication_date' as pub_date,
+                      metadata_json->>'document_version' as version,
+                      metadata_json->>'document_type' as regulatory_type,
+                      metadata_json->>'source_url' as source_url,
+                      metadata_json->>'source_file_hash' as pg_source_hash,
+                      metadata_json->>'source_file_format' as file_format,
+                      metadata_json->>'archive_path' as archive_path_json,
+                      document_family_id, archive_path, feed_id
+               FROM document_registry WHERE document_id = %s""",
+            (doc_id,)
+        )
+        row = cur.fetchone()
+        cur.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        (did, ib, dt, status, chunk_count, li, run_id, title, pub_date, version,
+         reg_type, source_url, pg_source_hash, file_format, archive_path_json, fam_id, archive_path, feed_id) = row
+
+        # Query Qdrant for the first chunk's source_hash and total point count
+        qdrant_source_hash = None
+        qdrant_point_count = 0
+        hash_match = True
+        try:
+            client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            scroll_result = client.scroll(
+                collection_name=QDRANT_COLLECTION,
+                scroll_filter={
+                    "must": [{"key": "document_id", "match": {"value": doc_id}}]
+                },
+                limit=1,
+                with_payload=["source_hash"],
+            )
+            points = scroll_result[0] if scroll_result else []
+            if points:
+                qdrant_source_hash = points[0].payload.get("source_hash")
+
+            count_result = client.count(
+                collection_name=QDRANT_COLLECTION,
+                count_filter={
+                    "must": [{"key": "document_id", "match": {"value": doc_id}}]
+                },
+                exact=True,
+            )
+            qdrant_point_count = count_result.count
+
+            if pg_source_hash and qdrant_source_hash and pg_source_hash != qdrant_source_hash:
+                hash_match = False
+        except Exception:
+            pass
+
+        return {
+            "document_id": did,
+            "document_title": title or "Untitled",
+            "document_type": reg_type or None,
+            "doc_type": dt,
+            "document_version": version,
+            "publication_date": pub_date,
+            "issuing_body": normalise_agency(ib),
+            "ingestion_status": status,
+            "chunk_count": chunk_count or 0,
+            "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
+            "run_id": run_id,
+            "document_family_id": fam_id,
+            "source_url": source_url,
+            "source_file_format": file_format,
+            "archive_path": archive_path,
+            "feed_id": feed_id,
+            "pg_source_hash": pg_source_hash,
+            "qdrant_source_hash": qdrant_source_hash,
+            "hash_match": hash_match,
+            "qdrant_point_count": qdrant_point_count,
+        }
+    finally:
+        conn.close()
+
+
+# ── GET /api/corpus/documents/{doc_id}/chunks ─────────────────────────────────
+
+@router.get("/documents/{doc_id}/chunks")
+async def document_chunks(
+    doc_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+        total = client.count(
+            collection_name=QDRANT_COLLECTION,
+            count_filter={
+                "must": [{"key": "document_id", "match": {"value": doc_id}}]
+            },
+            exact=True,
+        ).count
+
+        if total == 0:
+            return {"document_id": doc_id, "total": 0, "items": []}
+
+        offset = (page - 1) * page_size
+        scroll_result = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter={
+                "must": [{"key": "document_id", "match": {"value": doc_id}}]
+            },
+            limit=page_size,
+            offset=offset,
+            with_payload=[
+                "chunk_id", "chunk_index", "clause_id", "chunk_status",
+                "char_offset_start", "char_offset_end", "cross_refs", "chunk_text",
+            ],
+        )
+        points = scroll_result[0] if scroll_result else []
+
+        items = []
+        for pt in points:
+            p = pt.payload
+            items.append({
+                "chunk_id": pt.id,
+                "chunk_index": p.get("chunk_index"),
+                "clause_id": p.get("clause_id"),
+                "chunk_status": p.get("chunk_status"),
+                "char_offset_start": p.get("char_offset_start"),
+                "char_offset_end": p.get("char_offset_end"),
+                "cross_refs": p.get("cross_refs", []),
+                "chunk_text": p.get("chunk_text", ""),
+            })
+
+        return {"document_id": doc_id, "total": total, "items": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Qdrant error: {str(e)}")
+
+
+# ── GET /api/corpus/feed-runs ─────────────────────────────────────────────────
+
+@router.get("/feed-runs")
+async def feed_runs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=200),
+    status: str | None = None,
+    feed_source: str | None = None,
+):
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        conditions = []
+        params = []
+
+        if status:
+            conditions.append("status = %s")
+            params.append(status)
+
+        if feed_source:
+            conditions.append("feed_source = %s")
+            params.append(feed_source)
+
+        where = ""
+        if conditions:
+            where = " WHERE " + " AND ".join(conditions)
+
+        cur.execute(f"SELECT count(*) FROM run_log{where}", params)
+        total = cur.fetchone()[0]
+
+        offset = (page - 1) * page_size
+        cur.execute(
+            f"""SELECT run_id, triggered_at, completed_at, trigger_source,
+                       feed_source, status, items_fetched, items_new,
+                       items_skipped, error_count, duration_ms, error_detail,
+                       n8n_execution_id
+                FROM run_log{where}
+                ORDER BY triggered_at DESC
+                LIMIT %s OFFSET %s""",
+            params + [page_size, offset]
+        )
+        rows = cur.fetchall()
+        cur.close()
+
+        items = []
+        for row in rows:
+            run_id, triggered_at, completed_at, trigger_source, feed_source, status, \
+                fetched, new, skipped, err_count, dur, err_detail, n8n_exec = row
+            items.append({
+                "run_id": run_id,
+                "triggered_at": triggered_at.isoformat() if hasattr(triggered_at, 'isoformat') else str(triggered_at) if triggered_at else None,
+                "completed_at": completed_at.isoformat() if hasattr(completed_at, 'isoformat') else str(completed_at) if completed_at else None,
+                "trigger_source": trigger_source,
+                "feed_source": feed_source,
+                "status": status,
+                "items_fetched": fetched,
+                "items_new": new,
+                "items_skipped": skipped,
+                "error_count": err_count,
+                "duration_ms": dur,
+                "error_detail": err_detail,
+                "n8n_execution_id": n8n_exec,
+            })
+
+        return {"total": total, "page": page, "page_size": page_size, "items": items}
+    finally:
+        conn.close()
+
+
+# ── GET /api/corpus/feed-runs/{run_id} ────────────────────────────────────────
+
+@router.get("/feed-runs/{run_id}")
+async def feed_run_detail(run_id: str):
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT run_id, triggered_at, completed_at, trigger_source,
+                      feed_source, status, items_fetched, items_new,
+                      items_skipped, error_count, duration_ms, error_detail,
+                      n8n_execution_id
+               FROM run_log WHERE run_id = %s""",
+            (run_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        (rid, triggered_at, completed_at, trigger_source, feed_source, status,
+         fetched, new, skipped, err_count, dur, err_detail, n8n_exec) = row
+
+        run = {
+            "run_id": rid,
+            "triggered_at": triggered_at.isoformat() if hasattr(triggered_at, 'isoformat') else str(triggered_at) if triggered_at else None,
+            "completed_at": completed_at.isoformat() if hasattr(completed_at, 'isoformat') else str(completed_at) if completed_at else None,
+            "trigger_source": trigger_source,
+            "feed_source": feed_source,
+            "status": status,
+            "items_fetched": fetched,
+            "items_new": new,
+            "items_skipped": skipped,
+            "error_count": err_count,
+            "duration_ms": dur,
+            "error_detail": err_detail,
+            "n8n_execution_id": n8n_exec,
+        }
+
+        # Find documents ingested in this run
+        cur.execute(
+            """SELECT document_id,
+                      metadata_json->>'document_title' as title,
+                      metadata_json->>'document_type' as doc_type,
+                      metadata_json->>'publication_date' as pub_date,
+                      chunk_count, ingestion_status
+               FROM document_registry WHERE run_id = %s
+               ORDER BY last_indexed_at DESC""",
+            (run_id,)
+        )
+        doc_rows = cur.fetchall()
+        cur.close()
+
+        documents = []
+        for dr in doc_rows:
+            doc_id, title, doc_type, pub_date, chunk_count, status = dr
+            documents.append({
+                "document_id": doc_id,
+                "document_title": title or "Untitled",
+                "document_type": doc_type,
+                "publication_date": pub_date,
+                "chunk_count": chunk_count or 0,
+                "ingestion_status": status,
+            })
+
+        return {"run": run, "documents": documents}
+    finally:
+        conn.close()
+
+
+# ── GET /api/corpus/supersede/{document_family_id} ────────────────────────────
+
+@router.get("/supersede/{document_family_id}")
+async def supersede_chain(document_family_id: str):
+    if not document_family_id:
+        raise HTTPException(status_code=400, detail="document_family_id is required")
+
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT document_id, document_family_id,
+                      metadata_json->>'document_title' as title,
+                      metadata_json->>'document_version' as version,
+                      metadata_json->>'publication_date' as pub_date,
+                      chunk_count, ingestion_status,
+                      metadata_json->>'document_type' as doc_type
+               FROM document_registry
+               WHERE document_family_id = %s
+               ORDER BY metadata_json->>'publication_date' ASC NULLS LAST""",
+            (document_family_id,)
+        )
+        rows = cur.fetchall()
+        cur.close()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Document family not found")
+
+        chain = []
+        for row in rows:
+            doc_id, fam_id, title, version, pub_date, chunk_count, status, doc_type = row
+            is_superseded = status == "superseded"
+            chain.append({
+                "document_id": doc_id,
+                "document_title": title or "Untitled",
+                "document_version": version,
+                "publication_date": pub_date,
+                "document_type": doc_type,
+                "chunk_count": chunk_count or 0,
+                "ingestion_status": status,
+                "document_family_id": fam_id,
+                "is_superseded": is_superseded,
+            })
+
+        return {"document_family_id": document_family_id, "chain": chain}
+    finally:
+        conn.close()

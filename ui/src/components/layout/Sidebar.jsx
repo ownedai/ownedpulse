@@ -57,6 +57,31 @@ export default function Sidebar({ activeQueryId, onNewQuery }) {
         ))}
       </div>
 
+      <div className="rp-nav-links" style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--doc-border)' }}>
+        <Link to="/corpus" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', color: 'var(--doc-text-2)', textDecoration: 'none', fontSize: 13 }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="1" y="1" width="6" height="14" rx="1" />
+            <rect x="9" y="1" width="6" height="6" rx="1" />
+            <rect x="9" y="9" width="6" height="6" rx="1" />
+          </svg>
+          Corpus
+        </Link>
+        <Link to="/corpus/runs" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', color: 'var(--doc-text-2)', textDecoration: 'none', fontSize: 13 }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M8 4v4l3 2" />
+          </svg>
+          Feed Runs
+        </Link>
+        <Link to="/admin" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', color: 'var(--doc-text-3)', textDecoration: 'none', fontSize: 12, fontWeight: 300, marginTop: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M8 4v8M4 8h8" />
+          </svg>
+          Admin
+        </Link>
+      </div>
+
       <div className="rp-status">
         <div className="grp-lbl" style={{ padding: 0, marginBottom: 8 }}>System</div>
         <div className="row rp-tip">

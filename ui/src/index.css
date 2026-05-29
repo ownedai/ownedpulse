@@ -2128,3 +2128,47 @@ body {
 .rp-corpus-wrap ::-webkit-scrollbar-thumb:hover {
   background: var(--doc-text-2);
 }
+
+/* ── Admin page cards ───────────────────────────────────────────────────── */
+
+.rp-card {
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.rp-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--doc-border);
+}
+
+.rp-card-head h3 {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--doc-text);
+  margin: 0;
+}
+
+/* ── Document detail page ────────────────────────────────────────────────── */
+
+.rp-section h3 {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--doc-text);
+  margin: 0 0 12px 0;
+}
+
+/* ── Running status pulse animation ──────────────────────────────────────── */
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

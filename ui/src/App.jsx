@@ -15,6 +15,9 @@ import QueryExpansion from './components/query/QueryExpansion';
 import AuditFooter from './components/query/AuditFooter';
 import HistoryPage from './components/pages/HistoryPage';
 import CorpusPage from './components/pages/CorpusPage';
+import DocumentDetailPage from './components/pages/DocumentDetailPage';
+import RunLogPage from './components/pages/RunLogPage';
+import AdminPage from './components/pages/AdminPage';
 import useQuery from './hooks/useQuery';
 import { exportQuery } from './api/client';
 import { todayISO } from './dateFormat';
@@ -367,6 +370,9 @@ export default function App() {
           <Route path="/" element={<MainPage key={resetKey} />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/corpus" element={<CorpusPage />} />
+          <Route path="/corpus/:docId" element={<DocumentDetailPage />} />
+          <Route path="/corpus/runs" element={<RunLogPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
