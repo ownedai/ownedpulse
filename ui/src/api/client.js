@@ -37,11 +37,10 @@ export function exportQuery(queryId, format = 'json') {
   });
 }
 
-export function exportHistory(format = 'json') {
-  const url = `${API_BASE}/api/query/history/export?format=${format}`;
-  return fetch(url).then(r => {
+export function exportHistory() {
+  return fetch(`${API_BASE}/api/query/history/export`).then(r => {
     if (!r.ok) throw new Error(`History export failed: ${r.status}`);
-    return format === 'json' ? r.json() : r.blob();
+    return r.text();
   });
 }
 

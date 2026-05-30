@@ -10,7 +10,6 @@ export default function HistoryPage() {
   const [offset, setOffset] = useState(0);
   const [sort, setSort] = useState({ field: 'timestamp', dir: 'desc' });
   const [filterAgency, setFilterAgency] = useState('All');
-  const [filterRouting, setFilterRouting] = useState('All');
   const limit = 50;
 
   const fetchData = useCallback(() => {
@@ -23,27 +22,16 @@ export default function HistoryPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  function handleExport(format) {
-    exportHistory(format)
+  function handleExport() {
+    exportHistory()
       .then((data) => {
-        if (format === 'json') {
-          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `regpulse-history-export-${todayISO()}.json`;
-          a.click();
-          URL.revokeObjectURL(url);
-        } else {
-          // CSV comes as text
-          const blob = new Blob([data], { type: 'text/csv' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `regpulse-history-export-${todayISO()}.csv`;
-          a.click();
-          URL.revokeObjectURL(url);
-        }
+        const blob = new Blob([data], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `regpulse-audit-export-${todayISO()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
       })
       .catch(() => {});
   }
@@ -53,10 +41,6 @@ export default function HistoryPage() {
   if (filterAgency !== 'All') {
     filtered = filtered.filter((h) => h.agency_filter === filterAgency || (h.filters_applied?.agency === filterAgency));
   }
-  if (filterRouting !== 'All') {
-    filtered = filtered.filter((h) => h.routing_path === filterRouting);
-  }
-
   // Sort
   filtered = [...filtered].sort((a, b) => {
     const aVal = a[sort.field] || '';
@@ -85,8 +69,7 @@ export default function HistoryPage() {
           <p>Every query executed on this instance, recorded for compliance traceability.</p>
         </div>
         <div className="actions">
-          <button className="rp-export" onClick={() => handleExport('json')}>Export JSON</button>
-          <button className="rp-export" onClick={() => handleExport('csv')}>Export CSV</button>
+          <button className="rp-export" onClick={handleExport}>Audit export (CSV)</button>
         </div>
       </div>
 
@@ -98,11 +81,6 @@ export default function HistoryPage() {
             <option value="FDA">FDA</option>
             <option value="EMA">EMA</option>
             <option value="ICH">ICH</option>
-          </select>
-          <select value={filterRouting} onChange={(e) => setFilterRouting(e.target.value)} className="select">
-            <option value="All">All routing</option>
-            <option value="CONTENT">Semantic search</option>
-            <option value="METADATA">Metadata lookup</option>
           </select>
           <div className="spacer" style={{ flex: 1 }} />
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
@@ -116,7 +94,6 @@ export default function HistoryPage() {
               <th style={{ width: 40 }}>#</th>
               <th>Query</th>
               <th className={sortClass('timestamp')} onClick={() => handleSort('timestamp')}>Date/Time</th>
-              <th className={sortClass('routing_path')} onClick={() => handleSort('routing_path')}>Routing</th>
               <th className={sortClass('agency_filter')} onClick={() => handleSort('agency_filter')}>Agency</th>
               <th className={sortClass('citation_count')} onClick={() => handleSort('citation_count')}>Sources</th>
               <th style={{ width: 80 }}>Actions</th>
@@ -125,14 +102,14 @@ export default function HistoryPage() {
           <tbody>
             {loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>
                   Loading...
                 </td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>
                   No queries found.
                 </td>
               </tr>
@@ -142,13 +119,11 @@ export default function HistoryPage() {
                 <td className="num">{offset + i + 1}</td>
                 <td>
                   <span className="truncate" title={h.query_text}>{h.query_text}</span>
+                  {h.routing_path === 'METADATA' && (
+                    <span className="rp-meta-badge" title="This query used metadata lookup instead of semantic search">Metadata lookup</span>
+                  )}
                 </td>
                 <td className="mono">{formatDateTime(h.timestamp)}</td>
-                <td>
-                  <span className="routing">
-                    {h.routing_path === 'METADATA' ? 'Metadata' : 'Semantic'}
-                  </span>
-                </td>
                 <td>
                   <span className="agency-mini">{h.agency_filter || h.filters_applied?.agency || 'All'}</span>
                 </td>

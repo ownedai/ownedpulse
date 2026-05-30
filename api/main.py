@@ -122,6 +122,7 @@ def init_db():
             ("sub_queries", "JSONB"),
             ("retrieval_params", "JSONB"),
             ("langfuse_trace_id", "TEXT"),
+            ("model_used", "TEXT"),
         ]
         for col_name, col_type in migrations:
             cur.execute(
@@ -156,6 +157,7 @@ def persist_query(
     retrieval_params: dict,
     langfuse_trace_id: str = "",
     timestamp: str = "",
+    model_used: str = "",
 ):
     """Persist a query result to query_history. Raises on failure."""
     conn = get_pg_conn()
@@ -164,13 +166,13 @@ def persist_query(
         cur.execute(
             """INSERT INTO query_history
                (query_id, query_text, routing_path, answer, citations,
-                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp, model_used)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 query_id, query_text, routing_path, answer,
                 json.dumps(citations), json.dumps(sub_queries),
                 json.dumps(filters_applied), json.dumps(retrieval_params),
-                langfuse_trace_id, timestamp,
+                langfuse_trace_id, timestamp, model_used,
             )
         )
         conn.commit()
@@ -655,6 +657,7 @@ async def submit_query(request: QueryRequest):
             retrieval_params=retrieval_dict,
             langfuse_trace_id=result.get("langfuse_trace_id", ""),
             timestamp=timestamp,
+            model_used=get_active_model(),
         )
     except Exception as e:
         logger.error("Failed to persist query %s: %s", query_id, e)
@@ -860,59 +863,141 @@ async def _run_metadata_query(
     is_list = any(w in query_lower for w in ["list", "show", "find all", "what are"])
     is_current_version = any(w in query_lower for w in ["current version", "what is the current", "latest version"])
 
+    # Infer agency and document_type from query text if not set by request filters.
+    # This lets "How many FDA guidance documents" work without the filter bar being set.
+    inferred_agency = filters.agency
+    if not inferred_agency:
+        if "fda" in query_lower:
+            inferred_agency = "FDA"
+        elif "ema" in query_lower or "european medicines" in query_lower:
+            inferred_agency = "EMA"
+        elif "ich" in query_lower:
+            inferred_agency = "ICH"
+
+    inferred_doc_type = filters.document_type
+    if not inferred_doc_type:
+        if any(w in query_lower for w in ["guidance document", "guidance documents", "guideline", "guidelines"]):
+            inferred_doc_type = "guidance"
+        elif any(w in query_lower for w in ["press release", "press releases"]):
+            inferred_doc_type = "press-release"
+        elif any(w in query_lower for w in ["reflection paper", "reflection papers"]):
+            inferred_doc_type = "reflection-paper"
+
+    # Rebuild filter using inferred values when query text contains agency/type hints
+    if inferred_agency != filters.agency or inferred_doc_type != filters.document_type:
+        inferred_filters = QueryFilters(
+            agency=inferred_agency,
+            document_type=inferred_doc_type,
+            date_from=filters.date_from,
+            date_to=filters.date_to,
+        )
+        qdrant_filter = build_qdrant_filter(inferred_filters)
+    else:
+        inferred_filters = filters
+
     citations = []
     answer = ""
 
     if is_count:
-        # Count document chunks matching filter in Qdrant
-        count_result = client.count(
-            collection_name=QDRANT_COLLECTION,
-            count_filter=qdrant_filter,
-            exact=True,
-        )
-        total = count_result.count if count_result else 0
+        # Count distinct documents from PostgreSQL document_registry
+        import psycopg2 as _psycopg2
+        total = 0
+        pg_rows = []
+        try:
+            _conn = _psycopg2.connect(
+                host=POSTGRES_HOST, port=POSTGRES_PORT,
+                dbname=POSTGRES_DB, user=POSTGRES_USER,
+                password=POSTGRES_PASSWORD, connect_timeout=5
+            )
+            _cur = _conn.cursor()
+            where_clauses = ["ingestion_status = 'indexed'"]
+            params = []
+            if inferred_filters.agency:
+                where_clauses.append("issuing_body = ANY(%s)")
+                # Include EU-Commission when filtering for EMA
+                if inferred_filters.agency == "EMA":
+                    params.append(["EMA", "EU-Commission"])
+                else:
+                    params.append([inferred_filters.agency])
+            if inferred_filters.document_type:
+                # document_registry stores underscored doc_type; map hyphenated → underscored
+                doc_type_map = {
+                    "guidance": "guidance_pdf",
+                    "press-release": "press_release",
+                    "reflection-paper": "reflection_paper",
+                }
+                pg_doc_type = doc_type_map.get(inferred_filters.document_type, inferred_filters.document_type.replace("-", "_"))
+                where_clauses.append("doc_type = %s")
+                params.append(pg_doc_type)
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+            _cur.execute(
+                f"SELECT COUNT(*) FROM document_registry {where_sql}", params
+            )
+            total = _cur.fetchone()[0] or 0
 
-        # Scroll for a few representative chunks as citations
-        scroll_result = client.scroll(
-            collection_name=QDRANT_COLLECTION,
-            scroll_filter=qdrant_filter,
-            limit=min(5, total),
-            with_payload=True,
-        )
-        points, _ = scroll_result
-        for i, point in enumerate(points, 1):
-            payload = point.payload or {}
-            title = payload.get("document_title", "")
-            if not title:
-                sp = payload.get("section_path", [])
-                title = sp[0] if sp else "Untitled"
+            # Fetch a few representative documents for citations
+            _cur.execute(
+                f"""SELECT document_id,
+                           metadata_json->>'document_title' as title,
+                           issuing_body, document_version,
+                           metadata_json->>'publication_date' as pub_date,
+                           archive_path
+                    FROM document_registry {where_sql}
+                    ORDER BY metadata_json->>'publication_date' DESC NULLS LAST
+                    LIMIT 5""",
+                params
+            )
+            pg_rows = _cur.fetchall()
+            _cur.close()
+            _conn.close()
+        except Exception as _e:
+            logger.warning(f"Metadata count PG query failed, falling back to Qdrant: {_e}")
+            # Fallback: count distinct document_ids via Qdrant scroll
+            _seen = set()
+            _offset = None
+            while True:
+                _res, _offset = client.scroll(
+                    collection_name=QDRANT_COLLECTION,
+                    scroll_filter=qdrant_filter,
+                    limit=100,
+                    offset=_offset,
+                    with_payload=["document_id"],
+                )
+                for _p in _res:
+                    _seen.add(_p.payload.get("document_id", str(_p.id)))
+                if _offset is None:
+                    break
+            total = len(_seen)
+
+        for i, row in enumerate(pg_rows, 1):
+            doc_id, title, agency, version, pub_date, archive_path = row
             citations.append({
                 "index": i,
-                "chunk_id": str(point.id),
-                "document_id": payload.get("document_id", ""),
-                "chunk_text": payload.get("chunk_text", ""),
-                "document_title": strip_title_suffix(title) or "Untitled",
-                "issuing_body": normalise_agency(payload.get("issuing_body", "")),
-                "document_version": payload.get("document_version"),
-                "clause_id": payload.get("clause_id"),
-                "publication_date": payload.get("publication_date"),
-                "page_no": payload.get("page_no"),
-                "chunk_index": payload.get("chunk_index"),
-                "char_offset_start": payload.get("char_offset_start"),
-                "char_offset_end": payload.get("char_offset_end"),
-                "chunked_at": payload.get("chunked_at"),
+                "chunk_id": "",
+                "document_id": doc_id,
+                "chunk_text": "",
+                "document_title": strip_title_suffix(title or "") or "Untitled",
+                "issuing_body": normalise_agency(agency or ""),
+                "document_version": version,
+                "clause_id": None,
+                "publication_date": pub_date,
+                "page_no": None,
+                "chunk_index": None,
+                "char_offset_start": None,
+                "char_offset_end": None,
+                "chunked_at": None,
                 "score": 1.0,
                 "cited_by_llm": True,
                 "superseded": False,
                 "superseded_by": None,
-                "source_local_path": payload.get("source_local_path"),
-                "source_url": payload.get("source_url", ""),
+                "source_local_path": None,
+                "source_url": "",
             })
 
-        agency_str = f"from {filters.agency}" if filters.agency else "across all agencies"
-        type_str = f" of type {filters.document_type}" if filters.document_type else ""
+        agency_str = f"from {inferred_filters.agency}" if inferred_filters.agency else "across all agencies"
+        type_str = f" {inferred_filters.document_type} " if inferred_filters.document_type else " "
 
-        answer = f"There are {total} document chunks{type_str} {agency_str} in the indexed corpus."
+        answer = f"There are {total}{type_str}documents {agency_str} in the indexed corpus."
 
     elif is_current_version:
         # Look up document version from PostgreSQL document_registry
@@ -1069,7 +1154,7 @@ async def _run_metadata_query(
             exact=True,
         )
         total = count_result.count if count_result else 0
-        agency_str = f"from {filters.agency}" if filters.agency else "across all agencies"
+        agency_str = f"from {inferred_filters.agency}" if inferred_filters.agency else "across all agencies"
         answer = f"Found {total} document chunks {agency_str} in the indexed corpus."
 
     trace_id = lf_trace.id if lf_trace else ""
@@ -1147,62 +1232,93 @@ async def query_history(limit: int = 10, offset: int = 0):
 
 
 @app.get("/api/query/history/export")
-async def export_history(format: str = "json"):
+async def export_history():
+    import csv
+    from io import StringIO
+
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT query_id, query_text, routing_path, timestamp, citations, "
-            "filters_applied FROM query_history ORDER BY timestamp DESC LIMIT 1000"
+            """SELECT query_id, query_text, routing_path, timestamp,
+                      answer, citations, sub_queries,
+                      filters_applied, retrieval_params,
+                      langfuse_trace_id, model_used
+               FROM query_history
+               ORDER BY timestamp DESC
+               LIMIT 1000"""
         )
         rows = cur.fetchall()
         cur.close()
-
-        if format == "json":
-            results = []
-            for row in rows:
-                qid, qtext, routing, ts, citations, filters_applied = row
-                citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
-                results.append({
-                    "query_id": qid,
-                    "query_text": qtext,
-                    "routing_path": routing,
-                    "timestamp": ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
-                    "citation_count": len(citations_list),
-                    "filters_applied": json.loads(filters_applied) if isinstance(filters_applied, str) else (filters_applied or {}),
-                })
-            return results
-
-        elif format == "csv":
-            import csv
-            from io import StringIO
-
-            buf = StringIO()
-            writer = csv.writer(buf)
-            writer.writerow(["query_id", "query_text", "routing_path", "timestamp", "citation_count", "agency_filter"])
-            for row in rows:
-                qid, qtext, routing, ts, citations, filters_applied = row
-                citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
-                filters_dict = json.loads(filters_applied) if isinstance(filters_applied, str) else (filters_applied or {})
-                agency = filters_dict.get("agency") or "All"
-                writer.writerow([
-                    qid, qtext, routing,
-                    ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
-                    len(citations_list), agency,
-                ])
-
-            filename = f"regpulse-history-export-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
-            return Response(
-                content=buf.getvalue(),
-                media_type="text/csv",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-            )
-
-        else:
-            raise HTTPException(status_code=400, detail="Format must be json or csv")
-
     finally:
         conn.close()
+
+    buf = StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "query_id",
+        "timestamp",
+        "query_text",
+        "answer",
+        "routing",
+        "model_used",
+        "agency_filter",
+        "document_type_filter",
+        "date_from",
+        "date_to",
+        "query_depth",
+        "top_k",
+        "score_threshold",
+        "sub_queries",
+        "citation_count",
+        "cited_document_ids",
+        "cited_document_titles",
+        "langfuse_trace_id",
+    ])
+
+    for row in rows:
+        (qid, qtext, routing, ts, answer, citations_raw,
+         sub_queries_raw, filters_raw, retrieval_raw,
+         trace_id, model_used) = row
+
+        citations = citations_raw if isinstance(citations_raw, list) else (json.loads(citations_raw) if citations_raw else [])
+        sub_queries = sub_queries_raw if isinstance(sub_queries_raw, list) else (json.loads(sub_queries_raw) if sub_queries_raw else [])
+        filters = filters_raw if isinstance(filters_raw, dict) else (json.loads(filters_raw) if filters_raw else {})
+        retrieval = retrieval_raw if isinstance(retrieval_raw, dict) else (json.loads(retrieval_raw) if retrieval_raw else {})
+
+        cited = [c for c in citations if c.get("cited_by_llm")]
+        cited_ids = " | ".join(c.get("document_id", "") for c in cited)
+        cited_titles = " | ".join(c.get("document_title", "") for c in cited)
+
+        routing_label = "Metadata lookup" if routing == "METADATA" else "Semantic search"
+
+        writer.writerow([
+            qid,
+            ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            qtext,
+            answer or "",
+            routing_label,
+            model_used or "",
+            filters.get("agency") or "All",
+            filters.get("document_type") or "All",
+            filters.get("date_from") or "",
+            filters.get("date_to") or "",
+            retrieval.get("query_depth") or "",
+            retrieval.get("top_k") or "",
+            retrieval.get("score_threshold") or "",
+            " | ".join(sub_queries),
+            len(citations),
+            cited_ids,
+            cited_titles,
+            trace_id or "",
+        ])
+
+    filename = f"regpulse-audit-export-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 # ── GET /api/query/{query_id} ──────────────────────────────────────────────────

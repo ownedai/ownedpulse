@@ -21,7 +21,6 @@ function relativeTime(iso) {
 }
 
 function isNavActive(to, pathname) {
-  if (to === '/') return pathname === '/';
   if (to === '/corpus') {
     return pathname === '/corpus' || (pathname.startsWith('/corpus/') && !pathname.startsWith('/corpus/runs'));
   }
@@ -51,7 +50,7 @@ const SettingsIcon = () => (
 );
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Query', Icon: SearchIcon },
+  { to: '/history', label: 'Query Log', Icon: SearchIcon },
   { to: '/corpus', label: 'Corpus', Icon: DatabaseIcon },
   { to: '/corpus/runs', label: 'Run Log', Icon: ClockIcon },
   { to: '/admin', label: 'Admin', Icon: SettingsIcon, separator: true },
