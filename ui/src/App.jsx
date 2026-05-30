@@ -17,6 +17,8 @@ import DocumentDetailPage from './components/pages/DocumentDetailPage';
 import RunLogPage from './components/pages/RunLogPage';
 import AdminPage from './components/pages/AdminPage';
 import useQuery from './hooks/useQuery';
+import useModelStatus from './hooks/useModelStatus';
+import { ModelStatusContext } from './context/ModelStatusContext';
 import { exportQuery } from './api/client';
 import CorpusStatsBar from './components/query/CorpusStatsBar';
 
@@ -265,6 +267,7 @@ function MainPage() {
 export default function App() {
   const [resetKey, setResetKey] = useState(0);
   const navigate = useNavigate();
+  const modelStatus = useModelStatus();
 
   const handleNewQuery = useCallback(() => {
     navigate('/', { replace: true });
@@ -272,8 +275,9 @@ export default function App() {
   }, [navigate]);
 
   return (
+    <ModelStatusContext.Provider value={modelStatus}>
     <div className="app-shell">
-      <Sidebar onNewQuery={handleNewQuery} />
+      <Sidebar onNewQuery={handleNewQuery} modelStatus={modelStatus} />
       <div className="main-column">
         <TopNav />
         <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -290,5 +294,6 @@ export default function App() {
         <CorpusStatsBar />
       </div>
     </div>
+    </ModelStatusContext.Provider>
   );
 }

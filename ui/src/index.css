@@ -476,10 +476,6 @@ body {
   cursor: default;
 }
 
-.rp-status .row.rp-tip {
-  display: flex;
-}
-
 .rp-status .row .k {
   color: var(--shell-dim);
 }
@@ -488,15 +484,45 @@ body {
   color: #CBD5E1;
 }
 
-.rp-status .row .v.ok::before {
-  content: '';
+.rp-agency-counts {
+  display: flex;
+  gap: 8px;
+}
+.rp-agency-counts b {
+  font-weight: 600;
+  color: #CBD5E1;
+}
+
+.rp-model-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
-  background: var(--ok);
   border-radius: 50%;
-  margin-right: 5px;
-  vertical-align: 1px;
+  background: #F59E0B;
+  flex-shrink: 0;
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+.rp-model-dot.loaded {
+  background: #22c55e;
+  animation: none;
+}
+
+.rp-status-divider {
+  border: none;
+  border-top: 1px solid var(--shell-border);
+  margin: 10px 0 8px;
+  opacity: 0.5;
+}
+
+.rp-status-section-lbl {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--shell-muted);
+  opacity: 0.55;
+  margin-bottom: 4px;
+  margin-top: 2px;
 }
 
 /* ── Sidebar nav ────────────────────────────────────────────────────────── */

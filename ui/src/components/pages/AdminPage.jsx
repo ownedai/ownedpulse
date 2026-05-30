@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { getAdminHealth, getAdminFeeds, toggleFeed, triggerPipelineRun, getAdminModels, updateActiveModel } from '../../api/client';
+import { useModelStatusContext } from '../../context/ModelStatusContext';
 
 function SectionLabel({ children }) {
   return (
@@ -231,6 +232,7 @@ function ModelPanel() {
   const [selected, setSelected] = useState('');
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState(null);
+  const { recheck } = useModelStatusContext();
 
   useEffect(() => {
     getAdminModels()
@@ -245,6 +247,7 @@ function ModelPanel() {
       .then(() => {
         setSelected(model);
         setMessage({ type: 'ok', text: `Active model changed to ${model}.` });
+        recheck();
       })
       .catch((err) => {
         setMessage({ type: 'err', text: err.message });

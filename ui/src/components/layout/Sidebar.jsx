@@ -57,7 +57,7 @@ const NAV_ITEMS = [
   { to: '/admin', label: 'Admin', Icon: SettingsIcon, separator: true },
 ];
 
-export default function Sidebar({ onNewQuery }) {
+export default function Sidebar({ onNewQuery, modelStatus = {} }) {
   const { pathname } = useLocation();
   const { items } = useHistory(5);
   const { stats } = useCorpusStats();
@@ -114,25 +114,26 @@ export default function Sidebar({ onNewQuery }) {
       )}
 
       <div className="rp-status">
-        <div className="grp-lbl" style={{ padding: 0, marginBottom: 8 }}>System</div>
-        <div className="row rp-tip">
-          <span className="k">Pipeline</span>
-          <span className="v ok">
-            {stats?.last_pipeline_run ? formatDateTime(stats.last_pipeline_run) : '—'}
+        <div className="rp-status-section-lbl">System</div>
+
+
+        <div className="row">
+          <span className="k">LLM</span>
+          <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span
+              className={`rp-model-dot${modelStatus.loaded ? ' loaded' : ''}`}
+              title={modelStatus.loaded ? 'Model loaded' : 'Loading model…'}
+            />
+            {modelStatus.model || 'phi4:14b-q8'}
           </span>
-          <span className="tip-body">Last document ingestion run</span>
         </div>
         <div className="row">
-          <span className="k">Docs indexed</span>
-          <span className="v">{stats?.total_documents?.toLocaleString() || '—'}</span>
-        </div>
-        <div className="row">
-          <span className="k">Embed model</span>
+          <span className="k">Embed</span>
           <span className="v">mxbai-embed-large</span>
         </div>
         <div className="row">
           <span className="k">Build</span>
-          <span className="v">v0.7.0</span>
+          <span className="v">v0.7.00</span>
         </div>
       </div>
     </aside>

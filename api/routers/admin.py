@@ -312,3 +312,84 @@ async def admin_update_model(body: ModelUpdateRequest):
         conn.close()
 
     return {"active_model": model}
+
+
+# ── GET /admin/model-status ───────────────────────────────────────────────────
+
+@router.get("/model-status")
+async def admin_model_status():
+    """Check whether the active LLM model is currently loaded in Ollama (/api/ps)."""
+    OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
+
+    # Get active model name from system_config
+    active_model = None
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM system_config WHERE key = 'active_llm_model'")
+            row = cur.fetchone()
+            active_model = row[0] if row else None
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # Query Ollama /api/ps for currently loaded models
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{OLLAMA_BASE}/api/ps")
+            resp.raise_for_status()
+            running = [m["name"] for m in resp.json().get("models", [])]
+            loaded = any(
+                r == active_model or r.split(":")[0] == (active_model or "").split(":")[0]
+                for r in running
+            )
+            return {"model": active_model, "loaded": loaded, "running_models": running}
+    except Exception as e:
+        return {"model": active_model, "loaded": False, "error": str(e)}
+
+
+# ── POST /admin/warmup ────────────────────────────────────────────────────────
+
+@router.post("/warmup")
+async def admin_warmup():
+    """Fire a minimal generate request to trigger Ollama model load. Returns immediately."""
+    OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
+
+    active_model = None
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM system_config WHERE key = 'active_llm_model'")
+            row = cur.fetchone()
+            active_model = row[0] if row else None
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    if not active_model:
+        return {"status": "no model configured"}
+
+    # Fire-and-forget: send a minimal prompt with keep_alive to load the model.
+    # We don't await the generation result — just triggering the load.
+    import asyncio
+
+    async def _load():
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                await client.post(f"{OLLAMA_BASE}/api/generate", json={
+                    "model": active_model,
+                    "prompt": "",
+                    "stream": False,
+                    "keep_alive": "10m",
+                })
+        except Exception:
+            pass
+
+    asyncio.create_task(_load())
+    return {"status": "warmup initiated", "model": active_model}
