@@ -1259,7 +1259,7 @@ async def export_history():
         "query_id",
         "timestamp",
         "query_text",
-        "answer",
+        "answer_excerpt",
         "routing",
         "model_used",
         "agency_filter",
@@ -1292,11 +1292,15 @@ async def export_history():
 
         routing_label = "Metadata lookup" if routing == "METADATA" else "Semantic search"
 
+        # Truncate answer to 300 chars for CSV readability; full answer retrievable via query_id
+        answer_text = answer or ""
+        answer_excerpt = (answer_text[:300] + "… [full answer: load query_id in regpulse]") if len(answer_text) > 300 else answer_text
+
         writer.writerow([
             qid,
             ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
             qtext,
-            answer or "",
+            answer_excerpt,
             routing_label,
             model_used or "",
             filters.get("agency") or "All",

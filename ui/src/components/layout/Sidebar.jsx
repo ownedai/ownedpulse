@@ -128,7 +128,13 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
         </div>
         <div className="row">
           <span className="k">Embed</span>
-          <span className="v">mxbai-embed-large</span>
+          <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span
+              className={`rp-model-dot${modelStatus.embed_loaded ? ' loaded' : ''}`}
+              title={modelStatus.embed_loaded ? 'Embedding model loaded' : 'Loading embedding model…'}
+            />
+            {modelStatus.embed_model || 'mxbai-embed-large'}
+          </span>
         </div>
         <div className="row">
           <span className="k">Build</span>

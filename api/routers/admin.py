@@ -336,6 +336,8 @@ async def admin_model_status():
     except Exception:
         pass
 
+    embed_model = "mxbai-embed-large"
+
     # Query Ollama /api/ps for currently loaded models
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -346,9 +348,25 @@ async def admin_model_status():
                 r == active_model or r.split(":")[0] == (active_model or "").split(":")[0]
                 for r in running
             )
-            return {"model": active_model, "loaded": loaded, "running_models": running}
+            embed_loaded = any(
+                r == embed_model or r.split(":")[0] == embed_model.split(":")[0]
+                for r in running
+            )
+            return {
+                "model": active_model,
+                "loaded": loaded,
+                "embed_model": embed_model,
+                "embed_loaded": embed_loaded,
+                "running_models": running,
+            }
     except Exception as e:
-        return {"model": active_model, "loaded": False, "error": str(e)}
+        return {
+            "model": active_model,
+            "loaded": False,
+            "embed_model": embed_model,
+            "embed_loaded": False,
+            "error": str(e),
+        }
 
 
 # ── POST /admin/warmup ────────────────────────────────────────────────────────
@@ -375,7 +393,7 @@ async def admin_warmup():
     if not active_model:
         return {"status": "no model configured"}
 
-    # Fire-and-forget: send a minimal prompt with keep_alive to load the model.
+    # Fire-and-forget: send a minimal prompt with keep_alive to load the models.
     # We don't await the generation result — just triggering the load.
     import asyncio
 
@@ -391,5 +409,17 @@ async def admin_warmup():
         except Exception:
             pass
 
+    async def _load_embed():
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                await client.post(f"{OLLAMA_BASE}/api/embeddings", json={
+                    "model": "mxbai-embed-large",
+                    "prompt": "warmup",
+                    "keep_alive": "10m",
+                })
+        except Exception:
+            pass
+
     asyncio.create_task(_load())
-    return {"status": "warmup initiated", "model": active_model}
+    asyncio.create_task(_load_embed())
+    return {"status": "warmup initiated", "model": active_model, "embed_model": "mxbai-embed-large"}

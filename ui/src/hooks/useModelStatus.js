@@ -3,7 +3,10 @@ import { useState, useEffect, useRef } from 'react';
 const POLL_INTERVAL = 4000;
 
 export default function useModelStatus() {
-  const [status, setStatus] = useState({ loaded: false, model: null, checked: false });
+  const [status, setStatus] = useState({
+    loaded: false, model: null, checked: false,
+    embed_loaded: false, embed_model: null,
+  });
   const timerRef = useRef(null);
   const mountedRef = useRef(true);
 
@@ -19,8 +22,11 @@ export default function useModelStatus() {
         if (!mountedRef.current) return;
         if (res.ok) {
           const data = await res.json();
-          setStatus({ loaded: !!data.loaded, model: data.model, checked: true });
-          if (!data.loaded) {
+          setStatus({
+            loaded: !!data.loaded, model: data.model, checked: true,
+            embed_loaded: !!data.embed_loaded, embed_model: data.embed_model || 'mxbai-embed-large',
+          });
+          if (!data.loaded || !data.embed_loaded) {
             timerRef.current = setTimeout(check, POLL_INTERVAL);
           }
         }
@@ -42,7 +48,7 @@ export default function useModelStatus() {
   // Re-check after a model change (called from AdminPage)
   const recheck = () => {
     clearTimeout(timerRef.current);
-    setStatus(s => ({ ...s, loaded: false }));
+    setStatus(s => ({ ...s, loaded: false, embed_loaded: false }));
     fetch('/api/admin/warmup', { method: 'POST' }).catch(() => {});
     const poll = async () => {
       try {
@@ -50,8 +56,11 @@ export default function useModelStatus() {
         if (!mountedRef.current) return;
         if (res.ok) {
           const data = await res.json();
-          setStatus({ loaded: !!data.loaded, model: data.model, checked: true });
-          if (!data.loaded) timerRef.current = setTimeout(poll, POLL_INTERVAL);
+          setStatus({
+            loaded: !!data.loaded, model: data.model, checked: true,
+            embed_loaded: !!data.embed_loaded, embed_model: data.embed_model || 'mxbai-embed-large',
+          });
+          if (!data.loaded || !data.embed_loaded) timerRef.current = setTimeout(poll, POLL_INTERVAL);
         }
       } catch {
         if (mountedRef.current) timerRef.current = setTimeout(poll, POLL_INTERVAL);

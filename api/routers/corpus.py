@@ -41,10 +41,10 @@ async def corpus_stats():
     try:
         cur = conn.cursor()
 
-        cur.execute("SELECT count(*) FROM document_registry")
+        cur.execute("SELECT count(*) FROM document_registry WHERE ingestion_status = 'indexed'")
         total = cur.fetchone()[0]
 
-        cur.execute("SELECT issuing_body, count(*) FROM document_registry GROUP BY issuing_body")
+        cur.execute("SELECT issuing_body, count(*) FROM document_registry WHERE ingestion_status = 'indexed' GROUP BY issuing_body")
         raw_agency = dict(cur.fetchall())
         per_agency = {}
         for agency, count in raw_agency.items():
@@ -53,7 +53,8 @@ async def corpus_stats():
 
         cur.execute(
             "SELECT metadata_json->>'document_type', count(*) "
-            "FROM document_registry GROUP BY metadata_json->>'document_type'"
+            "FROM document_registry WHERE ingestion_status = 'indexed'"
+            " GROUP BY metadata_json->>'document_type'"
         )
         per_doc_type = dict(cur.fetchall())
 
