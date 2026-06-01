@@ -201,8 +201,8 @@ async def admin_trigger_run():
     try:
         cur = conn.cursor()
         cur.execute(
-            """INSERT INTO run_log (run_id, trigger_source, status)
-               VALUES (%s, 'manual', 'running')""",
+            """INSERT INTO run_log (run_id, trigger_source, triggered_by, status)
+               VALUES (%s, 'manual', 'admin-ui', 'running')""",
             (run_id,)
         )
         conn.commit()
