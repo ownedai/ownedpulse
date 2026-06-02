@@ -188,9 +188,53 @@ def persist_query(
 
 # ── Startup ──────────────────────────────────────────────────────────────────
 
+def _cleanup_abandoned_state():
+    """Mark documents and runs left in transient states by killed processes.
+
+    'pending' docs and 'running' runs older than 1 hour have no live process
+    behind them — the process was killed (OOM, container restart, n8n timeout).
+    We mark them 'error' with an honest message so nothing hangs in limbo.
+    Normal in-flight ingestion completes in under 5 minutes; 1 hour is safe.
+    """
+    try:
+        conn = get_pg_conn()
+        cur = conn.cursor()
+
+        cur.execute(
+            """UPDATE document_registry
+               SET ingestion_status = 'error',
+                   ingestion_error   = 'Process was killed before ingestion completed',
+                   updated_at        = NOW()
+               WHERE ingestion_status = 'pending'
+                 AND updated_at < NOW() - INTERVAL '1 hour'"""
+        )
+        docs = cur.rowcount
+
+        cur.execute(
+            """UPDATE run_log
+               SET status       = 'error',
+                   completed_at = NOW(),
+                   error_detail = 'Process was killed before run completed'
+               WHERE status = 'running'
+                 AND triggered_at < NOW() - INTERVAL '1 hour'"""
+        )
+        runs = cur.rowcount
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if docs:
+            logger.info("Startup: marked %d abandoned pending document(s) as error", docs)
+        if runs:
+            logger.info("Startup: marked %d abandoned running run(s) as error", runs)
+    except Exception as e:
+        logger.warning("Startup: abandoned-state cleanup failed: %s", e)
+
 @app.on_event("startup")
 async def startup():
     init_db()
+    _cleanup_abandoned_state()
 
 from lib.observability import get_langfuse
 

@@ -74,6 +74,8 @@ function StatusBadge({ status }) {
     complete: { bg: 'var(--ok-tint)', color: 'var(--ok-text)', border: 'var(--ok-tint-border)', dot: 'var(--ok)' },
     running: { bg: 'var(--accent-tint)', color: 'var(--accent-l)', border: 'var(--accent-tint-deep)', dot: 'var(--accent-l)' },
     error: { bg: 'var(--err-tint)', color: 'var(--err-text)', border: 'var(--err-tint-border)', dot: 'var(--err)' },
+    pending: { bg: 'var(--doc-bg)', color: 'var(--doc-text-3)', border: 'var(--doc-border)', dot: 'var(--doc-text-3)' },
+    indexed: { bg: 'var(--ok-tint)', color: 'var(--ok-text)', border: 'var(--ok-tint-border)', dot: 'var(--ok)' },
   };
   const c = colors[status] || { bg: 'var(--doc-bg)', color: 'var(--doc-text-2)', border: 'var(--doc-border)', dot: 'var(--doc-text-3)' };
   return (
@@ -257,7 +259,7 @@ export default function RunLogPage() {
                                     </td>
                                     <td className="mono" style={{ fontSize: 11 }}>{d.document_type || '—'}</td>
                                     <td className="mono" style={{ fontSize: 11 }}>{formatDate(d.publication_date)}</td>
-                                    <td className="mono">{d.chunk_count}</td>
+                                    <td className="mono">{d.ingestion_status === 'pending' ? '—' : d.chunk_count}</td>
                                     <td><StatusBadge status={d.ingestion_status === 'success' ? 'complete' : d.ingestion_status} /></td>
                                   </tr>
                                 ))}

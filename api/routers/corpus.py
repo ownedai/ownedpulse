@@ -18,6 +18,8 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
 
+NOCO_DB = os.getenv("NOCO_DB", "nocodb")
+
 def get_pg_conn():
     import psycopg2
     return psycopg2.connect(
@@ -25,6 +27,55 @@ def get_pg_conn():
         dbname=POSTGRES_DB, user=POSTGRES_USER,
         password=POSTGRES_PASSWORD, connect_timeout=10
     )
+
+def get_noco_conn():
+    import psycopg2
+    return psycopg2.connect(
+        host=POSTGRES_HOST, port=POSTGRES_PORT,
+        dbname=NOCO_DB, user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD, connect_timeout=10
+    )
+
+def repair_stale_pending(threshold_minutes: int = 30) -> int:
+    """Mark pending docs as error if they haven't been updated within threshold.
+
+    A document stuck in 'pending' with no running process means ingestion crashed
+    before it could update the status. Returns the number of rows repaired.
+    """
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE document_registry
+               SET ingestion_status = 'error',
+                   ingestion_error   = 'Ingestion process did not complete',
+                   updated_at        = NOW()
+               WHERE ingestion_status = 'pending'
+                 AND updated_at < NOW() - (%s * INTERVAL '1 minute')""",
+            (threshold_minutes,)
+        )
+        count = cur.rowcount
+        conn.commit()
+        cur.close()
+        return count
+    finally:
+        conn.close()
+
+
+def get_feed_default_doc_types() -> dict:
+    """Return {feed_id: default_doc_type} from feed_config."""
+    try:
+        conn = get_noco_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT feed_id, default_doc_type FROM feed_config")
+            result = {row[0]: row[1] for row in cur.fetchall()}
+            cur.close()
+            return result
+        finally:
+            conn.close()
+    except Exception:
+        return {}
 
 
 def normalise_agency(agency: str) -> str:
@@ -417,26 +468,70 @@ async def feed_run_detail(run_id: str):
             "n8n_execution_id": n8n_exec,
         }
 
-        # Find documents ingested in this run
+        # Find documents ingested in this run.
+        # Primary: match by run_id (set when run_ingest.py writes it back).
+        # Fallback: if no rows, match by feed_id + created_at window — archive.py
+        # registers docs after fetch_feed.py completes, so created_at > triggered_at.
         cur.execute(
             """SELECT document_id,
                       metadata_json->>'document_title' as title,
                       metadata_json->>'document_type' as doc_type,
                       metadata_json->>'publication_date' as pub_date,
-                      chunk_count, ingestion_status
+                      chunk_count, ingestion_status, archive_path, source_url
                FROM document_registry WHERE run_id = %s
-               ORDER BY last_indexed_at DESC""",
+               ORDER BY created_at ASC""",
             (run_id,)
         )
         doc_rows = cur.fetchall()
+
+        if not doc_rows and run.get("feed_source") and run.get("triggered_at"):
+            # Fallback: find docs registered during this run's time window
+            cur.execute(
+                """SELECT document_id,
+                          metadata_json->>'document_title' as title,
+                          metadata_json->>'document_type' as doc_type,
+                          metadata_json->>'publication_date' as pub_date,
+                          chunk_count, ingestion_status, archive_path, source_url
+                   FROM document_registry
+                   WHERE feed_id = %s
+                     AND created_at >= %s
+                     AND created_at <= %s::timestamptz + INTERVAL '1 hour'
+                     AND run_id IS NULL
+                   ORDER BY created_at ASC""",
+                (run["feed_source"], run["triggered_at"],
+                 run.get("completed_at") or run["triggered_at"])
+            )
+            doc_rows = cur.fetchall()
         cur.close()
+
+        feed_doc_types = get_feed_default_doc_types()
+        feed_source = run.get("feed_source")
 
         documents = []
         for dr in doc_rows:
-            doc_id, title, doc_type, pub_date, chunk_count, status = dr
+            doc_id, title, doc_type, pub_date, chunk_count, status, archive_path, source_url = dr
+
+            # For pending docs, metadata_json is sparse — read archive metadata.json
+            if not title and archive_path:
+                try:
+                    import pathlib
+                    container_path = archive_path.replace("/mnt/data/regulatory_archive", "/archive")
+                    meta_file = pathlib.Path(container_path) / "metadata.json"
+                    if meta_file.exists():
+                        arc_meta = json.loads(meta_file.read_text())
+                        title = arc_meta.get("title") or arc_meta.get("document_title")
+                        pub_date = pub_date or arc_meta.get("pub_date") or arc_meta.get("publication_date")
+                        doc_type = doc_type or arc_meta.get("document_type")
+                except Exception:
+                    pass
+
+            # Fall back to feed's default_doc_type when classification hasn't run yet
+            if not doc_type and feed_source:
+                doc_type = feed_doc_types.get(feed_source)
+
             documents.append({
                 "document_id": doc_id,
-                "document_title": title or "Untitled",
+                "document_title": title or source_url or "Untitled",
                 "document_type": doc_type,
                 "publication_date": pub_date,
                 "chunk_count": chunk_count or 0,
