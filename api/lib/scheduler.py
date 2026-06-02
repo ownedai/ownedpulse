@@ -22,7 +22,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
-FETCH_FEED_SCRIPT = os.environ.get("FETCH_FEED_SCRIPT", "/opt/scripts/rss/fetch_feed.py")
+PIPELINE_SCRIPT = os.environ.get("PIPELINE_SCRIPT", "/opt/scripts/rss/run_pipeline.py")
 
 scheduler = AsyncIOScheduler()
 
@@ -93,14 +93,14 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
 
     for fid in feeds:
         run_id = str(uuid.uuid4())
+        trigger_source = "scheduled" if triggered_by == "scheduler" else "manual"
         cmd = [
-            "python", FETCH_FEED_SCRIPT,
+            "python", PIPELINE_SCRIPT,
             "--feed-id", fid,
-            "--trigger-source", "scheduled" if triggered_by == "scheduler" else "manual",
+            "--trigger-source", trigger_source,
             "--triggered-by", triggered_by,
             "--run-id", run_id,
         ]
-        trigger_source = "scheduled" if triggered_by == "scheduler" else "manual"
         logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
         error_detail = None
         try:
