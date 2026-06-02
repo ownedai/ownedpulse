@@ -39,39 +39,32 @@ def _get_pg_conn():
     )
 
 
-def _write_run_log_start(run_id: str, trigger_source: str, triggered_by: str, feed_id: str):
-    try:
-        conn = _get_pg_conn()
-        try:
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO run_log (run_id, trigger_source, triggered_by, feed_source, status)
-                       VALUES (%s, %s, %s, %s, 'running')
-                       ON CONFLICT DO NOTHING""",
-                    (run_id, trigger_source, triggered_by, feed_id),
-                )
-                conn.commit()
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.warning(f"scheduler: could not write run_log start row: {e}")
-
-
-def _write_run_log_error(run_id: str, detail: str):
+def _write_run_log_error_or_insert(
+    run_id: str, trigger_source: str, triggered_by: str, feed_id: str, detail: str
+):
+    """Update existing run_log row to error, or insert a new one if fetch_feed.py never ran."""
     try:
         conn = _get_pg_conn()
         try:
             with conn.cursor() as c:
                 c.execute(
                     """UPDATE run_log SET status='error', completed_at=NOW(), error_detail=%s
-                       WHERE run_id=%s AND status='running'""",
+                       WHERE run_id=%s""",
                     (detail[:500], run_id),
                 )
+                if c.rowcount == 0:
+                    c.execute(
+                        """INSERT INTO run_log
+                               (run_id, trigger_source, triggered_by, feed_source, status,
+                                completed_at, error_detail)
+                           VALUES (%s, %s, %s, %s, 'error', NOW(), %s)""",
+                        (run_id, trigger_source, triggered_by, feed_id, detail[:500]),
+                    )
                 conn.commit()
         finally:
             conn.close()
     except Exception as e:
-        logger.warning(f"scheduler: could not write run_log error row: {e}")
+        logger.warning(f"scheduler: could not write run_log error: {e}")
 
 
 def _get_enabled_feeds() -> list[str]:
@@ -107,10 +100,7 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
             "--triggered-by", triggered_by,
             "--run-id", run_id,
         ]
-        # Pre-create run_log row so failures are always visible in Ingestions page
         trigger_source = "scheduled" if triggered_by == "scheduler" else "manual"
-        _write_run_log_start(run_id, trigger_source, triggered_by, fid)
-
         logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
         error_detail = None
         try:
@@ -122,7 +112,6 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1800)
             if proc.returncode == 0:
                 logger.info(f"RSS ingestion: feed={fid} run_id={run_id} complete")
-                # fetch_feed.py updates run_log itself on success — nothing to do here
                 continue
             else:
                 error_detail = f"Process exited rc={proc.returncode}: {stderr.decode()[:400]}"
@@ -135,7 +124,8 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
             logger.error(f"RSS ingestion: feed={fid} run_id={run_id} exception: {e}")
 
         if error_detail:
-            _write_run_log_error(run_id, error_detail)
+            # If fetch_feed.py created the row, update it; otherwise insert a new error row
+            _write_run_log_error_or_insert(run_id, trigger_source, triggered_by, fid, error_detail)
 
 
 def setup_scheduler():
