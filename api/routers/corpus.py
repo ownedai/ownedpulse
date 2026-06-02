@@ -372,6 +372,9 @@ async def document_chunks(
 
 # ── GET /api/corpus/feed-runs ─────────────────────────────────────────────────
 
+STALE_RUN_MINUTES = 30
+
+
 @router.get("/feed-runs")
 async def feed_runs(
     page: int = Query(1, ge=1),
@@ -414,17 +417,23 @@ async def feed_runs(
         rows = cur.fetchall()
         cur.close()
 
+        from datetime import datetime, timezone, timedelta
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_RUN_MINUTES)
+
         items = []
         for row in rows:
             run_id, triggered_at, completed_at, trigger_source, feed_source, status, \
                 fetched, new, skipped, err_count, dur, err_detail, n8n_exec = row
+            resolved_status = status
+            if status == 'running' and triggered_at and triggered_at < stale_cutoff:
+                resolved_status = 'stale'
             items.append({
                 "run_id": run_id,
                 "triggered_at": triggered_at.isoformat() if hasattr(triggered_at, 'isoformat') else str(triggered_at) if triggered_at else None,
                 "completed_at": completed_at.isoformat() if hasattr(completed_at, 'isoformat') else str(completed_at) if completed_at else None,
                 "trigger_source": trigger_source,
                 "feed_source": feed_source,
-                "status": status,
+                "status": resolved_status,
                 "items_fetched": fetched,
                 "items_new": new,
                 "items_skipped": skipped,
