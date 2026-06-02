@@ -123,54 +123,87 @@ function CorpusSummaryCard() {
 
 // ── Base Corpus Card ──────────────────────────────────────────────────────────
 
+const AGENCY_TABS_BC = ['All', 'FDA', 'EMA', 'ICH'];
+const PAGE_SIZE_BC = 25;
+
+const DOC_TYPE_LABEL_BC = {
+  guidance: 'Guidance', drug_approval: 'Drug Approval', press_release: 'Press Release',
+  reflection_paper: 'Reflection Paper', safety_alert: 'Safety Alert',
+  news_item: 'News', other: 'Other',
+};
+
 function BaseCorpusCard() {
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [agency, setAgency] = useState('All');
+  const [page, setPage] = useState(1);
   const [reingesting, setReingesting] = useState(null);
 
-  const fetch = useCallback(() => {
+  const load = useCallback((ag, pg) => {
     setLoading(true);
-    getCorpusDocumentsV2({ page: 1, page_size: 20, doc_type: 'guidance' })
-      .then((d) => setItems(d.items || []))
+    getCorpusDocumentsV2({
+      page: pg,
+      page_size: PAGE_SIZE_BC,
+      issuing_body: ag === 'All' ? undefined : ag,
+    })
+      .then((d) => { setItems(d.items || []); setTotal(d.total || 0); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { load(agency, page); }, [agency, page, load]);
+
+  function handleAgency(ag) { setAgency(ag); setPage(1); }
 
   async function handleReingest(docId) {
     setReingesting(docId);
-    try {
-      await reingestDoc(docId);
-    } catch (_) {}
-    setTimeout(() => {
-      setReingesting(null);
-      fetch();
-    }, 3000);
+    try { await reingestDoc(docId); } catch (_) {}
+    setTimeout(() => { setReingesting(null); load(agency, page); }, 3000);
   }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE_BC);
 
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
         <span>Base Corpus</span>
-        <button
-          onClick={fetch}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center' }}
-          title="Refresh"
-        >
-          <RefreshIcon />
-        </button>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--doc-text-3)', fontWeight: 400, marginLeft: 6 }}>
+          {total > 0 ? `${total.toLocaleString()} documents` : ''}
+        </span>
+        <Link to="/corpus" style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--accent-l)', textDecoration: 'none' }}>
+          View all →
+        </Link>
       </div>
+
+      {/* Agency tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+        {AGENCY_TABS_BC.map((ag) => (
+          <button
+            key={ag}
+            onClick={() => handleAgency(ag)}
+            style={{
+              padding: '3px 10px', borderRadius: 4, border: '1px solid',
+              fontSize: 11.5, fontFamily: 'var(--mono)', cursor: 'pointer',
+              borderColor: agency === ag ? 'var(--accent-l)' : 'var(--doc-border)',
+              background: agency === ag ? 'var(--accent-tint)' : 'var(--doc-surface)',
+              color: agency === ag ? 'var(--accent-l)' : 'var(--doc-text-2)',
+              fontWeight: agency === ag ? 500 : 400,
+            }}
+          >{ag}</button>
+        ))}
+      </div>
+
       <table className="rp-table" style={{ fontSize: 12.5 }}>
         <thead>
           <tr>
             <th>Document</th>
-            <th style={{ width: 60 }}>Agency</th>
-            <th style={{ width: 80 }}>Version</th>
-            <th style={{ width: 100 }}>Published</th>
-            <th style={{ width: 90 }}>Status</th>
-            <th style={{ width: 60, textAlign: 'right' }}>Chunks</th>
-            <th style={{ width: 110 }}>Actions</th>
+            <th style={{ width: 55 }}>Agency</th>
+            <th style={{ width: 110 }}>Doc Type</th>
+            <th style={{ width: 95 }}>Published</th>
+            <th style={{ width: 85 }}>Status</th>
+            <th style={{ width: 55, textAlign: 'right' }}>Chunks</th>
+            <th style={{ width: 100 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -183,20 +216,18 @@ function BaseCorpusCard() {
           {items.map((doc) => (
             <tr key={doc.document_id}>
               <td>
-                <span
-                  className="truncate"
+                <Link
+                  to={`/corpus/${encodeURIComponent(doc.document_id)}`}
                   title={doc.document_title}
-                  style={{ maxWidth: 320, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--doc-text)' }}
+                  style={{ display: 'block', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none' }}
                 >
                   {doc.document_title || doc.document_id}
-                </span>
+                </Link>
               </td>
               <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{doc.issuing_body}</td>
-              <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version || '—'}</td>
+              <td style={{ fontSize: 11.5, color: 'var(--doc-text-2)' }}>{DOC_TYPE_LABEL_BC[doc.doc_type] || doc.doc_type || '—'}</td>
               <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
-              <td>
-                <StatusBadge status={doc.ingestion_status} />
-              </td>
+              <td><StatusBadge status={doc.ingestion_status} /></td>
               <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.chunk_count || '—'}</td>
               <td>
                 <div className="rp-act">
@@ -213,6 +244,24 @@ function BaseCorpusCard() {
           ))}
         </tbody>
       </table>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
+          <span>Page {page} of {totalPages}</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              style={{ padding: '3px 10px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.4 : 1, fontSize: 12, color: 'var(--doc-text)' }}
+            >‹</button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              style={{ padding: '3px 10px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.4 : 1, fontSize: 12, color: 'var(--doc-text)' }}
+            >›</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
