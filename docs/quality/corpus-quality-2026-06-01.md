@@ -4,7 +4,7 @@
 ## 1. Corpus Completeness
 
 **Operator:** G-T4 automated check
-**Started:** 2026-06-01 19:40:18 UTC
+**Started:** 2026-06-01 19:50:06 UTC
 **Expected docs:** 1382
 **Expected min chunks:** 20000
 - **Total documents in registry:** 1382
@@ -77,7 +77,7 @@ Scanning 22074 chunk payloads for null rates...
   - `clause_id`: 21845 null (98.96%)
   - `source_fetched_at`: 247 null (1.12%)
   - `source_url`: 0 null (0.00%)
-  - `publication_date`: 815 null (3.69%)
+  - `publication_date`: 616 null (2.79%)
 ✅ **Advisory metadata completeness**: PASS — advisory null rates reported above
 
 
@@ -85,7 +85,6 @@ Scanning 22074 chunk payloads for null rates...
 
 **Document families:** 1
 ✅ **Multiple active versions per family**: PASS — each family has exactly one current version
-⚠️ **Families with no current version**: WARN — 1 families have 0 current docs
 ✅ **Orphaned family references**: PASS — all families have >=2 documents
 
 
@@ -114,7 +113,7 @@ Scanning 22074 chunk payloads for null rates...
 
 ---
 
-**Run date:** 2026-06-01 19:40:18 UTC
-**Duration:** 232.0s
-**Checks:** 19 total (14 pass, 5 warn, 0 fail)
+**Run date:** 2026-06-01 19:50:06 UTC
+**Duration:** 225.0s
+**Checks:** 18 total (14 pass, 4 warn, 0 fail)
 **Verdict:** GREEN

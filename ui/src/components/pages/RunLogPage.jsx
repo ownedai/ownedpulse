@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { getFeedRuns, getFeedRunDetail } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
+import { getStatusConfig } from '../../utils/status';
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -70,14 +71,7 @@ function SourceBadge({ source }) {
 }
 
 function StatusBadge({ status }) {
-  const colors = {
-    complete: { bg: 'var(--ok-tint)', color: 'var(--ok-text)', border: 'var(--ok-tint-border)', dot: 'var(--ok)' },
-    running: { bg: 'var(--accent-tint)', color: 'var(--accent-l)', border: 'var(--accent-tint-deep)', dot: 'var(--accent-l)' },
-    error: { bg: 'var(--err-tint)', color: 'var(--err-text)', border: 'var(--err-tint-border)', dot: 'var(--err)' },
-    pending: { bg: 'var(--doc-bg)', color: 'var(--doc-text-3)', border: 'var(--doc-border)', dot: 'var(--doc-text-3)' },
-    indexed: { bg: 'var(--ok-tint)', color: 'var(--ok-text)', border: 'var(--ok-tint-border)', dot: 'var(--ok)' },
-  };
-  const c = colors[status] || { bg: 'var(--doc-bg)', color: 'var(--doc-text-2)', border: 'var(--doc-border)', dot: 'var(--doc-text-3)' };
+  const c = getStatusConfig(status);
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -88,9 +82,9 @@ function StatusBadge({ status }) {
     }}>
       <span style={{
         width: 5, height: 5, borderRadius: 3, background: c.dot, flexShrink: 0,
-        animation: status === 'running' ? 'pulse 1.5s infinite' : 'none',
+        animation: c.pulse ? 'pulse 1.5s infinite' : 'none',
       }} />
-      {status || '—'}
+      {c.label}
     </span>
   );
 }
@@ -148,7 +142,7 @@ export default function RunLogPage() {
   const feedOptions = [{ label: 'All feeds', value: null }, ...uniqueFeeds.map((f) => ({ label: f, value: f }))];
   const statusOptions = [
     { label: 'All statuses', value: null },
-    { label: 'Complete', value: 'complete' },
+    { label: 'Success', value: 'success' },
     { label: 'Running', value: 'running' },
     { label: 'Error', value: 'error' },
   ];
@@ -260,7 +254,7 @@ export default function RunLogPage() {
                                     <td className="mono" style={{ fontSize: 11 }}>{d.document_type || '—'}</td>
                                     <td className="mono" style={{ fontSize: 11 }}>{formatDate(d.publication_date)}</td>
                                     <td className="mono">{d.ingestion_status === 'pending' ? '—' : d.chunk_count}</td>
-                                    <td><StatusBadge status={d.ingestion_status === 'success' ? 'complete' : d.ingestion_status} /></td>
+                                    <td><StatusBadge status={d.ingestion_status} /></td>
                                   </tr>
                                 ))}
                               </tbody>

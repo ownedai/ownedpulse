@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { getCorpusDocumentsV2, getCorpusStats } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
+import { getStatusConfig } from '../../utils/status';
 
 const AGENCY_TABS = ['All', 'FDA', 'EMA', 'ICH'];
 const DOC_TYPES = [
@@ -81,35 +82,19 @@ function FilterDropdown({ options, value, onChange }) {
 }
 
 function StatusBadge({ status }) {
-  const isOk = status === 'indexed' || status === 'success';
-  const isError = status === 'error';
-  const isProcessing = status === 'pending' || status === 'processing';
-  const isSuperseded = status === 'superseded';
-
-  if (isOk) return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ok-text)', border: '1px solid var(--ok-tint-border)', background: 'var(--ok-tint)', padding: '2px 7px', borderRadius: 3 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--ok)', flexShrink: 0 }} />
-      INDEXED
+  const c = getStatusConfig(status);
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 600,
+      letterSpacing: '0.06em', textTransform: 'uppercase',
+      padding: '2px 7px', borderRadius: 3,
+      background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: 3, background: c.dot, flexShrink: 0 }} />
+      {c.label}
     </span>
   );
-  if (isError) return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--err-text)', border: '1px solid var(--err-tint-border)', background: 'var(--err-tint)', padding: '2px 7px', borderRadius: 3 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--err)', flexShrink: 0 }} />
-      ERROR
-    </span>
-  );
-  if (isProcessing) return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--warn-text)', border: '1px solid var(--warn-tint-border)', background: 'var(--warn-tint)', padding: '2px 7px', borderRadius: 3 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--warn)', flexShrink: 0 }} />
-      PROCESSING
-    </span>
-  );
-  if (isSuperseded) return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)', border: '1px solid var(--doc-border)', padding: '2px 7px', borderRadius: 3 }}>
-      SUPERSEDED
-    </span>
-  );
-  return <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>{status || '—'}</span>;
 }
 
 export default function CorpusPage() {

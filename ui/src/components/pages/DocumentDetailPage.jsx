@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { getDocumentDetail, getDocumentChunks, getSupersedeChain } from '../../api/client';
 import Tooltip from '../common/Tooltip';
 import { formatDate, formatDateTime } from '../../dateFormat';
+import { getStatusConfig } from '../../utils/status';
 
 function SectionLabel({ children }) {
   return (
@@ -26,13 +27,19 @@ function MetaRow({ label, children }) {
 }
 
 function StatusBadge({ status }) {
-  const isOk = status === 'indexed' || status === 'success';
-  const isError = status === 'error';
-  const isSuperseded = status === 'superseded';
-  if (isOk) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ok-text)', border: '1px solid var(--ok-tint-border)', background: 'var(--ok-tint)', padding: '2px 7px', borderRadius: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--ok)' }} />INDEXED</span>;
-  if (isError) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--err-text)', border: '1px solid var(--err-tint-border)', background: 'var(--err-tint)', padding: '2px 7px', borderRadius: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--err)' }} />ERROR</span>;
-  if (isSuperseded) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)', border: '1px solid var(--doc-border)', padding: '2px 7px', borderRadius: 3 }}>SUPERSEDED</span>;
-  return <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>{status || '—'}</span>;
+  const c = getStatusConfig(status);
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 600,
+      letterSpacing: '0.06em', textTransform: 'uppercase',
+      padding: '2px 7px', borderRadius: 3,
+      background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: 3, background: c.dot, flexShrink: 0 }} />
+      {c.label}
+    </span>
+  );
 }
 
 function hashAbbr(h) {

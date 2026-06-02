@@ -8,6 +8,7 @@ import {
   openBootstrapProgress,
 } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
+import { getStatusConfig } from '../../utils/status';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -203,18 +204,19 @@ function BaseCorpusCard() {
 }
 
 function StatusBadge({ status }) {
-  const s = status || '';
-  if (s === 'indexed') return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ok-text)', border: '1px solid var(--ok-tint-border)', background: 'var(--ok-tint)', padding: '2px 7px', borderRadius: 2 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--ok)', flexShrink: 0 }} />Indexed
+  const c = getStatusConfig(status);
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600,
+      letterSpacing: '0.06em', textTransform: 'uppercase',
+      padding: '2px 7px', borderRadius: 2,
+      background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: 3, background: c.dot, flexShrink: 0 }} />
+      {c.label}
     </span>
   );
-  if (s === 'error') return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--err-text)', border: '1px solid var(--err-tint-border)', background: 'var(--err-tint)', padding: '2px 7px', borderRadius: 2 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--err)', flexShrink: 0 }} />Error
-    </span>
-  );
-  return <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>{s || '—'}</span>;
 }
 
 // ── RSS Feeds Card ────────────────────────────────────────────────────────────

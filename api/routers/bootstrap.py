@@ -290,7 +290,7 @@ def _bootstrap_worker(session_id: str, docs: list):
     succeeded = session["succeeded"]
     failed = session["failed"]
     if failed == 0:
-        final_status = "complete"
+        final_status = "success"
     elif succeeded > 0:
         final_status = "partial"
     else:
