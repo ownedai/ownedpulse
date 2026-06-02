@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { getDocumentDetail, getDocumentChunks, getSupersedeChain } from '../../api/client';
 import Tooltip from '../common/Tooltip';
 import { formatDate, formatDateTime } from '../../dateFormat';
@@ -49,6 +49,10 @@ function hashAbbr(h) {
 
 export default function DocumentDetailPage() {
   const { docId } = useParams();
+  const { state: navState } = useLocation();
+  const fromSources = navState?.from === 'sources';
+  const backTo = fromSources ? '/sources' : '/corpus';
+  const backLabel = fromSources ? '← Back to sources' : '← Back to corpus';
   const [doc, setDoc] = useState(null);
   const [chunks, setChunks] = useState({ total: 0, items: [] });
   const [chain, setChain] = useState(null);
@@ -86,7 +90,7 @@ export default function DocumentDetailPage() {
       <div className="rp-page-head">
         <h1>Document Detail</h1>
         <p>Document not found.</p>
-        <Link to="/corpus" style={{ color: 'var(--accent-l)' }}>Back to corpus</Link>
+        <Link to={backTo} style={{ color: 'var(--accent-l)' }}>{backLabel}</Link>
       </div>
     );
   }
@@ -95,8 +99,8 @@ export default function DocumentDetailPage() {
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: 1200 }}>
-      <Link to="/corpus" style={{ color: 'var(--accent-l)', fontSize: 13, marginBottom: 16, display: 'inline-block' }}>
-        &larr; Back to corpus
+      <Link to={backTo} style={{ color: 'var(--accent-l)', fontSize: 13, marginBottom: 16, display: 'inline-block' }}>
+        {backLabel}
       </Link>
 
       <h1 style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.015em', margin: '8px 0 4px', color: 'var(--doc-text)', lineHeight: 1.3 }}>

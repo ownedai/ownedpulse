@@ -227,6 +227,7 @@ function BaseCorpusCard() {
                     )}
                     <Link
                       to={`/corpus/${encodeURIComponent(doc.document_id)}`}
+                      state={{ from: 'sources' }}
                       title={doc.document_title}
                       onClick={(e) => e.stopPropagation()}
                       style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none' }}
@@ -261,6 +262,7 @@ function BaseCorpusCard() {
                       <span style={{ color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', fontSize: 11, userSelect: 'none', flexShrink: 0 }}>└</span>
                       <Link
                         to={`/corpus/${encodeURIComponent(sup.document_id)}`}
+                        state={{ from: 'sources' }}
                         title={sup.document_title}
                         style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--doc-text-2)', textDecoration: 'none' }}
                       >
