@@ -362,6 +362,7 @@ async def document_chunks(
                 "cross_refs": p.get("cross_refs", []),
                 "chunk_text": p.get("chunk_text", ""),
             })
+        items.sort(key=lambda x: x["chunk_index"] if x["chunk_index"] is not None else 0)
 
         return {"document_id": doc_id, "total": total, "items": items}
     except Exception as e:
