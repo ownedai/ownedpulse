@@ -16,6 +16,7 @@ import CorpusPage from './components/pages/CorpusPage';
 import DocumentDetailPage from './components/pages/DocumentDetailPage';
 import RunLogPage from './components/pages/RunLogPage';
 import AdminPage from './components/pages/AdminPage';
+import SourcesPage from './components/pages/SourcesPage';
 import useQuery from './hooks/useQuery';
 import useModelStatus from './hooks/useModelStatus';
 import { ModelStatusContext } from './context/ModelStatusContext';
@@ -287,6 +288,7 @@ export default function App() {
             <Route path="/corpus" element={<CorpusPage />} />
             <Route path="/corpus/:docId" element={<DocumentDetailPage />} />
             <Route path="/corpus/runs" element={<RunLogPage />} />
+            <Route path="/sources" element={<SourcesPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -9,6 +9,7 @@ function usePageTitle() {
   if (pathname.startsWith('/corpus/') && pathname.length > '/corpus/'.length) return 'Document Detail';
   if (pathname === '/corpus') return 'Corpus Registry';
   if (pathname === '/admin') return 'Admin';
+  if (pathname === '/sources') return 'Sources';
   return null;
 }
 

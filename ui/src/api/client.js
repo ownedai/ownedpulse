@@ -137,3 +137,35 @@ export function updateActiveModel(model) {
     body: JSON.stringify({ model }),
   });
 }
+
+// ── Bootstrap / Sources routes ────────────────────────────────────────────────
+
+export function getBootstrapState() {
+  return request('/api/bootstrap/state');
+}
+
+export function getCorpusSummary() {
+  return request('/api/bootstrap/corpus-summary');
+}
+
+export function startBootstrapRun(scope, force = false) {
+  return request('/api/bootstrap/run', {
+    method: 'POST',
+    body: JSON.stringify({ scope, force }),
+  });
+}
+
+export function activateRss() {
+  return request('/api/bootstrap/activate-rss', { method: 'POST' });
+}
+
+export function reingestDoc(docId) {
+  return request('/api/bootstrap/reingest-doc', {
+    method: 'POST',
+    body: JSON.stringify({ doc_id: docId }),
+  });
+}
+
+export function openBootstrapProgress(sessionId) {
+  return new EventSource(`${API_BASE}/api/bootstrap/progress/${sessionId}`);
+}
