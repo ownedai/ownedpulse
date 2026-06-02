@@ -393,9 +393,9 @@ async def admin_warmup():
 
 # ── GET /admin/scheduler/status ───────────────────────────────────────────────
 
-RSS_SCHEDULE_HOUR = int(os.environ.get("RSS_SCHEDULE_HOUR", "6"))
+RSS_SCHEDULE_HOUR = int(os.environ.get("RSS_SCHEDULE_HOUR", "9"))
 RSS_SCHEDULE_MINUTE = int(os.environ.get("RSS_SCHEDULE_MINUTE", "0"))
-RSS_SCHEDULE_TIMEZONE = os.environ.get("RSS_SCHEDULE_TIMEZONE", "UTC")
+RSS_SCHEDULE_TIMEZONE = os.environ.get("RSS_SCHEDULE_TIMEZONE", "Europe/Berlin")
 
 
 @router.get("/scheduler/status")
