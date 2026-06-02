@@ -138,14 +138,18 @@ export default function DocumentDetailPage() {
           <SectionLabel>Source Integrity</SectionLabel>
           <div style={{ fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
-              <span style={{ color: 'var(--doc-text-2)' }}>PostgreSQL</span>
-              <Tooltip tip={doc.pg_source_hash || ''}>
+              <Tooltip tip="SHA-256 of the source file recorded at ingestion time (document registry)">
+                <span style={{ color: 'var(--doc-text-2)', cursor: 'help' }}>Ingestion hash</span>
+              </Tooltip>
+              <Tooltip tip={doc.pg_source_hash || 'Not recorded'}>
                 <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.pg_source_hash)}</code>
               </Tooltip>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
-              <span style={{ color: 'var(--doc-text-2)' }}>Qdrant</span>
-              <Tooltip tip={doc.qdrant_source_hash || ''}>
+              <Tooltip tip="SHA-256 stored in the vector index alongside chunk embeddings">
+                <span style={{ color: 'var(--doc-text-2)', cursor: 'help' }}>Vector store hash</span>
+              </Tooltip>
+              <Tooltip tip={doc.qdrant_source_hash || 'Not recorded'}>
                 <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.qdrant_source_hash)}</code>
               </Tooltip>
             </div>
