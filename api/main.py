@@ -20,6 +20,7 @@ from typing import Literal
 from routers.corpus import router as corpus_router
 from routers.admin import router as admin_router
 from routers.bootstrap import router as bootstrap_router
+from routers.ingestions import router as ingestions_router
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ app = FastAPI(title="regpulse API", version="0.8.0")
 app.include_router(corpus_router, prefix="/api/corpus")
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(bootstrap_router, prefix="/api/bootstrap")
+app.include_router(ingestions_router, prefix="/api/ingestions")
 
 app.add_middleware(
     CORSMiddleware,
@@ -558,7 +560,49 @@ def parse_citations(answer: str, num_chunks: int) -> set[int]:
     return cited
 
 
-def build_citation(chunk: dict, index: int, cited_by_llm: bool) -> dict:
+def fetch_chunk_provenance_batch(pg_conn, doc_ids: list) -> dict:
+    """Batch-fetch ingestion provenance for a list of doc_ids.
+    Returns dict keyed by doc_id with trace/ingestion metadata."""
+    if not doc_ids:
+        return {}
+    try:
+        cur = pg_conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT ON (id.doc_id)
+                id.doc_id,
+                id.trace_id::text,
+                id.embedding_model,
+                id.created_at AS ingested_at,
+                rl.trigger_source AS ingestion_source,
+                rl.triggered_by
+            FROM ingestion_doc id
+            LEFT JOIN run_log rl ON id.trace_id = rl.run_id
+            WHERE id.doc_id = ANY(%s)
+            ORDER BY id.doc_id, id.created_at DESC
+            """,
+            (list(doc_ids),)
+        )
+        rows = cur.fetchall()
+        cur.close()
+        result = {}
+        lf_host = os.getenv("LANGFUSE_HOST", "").rstrip("/")
+        for doc_id, trace_id, embedding_model, ingested_at, ingestion_source, triggered_by in rows:
+            langfuse_url = f"{lf_host}/trace/{trace_id}" if lf_host and trace_id else None
+            result[doc_id] = {
+                "trace_id": trace_id,
+                "langfuse_url": langfuse_url,
+                "embedding_model": embedding_model,
+                "ingested_at": ingested_at.isoformat() if ingested_at else None,
+                "ingestion_source": ingestion_source,
+                "triggered_by": triggered_by,
+            }
+        return result
+    except Exception:
+        return {}
+
+
+def build_citation(chunk: dict, index: int, cited_by_llm: bool, provenance: dict = None) -> dict:
     """Build a citation response object from a chunk."""
     title = chunk.get("document_title", "")
     if not title:
@@ -567,6 +611,7 @@ def build_citation(chunk: dict, index: int, cited_by_llm: bool) -> dict:
             title = section_path[0]
     if not title:
         title = "Untitled"
+    prov = provenance or {}
     return {
         "index": index,
         "chunk_id": chunk.get("chunk_id", ""),
@@ -588,6 +633,15 @@ def build_citation(chunk: dict, index: int, cited_by_llm: bool) -> dict:
         "superseded_by": chunk.get("superseded_by"),
         "source_local_path": chunk.get("source_local_path"),
         "source_url": chunk.get("source_url", ""),
+        # G2 provenance fields
+        "trace_id": prov.get("trace_id"),
+        "langfuse_url": prov.get("langfuse_url"),
+        "ingestion_source": prov.get("ingestion_source"),
+        "triggered_by": prov.get("triggered_by"),
+        "ingested_at": prov.get("ingested_at"),
+        "embedding_model": prov.get("embedding_model"),
+        "relevance_rank": index,
+        "collection": "knowledge_base",
     }
 
 
@@ -825,11 +879,20 @@ async def _run_content_query(
         if not cited_indices and deduped_chunks:
             cited_indices = set(range(1, min(4, len(deduped_chunks) + 1)))
 
-        # Step 7: Build citations array
+        # Step 7: Build citations array (with provenance batch)
+        doc_ids = [c.get("document_id", "") for c in deduped_chunks if c.get("document_id")]
+        try:
+            pg_conn_prov = get_pg_conn()
+            prov_map = fetch_chunk_provenance_batch(pg_conn_prov, doc_ids)
+            pg_conn_prov.close()
+        except Exception:
+            prov_map = {}
+
         cited_chunks = []
         uncited_chunks = []
         for i, chunk in enumerate(deduped_chunks, 1):
-            citation = build_citation(chunk, i, i in cited_indices)
+            doc_id = chunk.get("document_id", "")
+            citation = build_citation(chunk, i, i in cited_indices, prov_map.get(doc_id))
             if i in cited_indices:
                 cited_chunks.append(citation)
             else:

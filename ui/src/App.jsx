@@ -15,7 +15,9 @@ import HistoryPage from './components/pages/HistoryPage';
 import CorpusPage from './components/pages/CorpusPage';
 import DocumentDetailPage from './components/pages/DocumentDetailPage';
 import RunLogPage from './components/pages/RunLogPage';
+import IngestionsPage from './components/pages/IngestionsPage';
 import AdminPage from './components/pages/AdminPage';
+import QueryPage from './components/pages/QueryPage';
 import SourcesPage from './components/pages/SourcesPage';
 import useQuery from './hooks/useQuery';
 import useModelStatus from './hooks/useModelStatus';
@@ -283,11 +285,12 @@ export default function App() {
         <TopNav />
         <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <Routes>
-            <Route path="/" element={<MainPage key={resetKey} />} />
+            <Route path="/" element={<QueryPage key={resetKey} />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/corpus" element={<CorpusPage />} />
             <Route path="/corpus/:docId" element={<DocumentDetailPage />} />
-            <Route path="/corpus/runs" element={<RunLogPage />} />
+            <Route path="/corpus/runs" element={<Navigate to="/ingestions" replace />} />
+            <Route path="/ingestions" element={<IngestionsPage />} />
             <Route path="/sources" element={<SourcesPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -169,3 +169,21 @@ export function reingestDoc(docId) {
 export function openBootstrapProgress(sessionId) {
   return new EventSource(`${API_BASE}/api/bootstrap/progress/${sessionId}`);
 }
+
+// ── Ingestions routes ─────────────────────────────────────────────────────────
+
+export function getIngestions(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') qs.set(k, v);
+  });
+  return request(`/api/ingestions?${qs.toString()}`);
+}
+
+export function getSessionDocuments(runToken, page = 1, pageSize = 25) {
+  return request(`/api/ingestions/sessions/${encodeURIComponent(runToken)}/documents?page=${page}&page_size=${pageSize}`);
+}
+
+export function getRunDocuments(runId, page = 1, pageSize = 25) {
+  return request(`/api/ingestions/runs/${encodeURIComponent(runId)}/documents?page=${page}&page_size=${pageSize}`);
+}

@@ -26,6 +26,7 @@ function isNavActive(to, pathname) {
   }
   return pathname === to || pathname.startsWith(to + '/');
 }
+// /corpus/runs redirects to /ingestions — mark ingestions active for both paths
 
 const SearchIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -58,7 +59,7 @@ const NAV_ITEMS = [
   { to: '/history', label: 'Query Log', Icon: SearchIcon },
   { to: '/corpus', label: 'Corpus', Icon: DatabaseIcon },
   { to: '/sources', label: 'Sources', Icon: LayersIcon },
-  { to: '/corpus/runs', label: 'Run Log', Icon: ClockIcon },
+  { to: '/ingestions', label: 'Ingestions', Icon: ClockIcon },
   { to: '/admin', label: 'Admin', Icon: SettingsIcon, separator: true },
 ];
 
