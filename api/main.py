@@ -23,7 +23,7 @@ from routers.bootstrap import router as bootstrap_router
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="regpulse API", version="0.7.0")
+app = FastAPI(title="regpulse API", version="0.8.0")
 
 app.include_router(corpus_router, prefix="/api/corpus")
 app.include_router(admin_router, prefix="/api/admin")
