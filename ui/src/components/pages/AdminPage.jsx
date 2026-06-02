@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { getAdminHealth, getAdminFeeds, toggleFeed, triggerPipelineRun, getAdminModels, updateActiveModel } from '../../api/client';
+import { getAdminHealth, getAdminModels, updateActiveModel } from '../../api/client';
 import { useModelStatusContext } from '../../context/ModelStatusContext';
 
 function SectionLabel({ children }) {
@@ -79,150 +78,6 @@ function HealthPanel() {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function Toggle({ checked, onChange }) {
-  return (
-    <label style={{ position: 'relative', display: 'inline-block', width: 36, height: 20, cursor: 'pointer', flexShrink: 0 }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
-      />
-      <span style={{
-        position: 'absolute', inset: 0, borderRadius: 20,
-        background: checked ? 'var(--accent-l)' : 'var(--doc-border-strong)',
-        transition: 'background 150ms ease',
-      }} />
-      <span style={{
-        position: 'absolute',
-        width: 14, height: 14,
-        borderRadius: 7,
-        background: '#fff',
-        top: 3, left: checked ? 19 : 3,
-        transition: 'left 150ms ease',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-      }} />
-    </label>
-  );
-}
-
-function FeedsPanel() {
-  const [feeds, setFeeds] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    getAdminFeeds()
-      .then(setFeeds)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <div className="rp-card">
-      <SectionLabel>Feed Management</SectionLabel>
-      {loading ? (
-        <div style={{ color: 'var(--doc-text-2)', fontSize: 13 }}>Loading...</div>
-      ) : (
-        <table className="rp-table" style={{ margin: 0 }}>
-          <thead>
-            <tr>
-              <th>Feed Name</th>
-              <th>URL</th>
-              <th style={{ width: 70 }}>Enabled</th>
-            </tr>
-          </thead>
-          <tbody>
-            {feeds.map((f) => (
-              <tr key={f.feed_id}>
-                <td>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{f.name}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-3)' }}>
-                    {f.feed_id} · {f.feed_type}
-                  </div>
-                </td>
-                <td>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-2)' }}>
-                    {f.url ? (f.url.length > 45 ? f.url.substring(0, 45) + '…' : f.url) : '—'}
-                  </span>
-                </td>
-                <td>
-                  <Toggle
-                    checked={f.enabled}
-                    onChange={(e) => {
-                      toggleFeed(f.feed_id, e.target.checked).then((updated) => {
-                        setFeeds((prev) => prev.map((pf) => pf.feed_id === updated.feed_id ? updated : pf));
-                      }).catch(() => {});
-                    }}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function TriggerPanel() {
-  const [triggering, setTriggering] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-
-  const trigger = () => {
-    setTriggering(true);
-    setResult(null);
-    setError(null);
-    triggerPipelineRun()
-      .then((data) => { setResult(data); })
-      .catch((err) => setError(err.message))
-      .finally(() => setTriggering(false));
-  };
-
-  const webhookError = error === 'Webhook URL not configured';
-
-  return (
-    <div className="rp-card">
-      <SectionLabel>Pipeline Trigger</SectionLabel>
-      {webhookError ? (
-        <div style={{ padding: 12, background: 'var(--warn-tint)', borderRadius: 6, color: 'var(--warn-text)', fontSize: 13, border: '1px solid var(--warn-tint-border)' }}>
-          Webhook not configured. Set <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>n8n_trigger_webhook</code> in system_config.
-        </div>
-      ) : (
-        <>
-          <button
-            onClick={trigger}
-            disabled={triggering || !!result}
-            style={{
-              display: 'block', width: '100%',
-              padding: '10px 20px',
-              background: result ? 'var(--ok)' : triggering ? '#94a3b8' : 'var(--accent-l)',
-              color: '#fff', border: 'none', borderRadius: 6,
-              cursor: triggering || result ? 'default' : 'pointer',
-              fontSize: 14, fontWeight: 500,
-              transition: 'background 200ms ease',
-            }}
-          >
-            {result ? '✓ Run started' : triggering ? 'Triggering…' : 'Run Pipeline Now'}
-          </button>
-          {result && (
-            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--doc-text-2)' }}>
-              <Link to={`/corpus/runs?run=${result.run_id}`} style={{ color: 'var(--accent-l)' }}>
-                ● View in Run Log →
-              </Link>
-            </div>
-          )}
-        </>
-      )}
-      {error && !webhookError && (
-        <div style={{ marginTop: 10, padding: 10, background: 'var(--err-tint)', borderRadius: 4, color: 'var(--err-text)', fontSize: 12, border: '1px solid var(--err-tint-border)' }}>
-          {error}
-        </div>
-      )}
     </div>
   );
 }
@@ -315,8 +170,6 @@ export default function AdminPage() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 20 }}>
         <HealthPanel />
-        <FeedsPanel />
-        <TriggerPanel />
         <ModelPanel />
       </div>
     </>

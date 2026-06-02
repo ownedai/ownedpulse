@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
-  getAdminFeeds, toggleFeed,
+  getAdminFeeds, toggleFeed, triggerFeedRun, triggerPipelineRun,
   getCorpusDocumentsV2, reingestDoc,
   openBootstrapProgress,
 } from '../../api/client';
@@ -219,9 +219,9 @@ function BaseCorpusCard() {
             <>
               <tr key={doc.document_id} style={{ cursor: superseded.length > 0 ? 'pointer' : undefined }} onClick={superseded.length > 0 ? () => toggleExpand(doc.document_id) : undefined}>
                 <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                     {superseded.length > 0 && (
-                      <span style={{ color: 'var(--doc-text-3)', display: 'flex', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--doc-text-3)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         <ChevronIcon open={!!expanded[doc.document_id]} />
                       </span>
                     )}
@@ -229,7 +229,7 @@ function BaseCorpusCard() {
                       to={`/corpus/${encodeURIComponent(doc.document_id)}`}
                       title={doc.document_title}
                       onClick={(e) => e.stopPropagation()}
-                      style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none' }}
+                      style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none' }}
                     >
                       {doc.document_title || doc.document_id}
                     </Link>
@@ -257,12 +257,12 @@ function BaseCorpusCard() {
               {expanded[doc.document_id] && superseded.map((sup) => (
                 <tr key={sup.document_id} style={{ background: 'var(--doc-bg)', opacity: 0.72 }}>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 18 }}>
-                      <span style={{ color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', fontSize: 11, userSelect: 'none' }}>└</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 18, minWidth: 0, overflow: 'hidden' }}>
+                      <span style={{ color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', fontSize: 11, userSelect: 'none', flexShrink: 0 }}>└</span>
                       <Link
                         to={`/corpus/${encodeURIComponent(sup.document_id)}`}
                         title={sup.document_title}
-                        style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--doc-text-2)', textDecoration: 'none' }}
+                        style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--doc-text-2)', textDecoration: 'none' }}
                       >
                         {sup.document_title || sup.document_id}
                       </Link>
@@ -326,7 +326,9 @@ function RssFeedsCard() {
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(null);
-  const [reingesting, setReingesting] = useState(null);
+  // runState per feed: null | 'running' | 'ok' | 'error'
+  const [runState, setRunState] = useState({});
+  const [runAllState, setRunAllState] = useState(null); // null | 'running' | 'ok' | 'error'
 
   const fetchFeeds = useCallback(() => {
     setLoading(true);
@@ -347,70 +349,142 @@ function RssFeedsCard() {
     setToggling(null);
   }
 
+  async function handleRunFeed(feedId) {
+    setRunState((s) => ({ ...s, [feedId]: 'running' }));
+    try {
+      await triggerFeedRun(feedId);
+      setRunState((s) => ({ ...s, [feedId]: 'ok' }));
+      setTimeout(() => setRunState((s) => ({ ...s, [feedId]: null })), 4000);
+    } catch (_) {
+      setRunState((s) => ({ ...s, [feedId]: 'error' }));
+      setTimeout(() => setRunState((s) => ({ ...s, [feedId]: null })), 4000);
+    }
+  }
+
+  async function handleRunAll() {
+    setRunAllState('running');
+    try {
+      await triggerPipelineRun();
+      setRunAllState('ok');
+      setTimeout(() => setRunAllState(null), 4000);
+    } catch (_) {
+      setRunAllState('error');
+      setTimeout(() => setRunAllState(null), 4000);
+    }
+  }
+
+  const runAllLabel = runAllState === 'running' ? 'Triggering…'
+    : runAllState === 'ok' ? '✓ Triggered'
+    : runAllState === 'error' ? '✕ Failed'
+    : 'Run all';
+
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
         <span>RSS Feeds</span>
         <button
           onClick={fetchFeeds}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center' }}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center', marginLeft: 6 }}
           title="Refresh"
         >
           <RefreshIcon />
         </button>
+        <div style={{ marginLeft: 'auto' }}>
+          <button
+            onClick={handleRunAll}
+            disabled={runAllState === 'running'}
+            style={{
+              padding: '4px 12px', borderRadius: 4, border: '1px solid',
+              fontSize: 12, fontFamily: 'var(--mono)', cursor: runAllState === 'running' ? 'default' : 'pointer',
+              borderColor: runAllState === 'error' ? 'var(--err-text)' : runAllState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
+              background: runAllState === 'error' ? 'var(--err-tint)' : runAllState === 'ok' ? 'var(--ok-tint)' : 'var(--accent-tint)',
+              color: runAllState === 'error' ? 'var(--err-text)' : runAllState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
+              transition: 'all 150ms ease',
+            }}
+          >
+            {runAllLabel}
+          </button>
+        </div>
       </div>
       <table className="rp-table" style={{ fontSize: 12.5 }}>
         <thead>
           <tr>
-            <th>Feed Name</th>
-            <th style={{ width: 80 }}>Source ID</th>
-            <th>URL</th>
-            <th style={{ width: 70 }}>Enabled</th>
-            <th style={{ width: 130 }}>Last Fetch</th>
-            <th style={{ width: 90 }}>Actions</th>
+            <th>Feed</th>
+            <th style={{ width: 65, textAlign: 'center' }}>Enabled</th>
+            <th style={{ width: 140 }}>Last Fetch</th>
+            <th style={{ width: 100, textAlign: 'right' }}>Action</th>
           </tr>
         </thead>
         <tbody>
           {loading && (
-            <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>Loading…</td></tr>
+            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>Loading…</td></tr>
           )}
           {!loading && feeds.length === 0 && (
-            <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>No feeds configured.</td></tr>
+            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>No feeds configured.</td></tr>
           )}
-          {feeds.map((f) => (
-            <tr key={f.feed_id}>
-              <td style={{ fontWeight: 500 }}>{f.name}</td>
-              <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{f.feed_id}</td>
-              <td>
-                <span
-                  title={f.url}
-                  style={{ display: 'block', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)', cursor: 'help' }}
-                >
-                  {f.url}
-                </span>
-              </td>
-              <td>
-                <button
-                  className={`rp-toggle ${f.enabled ? 'on' : ''} ${toggling === f.feed_id ? 'loading' : ''}`}
-                  onClick={() => handleToggle(f.feed_id, f.enabled)}
-                  disabled={toggling === f.feed_id}
-                  title={f.enabled ? 'Click to disable' : 'Click to enable'}
-                >
-                  <span className="thumb" />
-                </button>
-              </td>
-              <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
-                {f.last_run_at ? formatDateTime(f.last_run_at) : '—'}
-              </td>
-              <td>
-                <div className="rp-act">
-                  {reingesting === f.feed_id ? (
-                    <span className="btn busy"><span className="sp" /> Running…</span>
-                  ) : null}
-                </div>
-              </td>
-            </tr>
-          ))}
+          {feeds.map((f) => {
+            const rs = runState[f.feed_id];
+            return (
+              <tr key={f.feed_id}>
+                <td>
+                  <div style={{ fontWeight: 500, fontSize: 13 }}>{f.name}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-3)', marginTop: 2 }}>
+                    {f.feed_id} · {f.feed_type}
+                    {f.url && (
+                      <span title={f.url} style={{ marginLeft: 4, cursor: 'help' }}>
+                        · <span style={{ textDecoration: 'underline dotted' }}>
+                          {f.url.length > 40 ? f.url.slice(0, 40) + '…' : f.url}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  <button
+                    className={`rp-toggle ${f.enabled ? 'on' : ''} ${toggling === f.feed_id ? 'loading' : ''}`}
+                    onClick={() => handleToggle(f.feed_id, f.enabled)}
+                    disabled={toggling === f.feed_id}
+                    title={f.enabled ? 'Click to disable' : 'Click to enable'}
+                  >
+                    <span className="thumb" />
+                  </button>
+                </td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
+                  {f.last_run_at ? formatDateTime(f.last_run_at) : '—'}
+                </td>
+                <td style={{ textAlign: 'right' }}>
+                  {rs === 'running' ? (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent-l)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span className="sp" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, border: '2px solid var(--accent-l)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
+                      Running…
+                    </span>
+                  ) : rs === 'ok' ? (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ok-text)', fontWeight: 500 }}>✓ Triggered</span>
+                  ) : rs === 'error' ? (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err-text)', fontWeight: 500 }}>✕ Failed</span>
+                  ) : (
+                    <button
+                      onClick={() => handleRunFeed(f.feed_id)}
+                      disabled={!f.enabled}
+                      title={!f.enabled ? 'Feed is disabled' : 'Trigger this feed now'}
+                      style={{
+                        padding: '3px 10px', fontSize: 11, fontFamily: 'var(--mono)',
+                        borderRadius: 4, border: '1px solid',
+                        cursor: f.enabled ? 'pointer' : 'default',
+                        borderColor: f.enabled ? 'var(--accent-l)' : 'var(--doc-border)',
+                        color: f.enabled ? 'var(--accent-l)' : 'var(--doc-text-3)',
+                        background: 'transparent',
+                        transition: 'all 120ms ease',
+                        opacity: f.enabled ? 1 : 0.5,
+                      }}
+                    >
+                      Run now
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

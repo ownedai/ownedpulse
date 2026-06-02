@@ -2554,6 +2554,8 @@ body {
   border-radius: 6px;
   background: var(--doc-bg);
   padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .rp-agency-group .ag-head {
@@ -2627,7 +2629,7 @@ a.ag-row:hover .n {
 }
 
 .rp-agency-group .ag-foot {
-  margin-top: 10px;
+  margin-top: auto;
   padding-top: 10px;
   border-top: 1px solid var(--doc-border);
   font-family: var(--mono);

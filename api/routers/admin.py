@@ -176,6 +176,69 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
         conn.close()
 
 
+# ── POST /admin/feeds/{feed_id}/trigger ──────────────────────────────────────
+
+@router.post("/feeds/{feed_id}/trigger")
+async def admin_trigger_feed(feed_id: str):
+    """Trigger a single feed run. Creates a run_log row and calls n8n with feed_id param."""
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT feed_id, enabled FROM feed_config WHERE feed_id = %s", (feed_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found")
+        if not row[1]:
+            raise HTTPException(status_code=422, detail=f"Feed '{feed_id}' is disabled")
+        cur.execute("SELECT value FROM system_config WHERE key = 'n8n_trigger_webhook'")
+        wrow = cur.fetchone()
+        cur.close()
+    finally:
+        conn.close()
+
+    webhook_url = (wrow[0] if wrow and wrow[0] else "").strip()
+    if not webhook_url:
+        raise HTTPException(status_code=503, detail="Webhook URL not configured in system_config")
+
+    run_id = str(uuid.uuid4())
+
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO run_log (run_id, trigger_source, triggered_by, feed_source, status)
+               VALUES (%s, 'manual', 'admin-ui', %s, 'running')""",
+            (run_id, feed_id)
+        )
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
+
+    try:
+        async with httpx.AsyncClient() as http:
+            r = await http.get(
+                webhook_url,
+                params={"run_id": run_id, "trigger_source": "manual", "feed_id": feed_id},
+                timeout=15,
+            )
+    except Exception as e:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE run_log SET status='error', error_detail=%s, completed_at=NOW() WHERE run_id=%s",
+                (f"Webhook call failed: {str(e)}", run_id),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+        raise HTTPException(status_code=502, detail=f"n8n webhook call failed: {str(e)}")
+
+    return {"run_id": run_id, "feed_id": feed_id, "status": "triggered"}
+
+
 # ── POST /admin/trigger-run ──────────────────────────────────────────────────
 
 @router.post("/trigger-run")

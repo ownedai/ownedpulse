@@ -127,6 +127,10 @@ export function triggerPipelineRun() {
   return request('/api/admin/trigger-run', { method: 'POST' });
 }
 
+export function triggerFeedRun(feedId) {
+  return request(`/api/admin/feeds/${encodeURIComponent(feedId)}/trigger`, { method: 'POST' });
+}
+
 export function getAdminModels() {
   return request('/api/admin/models');
 }
