@@ -241,7 +241,7 @@ async def document_detail(doc_id: str):
                       source_hash as pg_source_hash,
                       metadata_json->>'source_file_format' as file_format,
                       metadata_json->>'archive_path' as archive_path_json,
-                      document_family_id, archive_path, feed_id
+                      document_family_id, archive_path, feed_id, corpus_doc
                FROM document_registry WHERE document_id = %s""",
             (doc_id,)
         )
@@ -252,7 +252,7 @@ async def document_detail(doc_id: str):
             raise HTTPException(status_code=404, detail="Document not found")
 
         (did, ib, dt, status, chunk_count, li, run_id, title, pub_date, version,
-         reg_type, source_url, pg_source_hash, file_format, archive_path_json, fam_id, archive_path, feed_id) = row
+         reg_type, source_url, pg_source_hash, file_format, archive_path_json, fam_id, archive_path, feed_id, corpus_doc) = row
 
         # Query Qdrant for the first chunk's source_hash and total point count
         qdrant_source_hash = None
@@ -303,6 +303,7 @@ async def document_detail(doc_id: str):
             "source_file_format": file_format,
             "archive_path": archive_path,
             "feed_id": feed_id,
+            "corpus_doc": corpus_doc,
             "pg_source_hash": pg_source_hash,
             "qdrant_source_hash": qdrant_source_hash,
             "hash_match": hash_match,

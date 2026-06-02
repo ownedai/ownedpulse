@@ -119,7 +119,7 @@ export default function DocumentDetailPage() {
           <MetaRow label="Version">{doc.document_version || '—'}</MetaRow>
           <MetaRow label="Publication Date">{formatDate(doc.publication_date)}</MetaRow>
           <MetaRow label="Status"><StatusBadge status={doc.ingestion_status} /></MetaRow>
-          <MetaRow label="Feed">{doc.feed_id || '—'}</MetaRow>
+          <MetaRow label="Feed">{doc.feed_id || (doc.corpus_doc ? 'Base corpus' : '—')}</MetaRow>
           <MetaRow label="Source URL">
             {doc.source_url ? (
               <a href={doc.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-l)', fontSize: 12 }}>
