@@ -96,7 +96,7 @@ function CorpusSummaryCard() {
                   </div>
                 )}
                 <div className="ag-foot">
-                  Last indexed <span className="v">{data?.last_indexed ? formatDate(data.last_indexed) : '—'}</span>
+                  Last indexed <span className="v">{ag?.last_indexed ? formatDateTime(ag.last_indexed) : (data?.last_indexed ? formatDateTime(data.last_indexed) : '—')}</span>
                 </div>
               </div>
             );
@@ -565,7 +565,7 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   );
 }
 
-function InitialLoadCard({ onOpenModal, lastBootstrap, docCount }) {
+function InitialLoadCard({ onOpenModal, lastBootstrap, docCount, bootstrapDocCount }) {
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">Initial Load</div>
@@ -576,7 +576,11 @@ function InitialLoadCard({ onOpenModal, lastBootstrap, docCount }) {
         </button>
         <div className="rp-il-meta">
           {docCount > 0 ? (
-            <>Corpus last populated: <span className="v">{lastBootstrap ? formatDate(lastBootstrap) : 'unknown'}</span> · <span className="v">{docCount.toLocaleString()}</span> documents</>
+            <>
+              Corpus last populated: <span className="v">{lastBootstrap ? formatDateTime(lastBootstrap) : '—'}</span>
+              {' · '}
+              <span className="v">{(bootstrapDocCount || 0).toLocaleString()}</span> documents loaded in initial run
+            </>
           ) : (
             'Corpus is empty. Run Initial Load to ingest all regulatory documents.'
           )}
@@ -590,7 +594,7 @@ function InitialLoadCard({ onOpenModal, lastBootstrap, docCount }) {
 
 export default function SourcesPage() {
   const [showModal, setShowModal] = useState(false);
-  const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
+  const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, bootstrap_doc_count: 0, last_bootstrap: null });
 
   useEffect(() => {
     getBootstrapState()
@@ -608,6 +612,7 @@ export default function SourcesPage() {
           onOpenModal={() => setShowModal(true)}
           lastBootstrap={bootstrapState.last_bootstrap}
           docCount={bootstrapState.doc_count}
+          bootstrapDocCount={bootstrapState.bootstrap_doc_count}
         />
       </div>
 

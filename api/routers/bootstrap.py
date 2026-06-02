@@ -68,18 +68,34 @@ async def bootstrap_state():
     n8n_active = False
     last_bootstrap = None
 
+    bootstrap_doc_count = 0
+
     try:
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
             cur.execute("SELECT count(*) FROM document_registry")
             doc_count = cur.fetchone()[0]
-            # Check for last bootstrap run
+            # Last bootstrap session: bootstrap_ui or manual_cli, grouped by UTC date
             cur.execute(
-                "SELECT max(triggered_at) FROM run_log WHERE trigger_source = 'bootstrap_ui'"
+                """
+                SELECT last_at, session_doc_count FROM (
+                    SELECT
+                        MAX(triggered_at) AS last_at,
+                        COUNT(*) AS session_doc_count,
+                        (triggered_at AT TIME ZONE 'UTC')::date AS grp_date
+                    FROM run_log
+                    WHERE trigger_source IN ('bootstrap_ui', 'manual_cli')
+                    GROUP BY (triggered_at AT TIME ZONE 'UTC')::date
+                    ORDER BY grp_date DESC
+                    LIMIT 1
+                ) t
+                """
             )
             row = cur.fetchone()
-            last_bootstrap = row[0].isoformat() if row and row[0] else None
+            if row and row[0]:
+                last_bootstrap = row[0].isoformat()
+                bootstrap_doc_count = int(row[1])
             # Check n8n webhook
             cur.execute("SELECT value FROM system_config WHERE key = 'n8n_trigger_webhook'")
             row = cur.fetchone()
@@ -100,6 +116,7 @@ async def bootstrap_state():
     return {
         "state": "initialized" if doc_count > 0 else "fresh",
         "doc_count": doc_count,
+        "bootstrap_doc_count": bootstrap_doc_count,
         "n8n_active": n8n_active,
         "last_bootstrap": last_bootstrap,
         "active_session": active_session,
@@ -119,14 +136,23 @@ async def corpus_summary():
                 """
                 SELECT issuing_body, doc_type, count(*)
                 FROM document_registry
-                WHERE ingestion_status = 'indexed'
+                WHERE ingestion_status IN ('indexed', 'success')
                 GROUP BY issuing_body, doc_type
                 ORDER BY issuing_body, count(*) DESC
                 """
             )
             rows = cur.fetchall()
-            cur.execute("SELECT max(last_indexed_at) FROM document_registry")
-            last_indexed = cur.fetchone()[0]
+            # Per-agency last indexed from ingestion_doc.created_at (last_indexed_at is unpopulated)
+            cur.execute(
+                """
+                SELECT dr.issuing_body, max(id.created_at)
+                FROM ingestion_doc id
+                JOIN document_registry dr ON dr.document_id = id.doc_id
+                WHERE id.status = 'success'
+                GROUP BY dr.issuing_body
+                """
+            )
+            agency_last = {row[0]: row[1] for row in cur.fetchall()}
             cur.close()
         finally:
             conn.close()
@@ -138,15 +164,27 @@ async def corpus_summary():
     for issuing_body, doc_type, count in rows:
         agency = normalise_agency(issuing_body or "Unknown")
         if agency not in by_agency:
-            by_agency[agency] = {"agency": agency, "total": 0, "by_type": {}}
+            by_agency[agency] = {"agency": agency, "total": 0, "by_type": {}, "last_indexed": None}
         by_agency[agency]["total"] += count
         by_agency[agency]["by_type"][doc_type or "other"] = (
             by_agency[agency]["by_type"].get(doc_type or "other", 0) + count
         )
 
+    # Attach per-agency last indexed; merge EU-Commission into EMA
+    for raw_agency, ts in agency_last.items():
+        normalised = normalise_agency(raw_agency or "Unknown")
+        if normalised in by_agency:
+            existing = by_agency[normalised]["last_indexed"]
+            candidate = ts.isoformat() if ts else None
+            if candidate and (existing is None or candidate > existing):
+                by_agency[normalised]["last_indexed"] = candidate
+
+    all_dates = [ag["last_indexed"] for ag in by_agency.values() if ag["last_indexed"]]
+    global_last = max(all_dates) if all_dates else None
+
     return {
         "agencies": list(by_agency.values()),
-        "last_indexed": last_indexed.isoformat() if last_indexed else None,
+        "last_indexed": global_last,
     }
 
 
