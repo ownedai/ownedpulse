@@ -238,7 +238,7 @@ async def document_detail(doc_id: str):
                       metadata_json->>'document_version' as version,
                       metadata_json->>'document_type' as regulatory_type,
                       metadata_json->>'source_url' as source_url,
-                      metadata_json->>'source_file_hash' as pg_source_hash,
+                      source_hash as pg_source_hash,
                       metadata_json->>'source_file_format' as file_format,
                       metadata_json->>'archive_path' as archive_path_json,
                       document_family_id, archive_path, feed_id
