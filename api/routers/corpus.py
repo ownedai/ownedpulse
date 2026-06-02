@@ -135,6 +135,7 @@ async def corpus_documents(
     ingestion_status: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    corpus_doc: bool | None = None,
 ):
     conn = get_pg_conn()
     try:
@@ -167,6 +168,10 @@ async def corpus_documents(
             conditions.append("metadata_json->>'publication_date' <= %s")
             params.append(date_to)
 
+        if corpus_doc is not None:
+            conditions.append("corpus_doc = %s")
+            params.append(corpus_doc)
+
         where = ""
         if conditions:
             where = " WHERE " + " AND ".join(conditions)
@@ -175,6 +180,7 @@ async def corpus_documents(
         total = cur.fetchone()[0]
 
         offset = (page - 1) * page_size
+        order_clause = "ORDER BY metadata_json->>'publication_date' DESC NULLS LAST" if corpus_doc else "ORDER BY last_indexed_at DESC NULLS LAST"
         cur.execute(
             f"""SELECT document_id, issuing_body, doc_type, ingestion_status,
                        chunk_count, last_indexed_at, run_id,
@@ -183,9 +189,9 @@ async def corpus_documents(
                        metadata_json->>'document_version' as version,
                        metadata_json->>'document_type' as regulatory_type,
                        metadata_json->>'source_url' as source_url,
-                       document_family_id
+                       document_family_id, corpus_doc
                 FROM document_registry{where}
-                ORDER BY last_indexed_at DESC NULLS LAST
+                {order_clause}
                 LIMIT %s OFFSET %s""",
             params + [page_size, offset]
         )
@@ -194,7 +200,7 @@ async def corpus_documents(
 
         items = []
         for row in rows:
-            doc_id, ib, dt, status, chunk_count, li, run_id, title, pub_date, version, reg_type, source_url, fam_id = row
+            doc_id, ib, dt, status, chunk_count, li, run_id, title, pub_date, version, reg_type, source_url, fam_id, cdoc = row
             items.append({
                 "document_id": doc_id,
                 "document_title": title or "Untitled",
@@ -208,6 +214,7 @@ async def corpus_documents(
                 "last_indexed_at": li.isoformat() if hasattr(li, 'isoformat') else str(li) if li else None,
                 "run_id": run_id,
                 "document_family_id": fam_id,
+                "corpus_doc": cdoc,
                 "source_url": source_url,
             })
 

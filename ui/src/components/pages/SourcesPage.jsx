@@ -123,75 +123,77 @@ function CorpusSummaryCard() {
 
 // ── Base Corpus Card ──────────────────────────────────────────────────────────
 
-const AGENCY_TABS_BC = ['All', 'FDA', 'EMA', 'ICH'];
-const PAGE_SIZE_BC = 25;
+function groupByFamily(docs) {
+  // Separate docs with and without family_id
+  const byFamily = {};
+  const standalone = [];
 
-const DOC_TYPE_LABEL_BC = {
-  guidance: 'Guidance', drug_approval: 'Drug Approval', press_release: 'Press Release',
-  reflection_paper: 'Reflection Paper', safety_alert: 'Safety Alert',
-  news_item: 'News', other: 'Other',
-};
+  for (const doc of docs) {
+    if (doc.document_family_id) {
+      if (!byFamily[doc.document_family_id]) byFamily[doc.document_family_id] = [];
+      byFamily[doc.document_family_id].push(doc);
+    } else {
+      standalone.push(doc);
+    }
+  }
+
+  // Within each family, sort by publication_date desc (newest = current version)
+  const familyGroups = Object.values(byFamily).map((group) => {
+    const sorted = [...group].sort((a, b) => (b.publication_date || '') > (a.publication_date || '') ? 1 : -1);
+    return { current: sorted[0], superseded: sorted.slice(1) };
+  });
+
+  // Build flat rows for rendering: standalones interleaved, families as groups
+  const result = [];
+  for (const doc of standalone) {
+    result.push({ type: 'doc', doc, superseded: [] });
+  }
+  for (const g of familyGroups) {
+    result.push({ type: 'doc', doc: g.current, superseded: g.superseded });
+  }
+  // Sort: by publication_date desc within each top-level entry
+  result.sort((a, b) => (b.doc.publication_date || '') > (a.doc.publication_date || '') ? 1 : -1);
+  return result;
+}
 
 function BaseCorpusCard() {
   const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [agency, setAgency] = useState('All');
-  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState({});
   const [reingesting, setReingesting] = useState(null);
 
-  const load = useCallback((ag, pg) => {
+  const load = useCallback(() => {
     setLoading(true);
-    getCorpusDocumentsV2({
-      page: pg,
-      page_size: PAGE_SIZE_BC,
-      issuing_body: ag === 'All' ? undefined : ag,
-    })
-      .then((d) => { setItems(d.items || []); setTotal(d.total || 0); })
+    getCorpusDocumentsV2({ page: 1, page_size: 50, corpus_doc: true })
+      .then((d) => setItems(d.items || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(agency, page); }, [agency, page, load]);
+  useEffect(() => { load(); }, [load]);
 
-  function handleAgency(ag) { setAgency(ag); setPage(1); }
+  function toggleExpand(docId) {
+    setExpanded((prev) => ({ ...prev, [docId]: !prev[docId] }));
+  }
 
   async function handleReingest(docId) {
     setReingesting(docId);
     try { await reingestDoc(docId); } catch (_) {}
-    setTimeout(() => { setReingesting(null); load(agency, page); }, 3000);
+    setTimeout(() => { setReingesting(null); load(); }, 3000);
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE_BC);
+  const rows = groupByFamily(items);
 
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
         <span>Base Corpus</span>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--doc-text-3)', fontWeight: 400, marginLeft: 6 }}>
-          {total > 0 ? `${total.toLocaleString()} documents` : ''}
+          {items.length > 0 ? `${items.length} curated documents` : ''}
         </span>
         <Link to="/corpus" style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--accent-l)', textDecoration: 'none' }}>
           View all →
         </Link>
-      </div>
-
-      {/* Agency tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
-        {AGENCY_TABS_BC.map((ag) => (
-          <button
-            key={ag}
-            onClick={() => handleAgency(ag)}
-            style={{
-              padding: '3px 10px', borderRadius: 4, border: '1px solid',
-              fontSize: 11.5, fontFamily: 'var(--mono)', cursor: 'pointer',
-              borderColor: agency === ag ? 'var(--accent-l)' : 'var(--doc-border)',
-              background: agency === ag ? 'var(--accent-tint)' : 'var(--doc-surface)',
-              color: agency === ag ? 'var(--accent-l)' : 'var(--doc-text-2)',
-              fontWeight: agency === ag ? 500 : 400,
-            }}
-          >{ag}</button>
-        ))}
       </div>
 
       <table className="rp-table" style={{ fontSize: 12.5 }}>
@@ -199,9 +201,9 @@ function BaseCorpusCard() {
           <tr>
             <th>Document</th>
             <th style={{ width: 55 }}>Agency</th>
-            <th style={{ width: 110 }}>Doc Type</th>
+            <th style={{ width: 90 }}>Version</th>
             <th style={{ width: 95 }}>Published</th>
-            <th style={{ width: 85 }}>Status</th>
+            <th style={{ width: 90 }}>Status</th>
             <th style={{ width: 55, textAlign: 'right' }}>Chunks</th>
             <th style={{ width: 100 }}>Actions</th>
           </tr>
@@ -210,59 +212,95 @@ function BaseCorpusCard() {
           {loading && (
             <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>Loading…</td></tr>
           )}
-          {!loading && items.length === 0 && (
-            <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>No documents found.</td></tr>
+          {!loading && rows.length === 0 && (
+            <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>No base corpus documents found.</td></tr>
           )}
-          {items.map((doc) => (
-            <tr key={doc.document_id}>
-              <td>
-                <Link
-                  to={`/corpus/${encodeURIComponent(doc.document_id)}`}
-                  title={doc.document_title}
-                  style={{ display: 'block', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none' }}
-                >
-                  {doc.document_title || doc.document_id}
-                </Link>
-              </td>
-              <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{doc.issuing_body}</td>
-              <td style={{ fontSize: 11.5, color: 'var(--doc-text-2)' }}>{DOC_TYPE_LABEL_BC[doc.doc_type] || doc.doc_type || '—'}</td>
-              <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
-              <td><StatusBadge status={doc.ingestion_status} /></td>
-              <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.chunk_count || '—'}</td>
-              <td>
-                <div className="rp-act">
-                  {reingesting === doc.document_id ? (
-                    <span className="btn busy"><span className="sp" /> Reingesting…</span>
-                  ) : (
-                    <button className="btn" onClick={() => handleReingest(doc.document_id)}>
-                      <RefreshIcon /> Reingest
-                    </button>
-                  )}
-                </div>
-              </td>
-            </tr>
+          {rows.map(({ doc, superseded }) => (
+            <>
+              <tr key={doc.document_id} style={{ cursor: superseded.length > 0 ? 'pointer' : undefined }} onClick={superseded.length > 0 ? () => toggleExpand(doc.document_id) : undefined}>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {superseded.length > 0 && (
+                      <span style={{ color: 'var(--doc-text-3)', display: 'flex', alignItems: 'center' }}>
+                        <ChevronIcon open={!!expanded[doc.document_id]} />
+                      </span>
+                    )}
+                    <Link
+                      to={`/corpus/${encodeURIComponent(doc.document_id)}`}
+                      title={doc.document_title}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none' }}
+                    >
+                      {doc.document_title || doc.document_id}
+                    </Link>
+                  </div>
+                </td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
+                  {doc.issuing_body === 'EU-Commission' ? 'EMA' : doc.issuing_body}
+                </td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version || '—'}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
+                <td><StatusBadge status={doc.ingestion_status} /></td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.chunk_count || '—'}</td>
+                <td>
+                  <div className="rp-act">
+                    {reingesting === doc.document_id ? (
+                      <span className="btn busy"><span className="sp" /> Reingesting…</span>
+                    ) : (
+                      <button className="btn" onClick={(e) => { e.stopPropagation(); handleReingest(doc.document_id); }}>
+                        <RefreshIcon /> Reingest
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+              {expanded[doc.document_id] && superseded.map((sup) => (
+                <tr key={sup.document_id} style={{ background: 'var(--doc-bg)', opacity: 0.72 }}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 18 }}>
+                      <span style={{ color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', fontSize: 11, userSelect: 'none' }}>└</span>
+                      <Link
+                        to={`/corpus/${encodeURIComponent(sup.document_id)}`}
+                        title={sup.document_title}
+                        style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, color: 'var(--doc-text-2)', textDecoration: 'none' }}
+                      >
+                        {sup.document_title || sup.document_id}
+                      </Link>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
+                    {sup.issuing_body === 'EU-Commission' ? 'EMA' : sup.issuing_body}
+                  </td>
+                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{sup.document_version || '—'}</td>
+                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{formatDate(sup.publication_date)}</td>
+                  <td>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600,
+                      letterSpacing: '0.06em', textTransform: 'uppercase',
+                      padding: '2px 7px', borderRadius: 2,
+                      background: 'var(--warn-tint)', color: 'var(--warn-text)', border: '1px solid var(--warn-tint-border)',
+                    }}>
+                      Superseded
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{sup.chunk_count || '—'}</td>
+                  <td style={{ color: 'var(--doc-text-3)', fontSize: 11, fontFamily: 'var(--mono)' }}>—</td>
+                </tr>
+              ))}
+            </>
           ))}
         </tbody>
       </table>
-
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
-          <span>Page {page} of {totalPages}</span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              style={{ padding: '3px 10px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.4 : 1, fontSize: 12, color: 'var(--doc-text)' }}
-            >‹</button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              style={{ padding: '3px 10px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.4 : 1, fontSize: 12, color: 'var(--doc-text)' }}
-            >›</button>
-          </div>
-        </div>
-      )}
     </div>
+  );
+}
+
+function ChevronIcon({ open }) {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 150ms', flexShrink: 0 }}>
+      <path d="M3 2l4 3-4 3z" />
+    </svg>
   );
 }
 
