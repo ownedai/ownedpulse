@@ -144,7 +144,7 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
         </div>
         <div className="row">
           <span className="k">Build</span>
-          <span className="v">v0.8.0</span>
+          <span className="v">v0.8.01</span>
         </div>
       </div>
     </aside>
