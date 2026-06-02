@@ -783,8 +783,8 @@ export default function SourcesPage() {
     <div className="rp-sources-page">
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
-        <BaseCorpusCard />
         <RssFeedsCard />
+        <BaseCorpusCard />
         <InitialLoadCard
           onOpenModal={() => setShowModal(true)}
           lastBootstrap={bootstrapState.last_bootstrap}
