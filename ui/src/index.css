@@ -2577,6 +2577,11 @@ body {
   font-size: 10.5px;
   color: var(--doc-text-3);
   margin-left: auto;
+  transition: color 120ms ease;
+}
+
+a.ag-total:hover {
+  color: var(--accent-l);
 }
 
 .rp-agency-group .ag-row {
@@ -2584,12 +2589,29 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 0;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+a.ag-row:hover {
+  background: var(--doc-hover);
+}
+
+a.ag-row:hover .cls {
+  color: var(--accent-l);
+}
+
+a.ag-row:hover .n {
+  color: var(--accent-l);
 }
 
 .rp-agency-group .ag-row .cls {
   font-size: 12.5px;
   color: var(--doc-text-2);
+  transition: color 120ms ease;
 }
 
 .rp-agency-group .ag-row .n {
@@ -2597,6 +2619,7 @@ body {
   font-size: 15px;
   font-weight: 500;
   color: var(--doc-text);
+  transition: color 120ms ease;
 }
 
 .rp-agency-group .ag-row .n.zero {
