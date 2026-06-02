@@ -127,6 +127,22 @@ export function triggerPipelineRun() {
   return request('/api/admin/trigger-run', { method: 'POST' });
 }
 
+export function getSchedulerStatus() {
+  return request('/api/admin/scheduler/status');
+}
+
+export function triggerSchedulerNow() {
+  return request('/api/admin/scheduler/trigger', { method: 'POST' });
+}
+
+export function pauseScheduler() {
+  return request('/api/admin/scheduler/pause', { method: 'POST' });
+}
+
+export function resumeScheduler() {
+  return request('/api/admin/scheduler/resume', { method: 'POST' });
+}
+
 export function triggerFeedRun(feedId) {
   return request(`/api/admin/feeds/${encodeURIComponent(feedId)}/trigger`, { method: 'POST' });
 }

@@ -96,15 +96,15 @@ async def bootstrap_state():
             if row and row[0]:
                 last_bootstrap = row[0].isoformat()
                 bootstrap_doc_count = int(row[1])
-            # Check n8n webhook
-            cur.execute("SELECT value FROM system_config WHERE key = 'n8n_trigger_webhook'")
-            row = cur.fetchone()
-            n8n_active = bool(row and row[0] and row[0].strip())
             cur.close()
         finally:
             conn.close()
     except Exception:
         pass
+
+    from lib.scheduler import get_scheduler
+    sched = get_scheduler()
+    scheduler_active = sched.running and sched.get_job("rss_daily_ingestion") is not None
 
     # Check for active in-memory session
     active_session = None
@@ -117,7 +117,7 @@ async def bootstrap_state():
         "state": "initialized" if doc_count > 0 else "fresh",
         "doc_count": doc_count,
         "bootstrap_doc_count": bootstrap_doc_count,
-        "n8n_active": n8n_active,
+        "n8n_active": scheduler_active,
         "last_bootstrap": last_bootstrap,
         "active_session": active_session,
     }
@@ -417,30 +417,14 @@ async def reingest_doc(body: ReingestDocRequest):
 
 @router.post("/activate-rss")
 async def bootstrap_activate_rss():
-    """Verify RSS automation is configured. Returns activation status."""
-    webhook_url = ""
-    try:
-        conn = get_pg_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT value FROM system_config WHERE key = 'n8n_trigger_webhook'")
-            row = cur.fetchone()
-            webhook_url = (row[0] if row and row[0] else "").strip()
-            cur.close()
-        finally:
-            conn.close()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Cannot read system config: {e}")
-
-    if not webhook_url:
-        return {
-            "activated": False,
-            "already_active": False,
-            "note": "n8n webhook not configured in system_config.",
-        }
-
+    """Returns scheduler status — APScheduler is always active when the API is running."""
+    from lib.scheduler import get_scheduler
+    sched = get_scheduler()
+    job = sched.get_job("rss_daily_ingestion")
+    running = sched.running and job is not None
+    next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
     return {
-        "activated": True,
-        "already_active": False,
-        "note": "RSS automation active via n8n webhook.",
+        "activated": running,
+        "already_active": running,
+        "note": f"RSS automation active via APScheduler. Next run: {next_run}." if running else "Scheduler not running.",
     }

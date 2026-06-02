@@ -4,7 +4,7 @@ import os
 import uuid
 import json
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
@@ -179,132 +179,35 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
 # ── POST /admin/feeds/{feed_id}/trigger ──────────────────────────────────────
 
 @router.post("/feeds/{feed_id}/trigger")
-async def admin_trigger_feed(feed_id: str):
-    """Trigger a single feed run. Creates a run_log row and calls n8n with feed_id param."""
+async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks):
+    """Trigger a single feed run via APScheduler background task."""
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
         cur.execute("SELECT feed_id, enabled FROM feed_config WHERE feed_id = %s", (feed_id,))
         row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found")
-        if not row[1]:
-            raise HTTPException(status_code=422, detail=f"Feed '{feed_id}' is disabled")
-        cur.execute("SELECT value FROM system_config WHERE key = 'n8n_trigger_webhook'")
-        wrow = cur.fetchone()
         cur.close()
     finally:
         conn.close()
 
-    webhook_url = (wrow[0] if wrow and wrow[0] else "").strip()
-    if not webhook_url:
-        raise HTTPException(status_code=503, detail="Webhook URL not configured in system_config")
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found")
+    if not row[1]:
+        raise HTTPException(status_code=422, detail=f"Feed '{feed_id}' is disabled")
 
-    run_id = str(uuid.uuid4())
-
-    conn = get_pg_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO run_log (run_id, trigger_source, triggered_by, feed_source, status)
-               VALUES (%s, 'manual', 'admin-ui', %s, 'running')""",
-            (run_id, feed_id)
-        )
-        conn.commit()
-        cur.close()
-    finally:
-        conn.close()
-
-    try:
-        async with httpx.AsyncClient() as http:
-            r = await http.get(
-                webhook_url,
-                params={"run_id": run_id, "trigger_source": "manual", "feed_id": feed_id},
-                timeout=15,
-            )
-    except Exception as e:
-        conn = get_pg_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE run_log SET status='error', error_detail=%s, completed_at=NOW() WHERE run_id=%s",
-                (f"Webhook call failed: {str(e)}", run_id),
-            )
-            conn.commit()
-            cur.close()
-        finally:
-            conn.close()
-        raise HTTPException(status_code=502, detail=f"n8n webhook call failed: {str(e)}")
-
-    return {"run_id": run_id, "feed_id": feed_id, "status": "triggered"}
+    from lib.scheduler import run_rss_ingestion_job
+    background_tasks.add_task(run_rss_ingestion_job, feed_id=feed_id, triggered_by="admin-ui")
+    return {"feed_id": feed_id, "status": "triggered"}
 
 
 # ── POST /admin/trigger-run ──────────────────────────────────────────────────
 
 @router.post("/trigger-run")
-async def admin_trigger_run():
-    # Read webhook URL from system_config
-    conn = get_pg_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT value FROM system_config WHERE key = 'n8n_trigger_webhook'")
-        row = cur.fetchone()
-        cur.close()
-    finally:
-        conn.close()
-
-    webhook_url = (row[0] if row else "").strip()
-    if not webhook_url:
-        raise HTTPException(status_code=503, detail="Webhook URL not configured")
-
-    run_id = str(uuid.uuid4())
-
-    # Create run_log row
-    conn = get_pg_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO run_log (run_id, trigger_source, triggered_by, status)
-               VALUES (%s, 'manual', 'admin-ui', 'running')""",
-            (run_id,)
-        )
-        conn.commit()
-        cur.close()
-    finally:
-        conn.close()
-
-    # Call n8n webhook
-    n8n_called = False
-    n8n_status = None
-    try:
-        async with httpx.AsyncClient() as http:
-            r = await http.get(
-                webhook_url,
-                params={"run_id": run_id, "trigger_source": "manual"},
-                timeout=15
-            )
-            n8n_called = True
-            n8n_status = r.status_code
-    except Exception as e:
-        # Webhook call failed — update run_log to error
-        conn = get_pg_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE run_log SET status = 'error', error_detail = %s, completed_at = NOW() WHERE run_id = %s",
-                (f"Webhook call failed: {str(e)}", run_id)
-            )
-            cur.close()
-        finally:
-            conn.close()
-        raise HTTPException(status_code=502, detail=f"n8n webhook call failed: {str(e)}")
-
-    return {
-        "run_id": run_id,
-        "status": "triggered",
-        "n8n_webhook_called": n8n_called,
-        "n8n_response_status": n8n_status,
-    }
+async def admin_trigger_run(background_tasks: BackgroundTasks):
+    """Trigger a full RSS ingestion run via APScheduler background task."""
+    from lib.scheduler import run_rss_ingestion_job
+    background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
+    return {"status": "triggered"}
 
 
 # ── GET /admin/models ─────────────────────────────────────────────────────────
@@ -486,3 +389,51 @@ async def admin_warmup():
     asyncio.create_task(_load())
     asyncio.create_task(_load_embed())
     return {"status": "warmup initiated", "model": active_model, "embed_model": "mxbai-embed-large"}
+
+
+# ── GET /admin/scheduler/status ───────────────────────────────────────────────
+
+RSS_SCHEDULE_HOUR = int(os.environ.get("RSS_SCHEDULE_HOUR", "6"))
+RSS_SCHEDULE_MINUTE = int(os.environ.get("RSS_SCHEDULE_MINUTE", "0"))
+RSS_SCHEDULE_TIMEZONE = os.environ.get("RSS_SCHEDULE_TIMEZONE", "UTC")
+
+
+@router.get("/scheduler/status")
+async def get_scheduler_status():
+    from lib.scheduler import get_scheduler
+    sched = get_scheduler()
+    job = sched.get_job("rss_daily_ingestion")
+    return {
+        "scheduler_running": sched.running,
+        "job_id": "rss_daily_ingestion",
+        "next_run_time": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        "schedule": f"{RSS_SCHEDULE_HOUR:02d}:{RSS_SCHEDULE_MINUTE:02d} {RSS_SCHEDULE_TIMEZONE}",
+    }
+
+
+# ── POST /admin/scheduler/trigger ────────────────────────────────────────────
+
+@router.post("/scheduler/trigger")
+async def trigger_scheduler_now(background_tasks: BackgroundTasks):
+    """Manual trigger — fires RSS ingestion for all enabled feeds as a background task."""
+    from lib.scheduler import run_rss_ingestion_job
+    background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
+    return {"status": "triggered", "message": "RSS ingestion started in background"}
+
+
+# ── POST /admin/scheduler/pause ──────────────────────────────────────────────
+
+@router.post("/scheduler/pause")
+async def pause_scheduler():
+    from lib.scheduler import get_scheduler
+    get_scheduler().pause_job("rss_daily_ingestion")
+    return {"status": "paused"}
+
+
+# ── POST /admin/scheduler/resume ─────────────────────────────────────────────
+
+@router.post("/scheduler/resume")
+async def resume_scheduler():
+    from lib.scheduler import get_scheduler
+    get_scheduler().resume_job("rss_daily_ingestion")
+    return {"status": "resumed"}

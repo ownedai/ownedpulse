@@ -21,6 +21,7 @@ from routers.corpus import router as corpus_router
 from routers.admin import router as admin_router
 from routers.bootstrap import router as bootstrap_router
 from routers.ingestions import router as ingestions_router
+from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
@@ -237,6 +238,15 @@ def _cleanup_abandoned_state():
 async def startup():
     init_db()
     _cleanup_abandoned_state()
+    setup_scheduler()
+    scheduler.start()
+    logger.info("APScheduler started")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    scheduler.shutdown(wait=False)
+    logger.info("APScheduler stopped")
 
 from lib.observability import get_langfuse
 

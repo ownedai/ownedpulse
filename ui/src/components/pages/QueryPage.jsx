@@ -58,8 +58,8 @@ function renderAnswer(text, selectedIdx, onCitationClick) {
 
 function SrcPill({ src }) {
   const map = {
-    n8n_rss: ['n8n', 'n8n RSS'], bootstrap_ui: ['bootstrap', 'Bootstrap'],
-    manual_cli: ['manual', 'Manual'], scheduled: ['n8n', 'Scheduled'], manual: ['manual', 'Manual'],
+    n8n_rss: ['scheduled', 'Scheduled RSS'], bootstrap_ui: ['bootstrap', 'Bootstrap'],
+    manual_cli: ['manual', 'Manual'], scheduled: ['scheduled', 'Scheduled'], manual: ['manual', 'Manual'],
   };
   const [cls, label] = map[src] || ['manual', src || '—'];
   return <span className={`g2-srcpill ${cls}`}>{label}</span>;
