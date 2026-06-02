@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
@@ -80,14 +81,27 @@ function CorpusSummaryCard() {
             return (
               <div key={agency} className="rp-agency-group">
                 <div className="ag-head">
-                  <span className="ag-name">{agency}</span>
-                  <span className="ag-total">{total.toLocaleString()} docs</span>
+                  <Link
+                    to={`/corpus?agency=${agency}`}
+                    className="ag-name"
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                  >{agency}</Link>
+                  <Link
+                    to={`/corpus?agency=${agency}`}
+                    className="ag-total"
+                    style={{ textDecoration: 'none' }}
+                  >{total.toLocaleString()} docs</Link>
                 </div>
                 {topTypes.map(([type, count]) => (
-                  <div key={type} className="ag-row">
+                  <Link
+                    key={type}
+                    to={`/corpus?agency=${agency}&doc_type=${type}`}
+                    className="ag-row"
+                    style={{ textDecoration: 'none', display: 'flex' }}
+                  >
                     <span className="cls">{DOC_TYPE_LABELS[type] || type}</span>
                     <span className={`n ${count === 0 ? 'zero' : ''}`}>{count}</span>
-                  </div>
+                  </Link>
                 ))}
                 {topTypes.length === 0 && (
                   <div className="ag-row">

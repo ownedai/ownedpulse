@@ -9,11 +9,11 @@ const AGENCY_TABS = ['All', 'FDA', 'EMA', 'ICH'];
 const DOC_TYPES = [
   { label: 'All types', value: null },
   { label: 'Guidance', value: 'guidance' },
-  { label: 'Press Release', value: 'press-release' },
-  { label: 'Reflection Paper', value: 'reflection-paper' },
-  { label: 'Safety Comms', value: 'safety-communication' },
-  { label: 'Regulatory Decision', value: 'regulatory-decision' },
-  { label: 'News', value: 'news' },
+  { label: 'Drug Approval', value: 'drug_approval' },
+  { label: 'Press Release', value: 'press_release' },
+  { label: 'Reflection Paper', value: 'reflection_paper' },
+  { label: 'Safety Alert', value: 'safety_alert' },
+  { label: 'News', value: 'news_item' },
   { label: 'Other', value: 'other' },
 ];
 const STATUS_OPTS = [
@@ -107,7 +107,7 @@ export default function CorpusPage() {
     const a = searchParams.get('agency');
     return AGENCY_TABS.includes(a) ? a : 'All';
   });
-  const [docType, setDocType] = useState(null);
+  const [docType, setDocType] = useState(() => searchParams.get('doc_type') || null);
   const [status, setStatus] = useState(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -115,7 +115,9 @@ export default function CorpusPage() {
 
   useEffect(() => {
     const a = searchParams.get('agency');
+    const dt = searchParams.get('doc_type');
     setAgency(AGENCY_TABS.includes(a) ? a : 'All');
+    setDocType(dt || null);
     setPage(1);
   }, [searchParams]);
 
