@@ -3335,7 +3335,7 @@ a.ag-row:hover .n {
 .g3-docchev svg { width: 10px; height: 10px; }
 
 .g3-doc-detail td { background: var(--doc-surface); padding: 0 12px; }
-.g3-doc-detail .inner { padding: 12px 0 14px 30px; display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; font-family: var(--mono); font-size: 11px; max-width: 560px; }
+.g3-doc-detail .inner { padding: 12px 0 14px 30px; display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; font-family: var(--mono); font-size: 11px; }
 .g3-doc-detail .inner .k { color: var(--doc-text-2); }
 .g3-doc-detail .inner .v { color: var(--doc-text); display: flex; align-items: center; gap: 10px; }
 .g3-doc-detail .inner .v a { color: var(--accent-l); text-decoration: none; border-bottom: 1px dashed var(--accent-tint-deep); }
