@@ -3350,6 +3350,12 @@ a.ag-row:hover .n {
 .g3-trace-lat { font-size: 11px; font-family: var(--mono); color: var(--doc-text-2); }
 .g3-trace-close { margin-left: auto; background: none; border: none; color: var(--doc-text-3); cursor: pointer; font-size: 11px; padding: 0 2px; }
 .g3-trace-close:hover { color: var(--doc-text); }
+.g3-trace-kv { display: grid; grid-template-columns: 72px 1fr; gap: 3px 8px; }
+.g3-trace-kv-row { display: contents; font-size: 11px; }
+.g3-trace-kv-row.full { display: flex; grid-column: 1 / -1; gap: 8px; }
+.g3-trace-kv-k { color: var(--doc-text-3); font-size: 11px; }
+.g3-trace-kv-v { color: var(--doc-text); font-family: var(--mono); font-size: 11px; }
+.g3-trace-kv-v.err { color: var(--error); font-family: var(--sans); }
 .g3-trace-obs { display: flex; flex-direction: column; gap: 3px; }
 .g3-trace-obs-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
 .g3-trace-type { font-size: 9px; font-family: var(--mono); text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: var(--doc-hover); color: var(--doc-text-2); flex: 0 0 auto; }

@@ -272,6 +272,51 @@ async def session_documents(
         raise HTTPException(status_code=503, detail=f"Database error: {e}")
 
 
+# ── GET /ingestions/runs/{run_id} ────────────────────────────────────────────
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: str):
+    """Single run_log row — used by inline trace viewer."""
+    try:
+        conn = get_pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT run_id, trigger_source, feed_source, status,
+                   triggered_at, completed_at, items_fetched,
+                   items_new, items_skipped, error_count, duration_ms, error_detail
+            FROM run_log WHERE run_id = %s::uuid
+            """,
+            (run_id,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="Run not found")
+        (rid, trigger_source, feed_source, status,
+         triggered_at, completed_at, items_fetched,
+         items_new, items_skipped, error_count, duration_ms, error_detail) = row
+        return {
+            "run_id": str(rid),
+            "trigger_source": trigger_source,
+            "feed_source": feed_source,
+            "status": status,
+            "triggered_at": _fmt_dt(triggered_at),
+            "completed_at": _fmt_dt(completed_at),
+            "items_fetched": items_fetched or 0,
+            "items_new": items_new or 0,
+            "items_skipped": items_skipped or 0,
+            "error_count": error_count or 0,
+            "duration_ms": duration_ms,
+            "error_detail": error_detail,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {e}")
+
+
 # ── GET /ingestions/runs/{run_id}/documents ───────────────────────────────────
 
 @router.get("/runs/{run_id}/documents")

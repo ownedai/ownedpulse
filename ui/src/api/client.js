@@ -219,3 +219,7 @@ export function getSessionDocuments(runToken, page = 1, pageSize = 25) {
 export function getRunDocuments(runId, page = 1, pageSize = 25) {
   return request(`/api/ingestions/runs/${encodeURIComponent(runId)}/documents?page=${page}&page_size=${pageSize}`);
 }
+
+export function getRunInfo(runId) {
+  return request(`/api/ingestions/runs/${encodeURIComponent(runId)}`);
+}

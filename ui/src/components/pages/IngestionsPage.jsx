@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getIngestions, getSessionDocuments, getRunDocuments, getTrace } from '../../api/client';
+import { getIngestions, getSessionDocuments, getRunDocuments, getRunInfo } from '../../api/client';
 import { formatDateTime } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
@@ -31,7 +31,7 @@ function TraceViewer({ traceId }) {
     if (state === 'loading') return;
     setState('loading');
     try {
-      const d = await getTrace(traceId);
+      const d = await getRunInfo(traceId);
       setData(d);
       setState('loaded');
     } catch {
@@ -40,38 +40,47 @@ function TraceViewer({ traceId }) {
   };
 
   if (state === 'idle') {
-    return (
-      <button className="g3-trace-btn" onClick={load}>
-        View Trace
-      </button>
-    );
+    return <button className="g3-trace-btn" onClick={load}>View Run</button>;
   }
   if (state === 'loading') {
-    return <span className="g3-trace-loading">Loading trace…</span>;
+    return <span className="g3-trace-loading">Loading…</span>;
   }
   if (state === 'error') {
-    return <span className="g3-trace-err">Trace unavailable</span>;
+    return <span className="g3-trace-err">Run info unavailable</span>;
   }
 
-  const obs = data?.observations || [];
+  const rows = [
+    ['Trigger', data.trigger_source],
+    ['Feed', data.feed_source || '—'],
+    ['Status', data.status],
+    ['Started', data.triggered_at ? formatDateTime(data.triggered_at) : '—'],
+    ['Completed', data.completed_at ? formatDateTime(data.completed_at) : '—'],
+    ['Duration', data.duration_ms != null ? `${data.duration_ms} ms` : '—'],
+    ['New', data.items_new],
+    ['Skipped', data.items_skipped],
+    ['Errors', data.error_count],
+  ];
+
   return (
     <div className="g3-trace-inline">
       <div className="g3-trace-header">
-        <span className="g3-trace-name">{data.name || 'Ingestion trace'}</span>
-        {data.latency != null && <span className="g3-trace-lat">{data.latency} ms</span>}
+        <span className="g3-trace-name">Ingestion run</span>
         <button className="g3-trace-close" onClick={() => setState('idle')}>✕</button>
       </div>
-      {obs.length > 0 && (
-        <div className="g3-trace-obs">
-          {obs.map((o, i) => (
-            <div key={i} className="g3-trace-obs-row">
-              <span className={`g3-trace-type ${(o.type || '').toLowerCase()}`}>{o.type || 'SPAN'}</span>
-              <span className="g3-trace-obs-name">{o.name}</span>
-              {o.latency != null && <span className="g3-trace-obs-lat">{o.latency} ms</span>}
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="g3-trace-kv">
+        {rows.map(([k, v]) => (
+          <div key={k} className="g3-trace-kv-row">
+            <span className="g3-trace-kv-k">{k}</span>
+            <span className="g3-trace-kv-v">{v}</span>
+          </div>
+        ))}
+        {data.error_detail && (
+          <div className="g3-trace-kv-row full">
+            <span className="g3-trace-kv-k">Error</span>
+            <span className="g3-trace-kv-v err">{data.error_detail}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
