@@ -48,6 +48,10 @@ export function getTrace(traceId) {
   return request(`/api/trace/${traceId}`);
 }
 
+export function getQueryTrace(queryId) {
+  return request(`/api/query/${queryId}/trace`);
+}
+
 export function getPdfPage(filePath, pageNo) {
   return `/api/pdf/page?file_path=${encodeURIComponent(filePath)}&page_no=${pageNo}`;
 }

@@ -367,11 +367,13 @@ async def ollama_generate(
     system: str = "",
     model: str = None,
     temperature: float | None = None,
-) -> str:
+    return_usage: bool = False,
+) -> str | tuple:
     """Call Ollama generate API and return the response text.
 
     temperature: None = model default (for answer generation).
                  0.0  = deterministic (for query expansion).
+    return_usage: if True, returns (text, {"input": n, "output": n}) tuple.
     """
     if model is None:
         model = get_active_model()
@@ -386,7 +388,15 @@ async def ollama_generate(
     async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(f"{OLLAMA_BASE}/api/generate", json=payload)
         resp.raise_for_status()
-        return resp.json()["response"]
+        body = resp.json()
+        text = body["response"]
+        if not return_usage:
+            return text
+        usage = {
+            "input": body.get("prompt_eval_count", 0),
+            "output": body.get("eval_count", 0),
+        }
+        return text, usage
 
 
 async def ollama_embed(text: str) -> list[float]:
@@ -866,16 +876,18 @@ async def _run_content_query(
         context = build_context(deduped_chunks)
         prompt = f"Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
         t_llm = _time.monotonic()
-        answer = await ollama_generate(prompt, system=SYSTEM_PROMPT_V6)
+        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V6, return_usage=True)
         t_llm2 = _time.monotonic()
+        llm_latency_ms = round((t_llm2 - t_llm) * 1000)
 
         if lf and lf_trace:
             lf_trace.generation(
                 name="llm_answer",
-                model=os.getenv("OLLAMA_MODEL", "phi4:14b-q8_0"),
+                model=get_active_model(),
                 input={"prompt": prompt, "system": SYSTEM_PROMPT_V6},
                 output={"answer": answer},
-                metadata={"latency_ms": round((t_llm2 - t_llm) * 1000)},
+                usage=llm_usage,
+                metadata={"latency_ms": llm_latency_ms},
             )
 
         # Step 6: Determine which chunks were cited
@@ -1725,6 +1737,132 @@ async def get_trace(trace_id: str):
     except Exception as e:
         logger.error("Trace fetch failed: %s", e)
         raise HTTPException(status_code=502, detail="Failed to fetch trace from Langfuse")
+
+
+# ── GET /api/query/{query_id}/trace  (G2 traceability panel) ─────────────────
+
+
+@app.get("/api/query/{query_id}/trace")
+async def get_query_trace(query_id: str):
+    """Return structured LLM call data for the G2 traceability panel.
+
+    Fetches the Langfuse trace for this query and extracts the llm_answer
+    generation span into a flat structure the UI can display directly.
+    """
+    try:
+        uuid.UUID(query_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail="Query not found")
+
+    # Look up langfuse_trace_id from query_history
+    try:
+        conn = get_pg_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT langfuse_trace_id FROM query_history WHERE query_id = %s",
+                (query_id,),
+            )
+            row = cur.fetchone()
+        conn.close()
+    except Exception:
+        return {"error": "trace_unavailable"}
+
+    if not row or not row[0]:
+        return {"error": "trace_unavailable"}
+
+    trace_id = row[0]
+    lf_public = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    lf_secret = os.getenv("LANGFUSE_SECRET_KEY", "")
+    lf_host = os.getenv("LANGFUSE_HOST", "")
+
+    if not lf_public or not lf_secret:
+        return {"error": "trace_unavailable"}
+
+    import base64
+    auth = base64.b64encode(f"{lf_public}:{lf_secret}".encode()).decode()
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{lf_host}/api/public/traces/{trace_id}",
+                headers={"Authorization": f"Basic {auth}"},
+            )
+            if resp.status_code != 200:
+                return {"error": "trace_unavailable"}
+            data = resp.json()
+
+        # Find spans we care about
+        llm_obs = None
+        retrieval_obs = None
+        for obs in data.get("observations", []):
+            if obs.get("type") == "GENERATION" and obs.get("name") == "llm_answer":
+                llm_obs = obs
+            elif obs.get("name") == "retrieval":
+                retrieval_obs = obs
+
+        # Pull chunk counts from retrieval span output
+        chunks_retrieved = None
+        chunks_sent = None
+        if retrieval_obs:
+            out = retrieval_obs.get("output") or {}
+            if isinstance(out, str):
+                try:
+                    out = json.loads(out)
+                except Exception:
+                    out = {}
+            chunks_retrieved = out.get("chunks_retrieved")
+            chunks_sent = out.get("chunks_after_dedup")
+
+        # Extract latency: prefer metadata, then computed from start/end
+        def _latency_ms(obs):
+            meta = obs.get("metadata") or {}
+            if "latency_ms" in meta:
+                return meta["latency_ms"]
+            if obs.get("endTime") and obs.get("startTime"):
+                try:
+                    from datetime import datetime as _dt
+                    start = _dt.fromisoformat(obs["startTime"].replace("Z", "+00:00"))
+                    end = _dt.fromisoformat(obs["endTime"].replace("Z", "+00:00"))
+                    return round((end - start).total_seconds() * 1000)
+                except Exception:
+                    pass
+            # Fall back to trace-level latency (ms — already converted from s in trace data)
+            lat = data.get("latency")
+            if lat:
+                # trace latency comes in seconds from Langfuse
+                return round(lat * 1000) if lat < 10000 else lat
+            return None
+
+        if llm_obs:
+            usage = llm_obs.get("usage") or {}
+            latency = _latency_ms(llm_obs)
+            # Timestamp from observation startTime
+            ts = llm_obs.get("startTime") or data.get("timestamp")
+            return {
+                "model": llm_obs.get("model"),
+                "timestamp": ts,
+                "input_tokens": usage.get("input") or usage.get("promptTokens") or 0,
+                "output_tokens": usage.get("output") or usage.get("completionTokens") or 0,
+                "latency_ms": latency,
+                "system_prompt_version": (llm_obs.get("metadata") or {}).get("system_prompt_version"),
+                "chunks_sent_to_context": chunks_sent,
+                "chunks_retrieved": chunks_retrieved,
+            }
+        else:
+            # No LLM span — return trace-level data as fallback
+            return {
+                "model": None,
+                "timestamp": data.get("timestamp"),
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "latency_ms": round(data.get("latency", 0) * 1000) if data.get("latency") else None,
+                "system_prompt_version": None,
+                "chunks_sent_to_context": chunks_sent,
+                "chunks_retrieved": chunks_retrieved,
+            }
+    except Exception as e:
+        logger.error("Query trace fetch failed: %s", e)
+        return {"error": "trace_unavailable"}
 
 
 # ── GET /api/pdf/page ─────────────────────────────────────────────────────────

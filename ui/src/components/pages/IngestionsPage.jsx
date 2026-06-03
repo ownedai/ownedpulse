@@ -29,8 +29,15 @@ function G3Status({ status }) {
 }
 
 function SrcPill({ src }) {
-  const isScheduled = src === 'n8n_rss' || src === 'scheduled';
-  return <span className="g2-srcpill src">{isScheduled ? 'Scheduled' : 'Manual'}</span>;
+  const map = {
+    n8n_rss: ['n8n', 'n8n RSS'],
+    scheduled: ['n8n', 'Scheduled'],
+    bootstrap_ui: ['bootstrap', 'Bootstrap'],
+    manual_cli: ['manual', 'Manual'],
+    manual: ['manual', 'Manual'],
+  };
+  const [cls, label] = map[src] || ['manual', src || 'Manual'];
+  return <span className={`g2-srcpill ${cls}`}>{label}</span>;
 }
 
 function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
@@ -96,8 +103,29 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
                     <span className="k">Trace ID</span>
                     <span className="v">
                       {d.trace_id
-                        ? <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id}</span>
-                        : <span className="dim">—</span>}
+                        ? <><span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id.slice(0, 16)}…</span>
+                            <button
+                              className={`g3-langfuse`}
+                              data-testid={`ingestion-doc-langfuse-${d.doc_id}`}
+                              title="View in Langfuse"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                              </svg>
+                              Langfuse ↗
+                            </button></>
+                        : <><span className="dim">—</span>
+                            <button
+                              className="g3-langfuse disabled"
+                              data-testid={`ingestion-doc-langfuse-${d.doc_id}`}
+                              title="Trace not available for this document"
+                              disabled
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                              </svg>
+                              Langfuse ↗
+                            </button></>}
                     </span>
                     <span className="k">Source URL</span>
                     <span className="v">
@@ -195,18 +223,16 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
 
   return (
     <div className="g3-row session" data-testid={`ingestion-session-group-${item.run_token}`}>
-      <div className="g3-row-head" onClick={onToggle}>
+      <div className="g3-row-head" onClick={onToggle} data-testid={`ingestion-session-expand-${item.run_token}`}>
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
-        <span className="g3-cell mono"><span className="lbl">Triggered At</span>{formatDateTime(item.triggered_at)}</span>
+        <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
-        <span className="g3-cell dim"><span className="lbl">Feed</span><span className="g3-feed">all</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={status} /></span>
-        <span className="g3-cell num"><span className="lbl">New</span>{item.doc_count ?? '—'}</span>
-        <span className="g3-cell num dim"><span className="lbl">Skipped</span>—</span>
-        <span className={`g3-cell num errnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
-          <span className="lbl">Errors</span>{item.doc_count_failed ?? '—'}
+        <span className="g3-cell mono"><span className="lbl">Documents</span>{(item.doc_count ?? 0).toLocaleString()}</span>
+        <span className="g3-cell num"><span className="lbl">Succeeded</span>{(item.doc_count_succeeded ?? 0).toLocaleString()}</span>
+        <span className={`g3-cell num failnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
+          <span className="lbl">Failed</span>{item.doc_count_failed ?? 0}
         </span>
-        <span className="g3-cell num dim"><span className="lbl">Duration</span>—</span>
       </div>
       {isOpen && (
         <div className="g3-sub">
@@ -244,7 +270,7 @@ function RssRunRow({ item, isOpen, onToggle }) {
 
   return (
     <div className="g3-row rss" data-testid={`ingestion-run-row-${item.run_id}`}>
-      <div className="g3-row-head" onClick={onToggle}>
+      <div className="g3-row-head" onClick={onToggle} data-testid={`ingestion-run-expand-${item.run_id}`}>
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
         <span className="g3-cell mono"><span className="lbl">Triggered At</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>

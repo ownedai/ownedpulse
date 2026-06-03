@@ -1,13 +1,16 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import FilterBar from '../layout/FilterBar';
 import QueryInput from '../query/QueryInput';
 import QueryExpansion from '../query/QueryExpansion';
-import AuditFooter from '../query/AuditFooter';
 import EmptyState from '../query/EmptyState';
 import useQuery from '../../hooks/useQuery';
-import { exportQuery, getPdfPage, getTrace } from '../../api/client';
+import { exportQuery, getPdfPage, getQueryTrace } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
+
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const QUERY_STATES = { IDLE: 'idle', ANSWER: 'answer', TRACEABILITY: 'traceability' };
 
 const DOCTYPE_LABEL = {
   drug_approval: 'Drug Approval', guidance: 'Guidance', press_release: 'Press Release',
@@ -15,14 +18,59 @@ const DOCTYPE_LABEL = {
   news_item: 'News Item', other: 'Unclassified',
 };
 
-function getSplitRatio(answerText) {
-  const len = answerText?.length ?? 0;
-  if (len < 300) return 'r40';
-  if (len <= 600) return 'r50';
-  return 'r60';
+const INGESTION_SOURCE_LABELS = {
+  manual_cli: 'Manual (CLI)', bootstrap_ui: 'Bootstrap (Initial load)', n8n_rss: 'Scheduled (RSS)',
+};
+
+// ── SVG Icons ──────────────────────────────────────────────────────────────
+
+function CloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+function ChevronIcon({ open }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d={open ? 'M2 8l4-4 4 4' : 'M2 4l4 4 4-4'} />
+    </svg>
+  );
+}
+function ChevRightIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M4 2l4 4-4 4" />
+    </svg>
+  );
+}
+function ExtIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+      <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+function PdfIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+function DownloadIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M8 3v8M4 7l4 4 4-4M3 13h10" />
+    </svg>
+  );
 }
 
-function renderAnswer(text, selectedIdx, onCitationClick) {
+// ── Answer text renderer ───────────────────────────────────────────────────
+
+function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
   if (!text) return null;
   const normalised = text
     .replace(/\n{1,2}(\[\d+\])\n([.,])/g, ' $1$2')
@@ -39,12 +87,15 @@ function renderAnswer(text, selectedIdx, onCitationClick) {
     while ((m = re.exec(para)) !== null) {
       if (m.index > last) parts.push(para.slice(last, m.index));
       const n = parseInt(m[1], 10);
+      const chunkForN = citations?.find((c) => c.index === n);
+      const isActive = chunkForN && chunkForN.chunk_id === selectedChunkId;
       parts.push(
         <span
           key={`c-${m.index}`}
-          className={`g2-cmark${selectedIdx === n ? ' active' : ''}`}
+          className={`g2v2-cmark${isActive ? ' on' : ''}`}
           data-testid={`citation-${n}`}
           onClick={() => onCitationClick(n)}
+          title={`Citation [${n}]`}
         >
           {n}
         </span>
@@ -56,110 +107,122 @@ function renderAnswer(text, selectedIdx, onCitationClick) {
   });
 }
 
-const TRIGGERED_BY_LABELS = {
-  'admin-ui':           'Admin UI',
-  'scheduler':          'Scheduler',
-  'Full reingest (CLI)': 'Full reingest (CLI)',
-  'g-t3-full-reingestion': 'Full reingest (CLI)',
-};
+// ── Traceability Panel — LLM Call block ──────────────────────────────────
 
-function SrcPill({ src }) {
-  const map = {
-    n8n_rss: ['scheduled', 'Scheduled RSS'], bootstrap_ui: ['bootstrap', 'Bootstrap'],
-    manual_cli: ['manual', 'Manual'], scheduled: ['scheduled', 'Scheduled'], manual: ['manual', 'Manual'],
-  };
-  const [cls, label] = map[src] || ['manual', src || '—'];
-  return <span className={`g2-srcpill ${cls}`}>{label}</span>;
-}
+function LlmCallBlock({ queryId }) {
+  const [open, setOpen] = useState(true);
+  const [trace, setTrace] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-function CopyIcon() {
+  useEffect(() => {
+    if (!queryId) return;
+    setLoading(true);
+    setError(false);
+    getQueryTrace(queryId)
+      .then((d) => {
+        if (d?.error) setError(true);
+        else setTrace(d);
+        setLoading(false);
+      })
+      .catch(() => { setError(true); setLoading(false); });
+  }, [queryId]);
+
+  const dash = (v) => (v == null || v === 0) ? '—' : v;
+
+  const summaryLine = trace
+    ? `${trace.model || '—'} · ${trace.input_tokens ? trace.input_tokens.toLocaleString() : '—'} tokens · ${trace.latency_ms ? (trace.latency_ms / 1000).toFixed(1) + 's' : '—'}`
+    : '';
+
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-    </svg>
-  );
-}
-
-function ExtIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
-    </svg>
-  );
-}
-
-function PdfIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 3v8M4 7l4 4 4-4M3 13h10" />
-    </svg>
-  );
-}
-
-// ── Source origin panel (left) ─────────────────────────────────────────────
-
-function SourcePanel({ chunk, onViewSource }) {
-  if (!chunk) return (
-    <div className="g2-panel side" data-testid="provenance-source-panel">
-      <div className="g2-panel-lbl">Source Origin <span className="sub">· where it came from</span></div>
-      <div className="g2-empty">Select a citation</div>
+    <div className="g2v2-block" data-testid="llm-call-block">
+      <div className="g2v2-block-head" onClick={() => setOpen((v) => !v)}>
+        <span className="lhs">
+          <span className={`chev${open ? ' open' : ''}`}><ChevRightIcon /></span>
+          <span className="name">LLM Call</span>
+        </span>
+        {!open && !loading && !error && (
+          <span className="summary">{summaryLine}</span>
+        )}
+      </div>
+      {open && (
+        <div className="g2v2-block-body">
+          {loading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8 }}>
+              {[1, 2, 3].map((i) => <div key={i} className="g2-skel" style={{ width: `${50 + i * 15}%`, height: 11 }} />)}
+            </div>
+          )}
+          {error && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)', paddingTop: 8 }}>
+              Trace data unavailable — Langfuse may be unreachable
+            </div>
+          )}
+          {trace && (
+            <div className="g2v2-llm-grid">
+              <span className="k">model</span><span className="v">{dash(trace.model)}</span>
+              <span className="k">timestamp</span><span className="v">{trace.timestamp ? formatDateTime(trace.timestamp, true) : '—'}</span>
+              <span className="k">input tokens</span><span className="v">{trace.input_tokens ? trace.input_tokens.toLocaleString() : '—'}</span>
+              <span className="k">output tokens</span><span className="v">{trace.output_tokens ? trace.output_tokens.toLocaleString() : '—'}</span>
+              <span className="k">latency</span><span className="v">{trace.latency_ms ? `${(trace.latency_ms / 1000).toFixed(1)}s` : '—'}</span>
+              <span className="k">prompt version</span><span className="v">{dash(trace.system_prompt_version)}</span>
+              <span className="k">chunks in context</span><span className="v">
+                {trace.chunks_sent_to_context != null
+                  ? `${trace.chunks_sent_to_context}${trace.chunks_retrieved != null ? ` of ${trace.chunks_retrieved} retrieved` : ''}`
+                  : '—'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
+}
 
-  const dash = (v) => (v == null || v === '') ? '—' : v;
+// ── Traceability Panel — Chunk card ──────────────────────────────────────
+
+function ChunkCard({ chunk, highlighted, onViewSource }) {
+  const [showMore, setShowMore] = useState(false);
+  const text = chunk.chunk_text || '';
+  const isLong = text.length > 300;
+
+  useEffect(() => {
+    if (highlighted) setShowMore(false);
+  }, [highlighted]);
+
+  const agency = chunk.issuing_body || chunk.agency || '—';
+  const ingDate = chunk.ingested_at ? formatDate(chunk.ingested_at) : '—';
+  const srcLabel = INGESTION_SOURCE_LABELS[chunk.ingestion_source] || chunk.ingestion_source || '—';
 
   return (
-    <div className="g2-panel side" data-testid="provenance-source-panel">
-      <div className="g2-panel-lbl">Source Origin <span className="sub">· where it came from</span></div>
-      <div className="g2-panel-scroll">
-        <div className="g2-src-title">{chunk.document_title || chunk.document_id || '—'}</div>
-        <div className="g2-src-field">
-          <span className="k">Agency</span>
-          <span className="g2-agency-pill">{chunk.issuing_body || chunk.agency || '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Doc type</span>
-          <span className="v">{DOCTYPE_LABEL[chunk.doc_type] || chunk.doc_type || '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Publication date</span>
-          <span className="v mono">{formatDate(chunk.publication_date) || '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Clause ID</span>
-          <span className="v mono">{dash(chunk.clause_id)}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Page</span>
-          <span className="v muted">{chunk.page_no != null ? `Page ${chunk.page_no}` : '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Source URL</span>
-          <span className="v">
-            {chunk.source_url
-              ? <a href={chunk.source_url} target="_blank" rel="noreferrer">{chunk.source_url} <ExtIcon /></a>
-              : '—'}
-          </span>
-        </div>
+    <div
+      className={`g2v2-chunk${highlighted ? ' pulse' : ''}`}
+      data-testid={`chunk-card-${chunk.chunk_id}`}
+    >
+      <div className="ch-top">
+        <span className="ch-badge">{chunk.index}</span>
+        <span className="ch-title">{chunk.document_title || chunk.document_id || '—'}</span>
+        <span className="ch-agency">{agency}</span>
       </div>
-      <div className="g2-panel-action">
+      <div className="ch-meta">
+        <span><span className="k">clause</span> <span className="v">{chunk.clause_id || '—'}</span></span>
+        <span><span className="k">page</span> <span className="v">{chunk.page_no != null ? chunk.page_no + 1 : '—'}</span></span>
+        <span><span className="k">type</span> <span className="v">{DOCTYPE_LABEL[chunk.doc_type] || chunk.doc_type || '—'}</span></span>
+        <span><span className="k">published</span> <span className="v">{formatDate(chunk.publication_date) || '—'}</span></span>
+      </div>
+      <div className="ch-text">
+        {isLong && !showMore ? text.slice(0, 300) + '… ' : text}
+        {isLong && (
+          <span className="ch-showmore" onClick={() => setShowMore((v) => !v)}>
+            {showMore ? 'Show less' : 'Show more'}
+          </span>
+        )}
+      </div>
+      <div className="ch-foot">
+        <span className="ch-ingest">{ingDate} · {srcLabel} · {chunk.embedding_model || 'mxbai-embed-large'}</span>
         <button
-          className={`g2-btn-outline${!chunk.source_local_path && !chunk.source_url ? ' disabled' : ''}`}
-          data-testid="view-source-btn"
-          onClick={onViewSource}
-          disabled={!chunk.source_local_path && !chunk.source_url}
+          className="ch-view"
+          data-testid={`chunk-view-source-${chunk.chunk_id}`}
+          onClick={() => onViewSource(chunk)}
         >
           <PdfIcon /> View Source
         </button>
@@ -168,204 +231,81 @@ function SourcePanel({ chunk, onViewSource }) {
   );
 }
 
-// ── Chunk list + text panel (middle) ──────────────────────────────────────
+// ── Traceability Panel ────────────────────────────────────────────────────
 
-function ChunkPanel({ chunks, selectedIdx, onSelect, loading }) {
-  const [showFull, setShowFull] = useState(false);
-  const selectedChunk = chunks?.find((c) => c.index === selectedIdx) || chunks?.[0];
-  const chunkText = selectedChunk?.chunk_text || '';
-  const isLong = chunkText.length > 500;
+function TraceabilityPanel({ queryId, citations, selectedChunkId, onChunkSelect, onClose, onViewSource }) {
+  const [uncitedOpen, setUncitedOpen] = useState(false);
 
-  useEffect(() => setShowFull(false), [selectedIdx]);
+  const cited = citations.filter((c) => c.cited_by_llm);
+  const uncited = citations.filter((c) => !c.cited_by_llm);
 
-  if (loading) {
-    return (
-      <div className="g2-panel" data-testid="provenance-chunk-panel">
-        <div className="g2-panel-lbl">Contributing Chunks <span className="sub">· loading</span></div>
-        <div className="g2-panel-scroll" style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {[1, 2, 3].map((i) => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div className="g2-skel" style={{ width: '80%' }} />
-              <div className="g2-skel" style={{ width: '40%', height: 9 }} />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (!chunks?.length) return (
-    <div className="g2-panel" data-testid="provenance-chunk-panel">
-      <div className="g2-panel-lbl">Contributing Chunks</div>
-      <div className="g2-empty">No chunks available</div>
-    </div>
-  );
-
-  const total = chunks.length;
+  // Scroll selected chunk into view when it changes
+  const panelRef = useRef(null);
+  useEffect(() => {
+    if (!selectedChunkId || !panelRef.current) return;
+    const el = panelRef.current.querySelector(`[data-testid="chunk-card-${selectedChunkId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedChunkId]);
 
   return (
-    <div className="g2-panel" data-testid="provenance-chunk-panel">
-      <div className="g2-panel-lbl">Contributing Chunks <span className="sub">· {total}</span></div>
-      <div className="g2-panel-scroll" style={{ padding: 0, minHeight: 0 }}>
-        <div className="g2-chunk-list">
-          {chunks.map((c) => {
-            const dots = Math.max(0, Math.round((c.score || 0) * 3));
-            return (
-              <div
-                key={c.index}
-                className={`g2-chunk-row${c.index === selectedIdx ? ' on' : ''}`}
-                data-testid={`chunk-row-${c.chunk_id || c.index}`}
-                onClick={() => onSelect(c.index)}
-              >
-                <span className="rank">{c.relevance_rank || c.index}</span>
-                <div style={{ minWidth: 0 }}>
-                  <div className="ct">{c.document_title || c.document_id}</div>
-                  <div className="cc">
-                    <span>{c.clause_id || '—'}</span>
-                    <span className="g2-dots">
-                      {[0, 1, 2].map((i) => <i key={i} className={i < dots ? 'on' : ''} />)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+    <div className="g2v2-panel" data-testid="traceability-panel">
+      <div className="g2v2-panel-head">
+        <span className="t">Traceability</span>
+        <button className="close" data-testid="traceability-close" onClick={onClose}>
+          <CloseIcon />
+        </button>
       </div>
-      {selectedChunk && (
-        <div className="g2-chunk-text-wrap">
-          <div className="g2-chunk-text-lbl">Chunk text</div>
-          <div className="g2-chunk-text" data-testid={`chunk-text-${selectedChunk.chunk_id || selectedChunk.index}`}>
-            {showFull || !isLong ? chunkText : chunkText.slice(0, 300) + '…'}
-            {isLong && (
-              <span className="g2-showmore" onClick={() => setShowFull((f) => !f)}>
-                {showFull ? ' Show less' : ' Show more'}
+      <div className="g2v2-panel-scroll" ref={panelRef}>
+
+        {/* LLM Call */}
+        <LlmCallBlock queryId={queryId} />
+
+        {/* Cited chunks */}
+        <div className="g2v2-section-lbl" data-testid="cited-chunks-block">
+          Cited chunks · {cited.length}
+        </div>
+        {cited.map((chunk) => (
+          <ChunkCard
+            key={chunk.chunk_id}
+            chunk={chunk}
+            highlighted={chunk.chunk_id === selectedChunkId}
+            onViewSource={onViewSource}
+          />
+        ))}
+
+        {/* Uncited chunks */}
+        {uncited.length > 0 && (
+          <div className="g2v2-block" data-testid="uncited-chunks-block" style={{ marginTop: 4 }}>
+            <div className="g2v2-block-head" onClick={() => setUncitedOpen((v) => !v)}>
+              <span className="lhs">
+                <span className={`chev${uncitedOpen ? ' open' : ''}`}><ChevRightIcon /></span>
+                <span className="name">Retrieved · not cited</span>
               </span>
+              <span className="summary">{uncited.length} chunk{uncited.length !== 1 ? 's' : ''}</span>
+            </div>
+            {uncitedOpen && (
+              <div style={{ borderTop: '1px solid var(--doc-border)' }}>
+                {uncited.map((u) => (
+                  <div key={u.chunk_id} className="g2v2-uncited">
+                    <span className="u-agency">{u.issuing_body || u.agency || '—'}</span>
+                    <span className="u-title">{u.document_title || u.document_id || '—'}</span>
+                    <span className="u-score">{u.score != null ? u.score.toFixed(2) : '—'}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Ingestion trace panel (right) ─────────────────────────────────────────
-
-function InlineTrace({ traceId }) {
-  const [state, setState] = useState('idle');
-  const [data, setData] = useState(null);
-
-  const load = async () => {
-    if (state === 'loading') return;
-    setState('loading');
-    try {
-      const d = await getTrace(traceId);
-      setData(d);
-      setState('loaded');
-    } catch {
-      setState('error');
-    }
-  };
-
-  if (state === 'idle') return (
-    <button className="g2-btn-outline" onClick={load} style={{ fontSize: 11 }}>View Trace</button>
-  );
-  if (state === 'loading') return <span className="g2-muted" style={{ fontSize: 11 }}>Loading…</span>;
-  if (state === 'error') return <span className="g2-muted" style={{ fontSize: 11 }}>Trace unavailable</span>;
-
-  const obs = data?.observations || [];
-  return (
-    <div className="g3-trace-inline" style={{ marginTop: 8 }}>
-      <div className="g3-trace-header">
-        <span className="g3-trace-name">{data.name || 'Ingestion trace'}</span>
-        {data.latency != null && <span className="g3-trace-lat">{data.latency} ms</span>}
-        <button className="g3-trace-close" onClick={() => setState('idle')}>✕</button>
+        )}
       </div>
-      {obs.length > 0 && (
-        <div className="g3-trace-obs">
-          {obs.map((o, i) => (
-            <div key={i} className="g3-trace-obs-row">
-              <span className={`g3-trace-type ${(o.type || '').toLowerCase()}`}>{o.type || 'SPAN'}</span>
-              <span className="g3-trace-obs-name">{o.name}</span>
-              {o.latency != null && <span className="g3-trace-obs-lat">{o.latency} ms</span>}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-function TracePanel({ chunk }) {
-  const [copied, setCopied] = useState(false);
-
-  const copyChunkId = () => {
-    if (chunk?.chunk_id) {
-      navigator.clipboard?.writeText(chunk.chunk_id).catch(() => {});
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  };
-
-  if (!chunk) return (
-    <div className="g2-panel side" data-testid="provenance-trace-panel">
-      <div className="g2-panel-lbl">Ingestion Trace <span className="sub">· where it ended up</span></div>
-      <div className="g2-empty">Select a citation</div>
-    </div>
-  );
-
-  return (
-    <div className="g2-panel side" data-testid="provenance-trace-panel">
-      <div className="g2-panel-lbl">Ingestion Trace <span className="sub">· where it ended up</span></div>
-      <div className="g2-panel-scroll">
-        <div className="g2-src-field">
-          <span className="k">Ingestion source</span>
-          <span className="g2-src-pill-row"><SrcPill src={chunk.ingestion_source} /></span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Triggered by</span>
-          <span className="v muted">{TRIGGERED_BY_LABELS[chunk.triggered_by] || chunk.triggered_by || '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Ingested at</span>
-          <span className="v mono">{formatDateTime(chunk.ingested_at) || '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Embedding model</span>
-          <span className="v mono">{chunk.embedding_model || '—'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Collection</span>
-          <span className="v mono">{chunk.collection || 'knowledge_base'}</span>
-        </div>
-        <div className="g2-src-field">
-          <span className="k">Chunk ID</span>
-          <span className="v mono" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
-              {chunk.chunk_id || '—'}
-            </span>
-            {chunk.chunk_id && (
-              <span className="g2-copy" title={copied ? 'Copied!' : 'Copy chunk ID'} onClick={copyChunkId}>
-                <CopyIcon />
-              </span>
-            )}
-          </span>
-        </div>
-      </div>
-      {chunk.trace_id && (
-        <div className="g2-panel-action" data-testid="view-trace-btn">
-          <InlineTrace traceId={chunk.trace_id} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── PDF modal ─────────────────────────────────────────────────────────────
+// ── PDF Modal ─────────────────────────────────────────────────────────────
 
 function PdfModal({ chunk, onClose }) {
   const [imgSrc, setImgSrc] = useState(null);
-  const [pageNo, setPageNo] = useState(chunk?.page_no ?? 1);
+  const [pageNo, setPageNo] = useState(chunk?.page_no ?? 0);
 
   useEffect(() => {
     if (chunk?.source_local_path) {
@@ -380,25 +320,21 @@ function PdfModal({ chunk, onClose }) {
       <div className="g2-pdf-box" onClick={(e) => e.stopPropagation()}>
         <div className="g2-pdf-bar">
           <span className="t">{chunk?.document_title || 'Source Document'}</span>
-          <span className="pg">Page {pageNo}</span>
-          <button className="close" onClick={onClose}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <span className="pg">Page {pageNo + 1}</span>
+          <button className="close" onClick={onClose}><CloseIcon /></button>
         </div>
         <div className="g2-pdf-stage">
           {imgSrc ? (
-            <img src={imgSrc} alt={`Page ${pageNo}`} onError={() => setImgSrc(null)} />
+            <img src={imgSrc} alt={`Page ${pageNo + 1}`} style={{ width: 540 }} onError={() => setImgSrc(null)} />
           ) : chunk?.source_url ? (
-            <div style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontSize: 13.5 }}>
-              <p>PDF preview not available for this document.</p>
-              <a href={chunk.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-l)' }}>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--doc-text-2)', fontSize: 13.5 }}>
+              <p style={{ marginBottom: 12 }}>PDF preview not available for this document.</p>
+              <a href={chunk.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-l)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 Open source document <ExtIcon />
               </a>
             </div>
           ) : (
-            <div style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-3)', fontSize: 13.5 }}>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--doc-text-3)', fontSize: 13.5 }}>
               PDF not available
             </div>
           )}
@@ -407,7 +343,8 @@ function PdfModal({ chunk, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: '10px 16px', borderTop: '1px solid var(--doc-border)' }}>
             <button
               style={{ padding: '4px 12px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--doc-text)', fontSize: 12 }}
-              onClick={() => setPageNo((p) => Math.max(1, p - 1))}
+              onClick={() => setPageNo((p) => Math.max(0, p - 1))}
+              disabled={pageNo <= 0}
             >‹</button>
             <button
               style={{ padding: '4px 12px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--doc-text)', fontSize: 12 }}
@@ -420,6 +357,41 @@ function PdfModal({ chunk, onClose }) {
   );
 }
 
+// ── Evidence Bar ──────────────────────────────────────────────────────────
+
+function EvidenceBar({ citations, panelOpen, onOpenPanel }) {
+  const titles = [...new Set(citations.map((c) => c.document_title || c.document_id).filter(Boolean))];
+  const shown = titles.slice(0, 3);
+  const extra = titles.length - 3;
+
+  return (
+    <div className="g2v2-evidence" data-testid="query-evidence-bar">
+      <span className="ev-chunks">{citations.length} chunk{citations.length !== 1 ? 's' : ''} retrieved</span>
+      <span className="ev-docs">
+        {shown.map((t, i) => (
+          <span key={t}>
+            {i > 0 && ', '}
+            <span className="d">{t.length > 40 ? t.slice(0, 40) + '…' : t}</span>
+          </span>
+        ))}
+        {extra > 0 && <span>, +{extra} more</span>}
+      </span>
+      {!panelOpen && (
+        <button
+          className="g2v2-trace-btn"
+          data-testid="query-traceability-btn"
+          onClick={onOpenPanel}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          View traceability →
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Main QueryPage ─────────────────────────────────────────────────────────
 
 export default function QueryPage() {
@@ -428,16 +400,19 @@ export default function QueryPage() {
 
   const [filters, setFilters] = useState({});
   const [retrieval, setRetrieval] = useState({ depth: 'standard', topK: 10, scoreThreshold: 0.60 });
-  const [selectedIdx, setSelectedIdx] = useState(null);
-  const [pdfOpen, setPdfOpen] = useState(false);
+
+  const [queryState, setQueryState] = useState(QUERY_STATES.IDLE);
+  const [selectedChunkId, setSelectedChunkId] = useState(null);
+  const [pdfChunk, setPdfChunk] = useState(null);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
-  const [exportFormat, setExportFormat] = useState('pdf');
   const chevRef = useRef(null);
+  const answerRef = useRef(null);
 
   const handleSubmit = useCallback((text) => {
-    setSelectedIdx(null);
-    setPdfOpen(false);
+    setQueryState(QUERY_STATES.IDLE);
+    setSelectedChunkId(null);
+    setPdfChunk(null);
     const { _datePreset, ...apiFilters } = filters;
     execute(text, apiFilters, {
       query_depth: retrieval.depth,
@@ -449,8 +424,9 @@ export default function QueryPage() {
   const handleNewQuery = useCallback(() => {
     clear();
     setSearchParams({});
-    setSelectedIdx(null);
-    setPdfOpen(false);
+    setQueryState(QUERY_STATES.IDLE);
+    setSelectedChunkId(null);
+    setPdfChunk(null);
   }, [clear, setSearchParams]);
 
   const cachedQueryId = searchParams.get('q');
@@ -458,20 +434,49 @@ export default function QueryPage() {
     if (cachedQueryId) loadCached(cachedQueryId);
   }, [cachedQueryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-select first chunk on result arrival
+  // Transition to ANSWER state when result arrives
   useEffect(() => {
-    if (result?.citations?.length > 0) {
-      setSelectedIdx(result.citations[0].index);
+    if (result) {
+      setQueryState(QUERY_STATES.ANSWER);
+      setSelectedChunkId(null);
     }
   }, [result?.query_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectedChunk = useMemo(() => {
-    if (selectedIdx == null || !result?.citations) return null;
-    return result.citations.find((c) => c.index === selectedIdx) || result.citations[0] || null;
-  }, [selectedIdx, result?.citations]);
+  const citations = result?.citations || [];
 
   const handleCitationClick = useCallback((n) => {
-    setSelectedIdx((prev) => prev === n ? prev : n);
+    const chunk = citations.find((c) => c.index === n);
+    if (!chunk) return;
+    setSelectedChunkId(chunk.chunk_id);
+    setQueryState(QUERY_STATES.TRACEABILITY);
+    // Scroll citation badge into view in answer region
+    setTimeout(() => {
+      const el = answerRef.current?.querySelector(`[data-testid="citation-${n}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  }, [citations]);
+
+  const handleOpenPanel = useCallback(() => {
+    setQueryState(QUERY_STATES.TRACEABILITY);
+  }, []);
+
+  const handleClosePanel = useCallback(() => {
+    setQueryState(QUERY_STATES.ANSWER);
+    setSelectedChunkId(null);
+  }, []);
+
+  const handleChunkSelect = useCallback((chunkId) => {
+    setSelectedChunkId(chunkId);
+    // Scroll answer to corresponding citation
+    const chunk = citations.find((c) => c.chunk_id === chunkId);
+    if (chunk && answerRef.current) {
+      const el = answerRef.current.querySelector(`[data-testid="citation-${chunk.index}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [citations]);
+
+  const handleViewSource = useCallback((chunk) => {
+    setPdfChunk(chunk);
   }, []);
 
   const handleExport = useCallback(async (fmt) => {
@@ -479,7 +484,9 @@ export default function QueryPage() {
     if (!result?.query_id) return;
     try {
       const data = await exportQuery(result.query_id, fmt);
-      const blob = fmt === 'json' ? new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }) : data;
+      const blob = fmt === 'json'
+        ? new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        : data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `regpulse-export-${result.query_id}.${fmt}`; a.click();
@@ -488,11 +495,9 @@ export default function QueryPage() {
   }, [result?.query_id]);
 
   const isLanding = !result && !loading && !error;
-  const hasResult = !!result;
-  const splitRatio = getSplitRatio(result?.answer);
+  const panelOpen = queryState === QUERY_STATES.TRACEABILITY;
   const routingPath = result?.routing_path;
   const isMetadata = routingPath === 'METADATA';
-  const citations = result?.citations || [];
 
   if (isLanding) {
     return (
@@ -509,135 +514,118 @@ export default function QueryPage() {
             <EmptyState onSubmit={handleSubmit} disabled={false} />
           </div>
         </div>
-        <AuditFooter />
       </div>
     );
   }
 
   return (
-    <div className="g2" style={{ position: 'relative' }}>
-      {/* ── Top: query bar + answer ── */}
-      <div className={`g2-answer ${hasResult ? splitRatio : 'r50'}`} data-testid="query-answer-region">
-        {/* Query input strip */}
-        <div className="g2-query-area">
-          <div className="g2-query-area-inner">
-            <div className="rp-query-bar" style={{ marginBottom: 8 }}>
-              <QueryInput key={queryText} value={queryText} onSubmit={handleSubmit} disabled={loading} />
-            </div>
-            <FilterBar filters={filters} onChange={setFilters} retrieval={retrieval} onRetrievalChange={setRetrieval} />
-          </div>
-        </div>
+    <div className={`g2v2${panelOpen ? ' open' : ''}`}>
+      {/* Answer column */}
+      <div className="g2v2-answer" data-testid="query-answer">
+        <div className="g2v2-answer-scroll" ref={answerRef}>
+          <div className="g2v2-answer-inner">
 
-        <div className="g2-answer-scroll">
-          <div className="g2-answer-inner">
-            {loading ? (
-              <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-                  <div className="g2-skel" style={{ width: '92%' }} />
-                  <div className="g2-skel" style={{ width: '98%' }} />
-                  <div className="g2-skel" style={{ width: '76%' }} />
-                  <div className="g2-skel" style={{ width: '88%', marginTop: 8 }} />
-                  <div className="g2-skel" style={{ width: '65%' }} />
+            {/* Query bar */}
+            <div className="g2v2-qbar">
+              <div className="g2v2-qtext" data-testid="query-input">
+                <QueryInput key={queryText} value={queryText} onSubmit={handleSubmit} disabled={loading} compact />
+              </div>
+              {result && (
+                <div className="g2v2-route">
+                  <button className={routingPath === 'CONTENT' ? 'on' : ''}>CONTENT</button>
+                  <button className={routingPath === 'METADATA' ? 'on' : ''}>METADATA</button>
                 </div>
-                <div style={{ marginTop: 10, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
+              )}
+            </div>
+
+            {/* Filter bar below query */}
+            <div style={{ marginTop: 6 }}>
+              <FilterBar filters={filters} onChange={setFilters} retrieval={retrieval} onRetrievalChange={setRetrieval} />
+            </div>
+
+            {/* Metadata strip */}
+            {result && (
+              <div className="g2v2-meta">
+                q-{result.query_id?.slice(0, 8)} · {formatDateTime(result.timestamp, true)} · {routingPath} routing · {citations.length} chunk{citations.length !== 1 ? 's' : ''} retrieved
+              </div>
+            )}
+
+            {/* Answer body */}
+            {loading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+                <div className="g2-skel" style={{ width: '92%' }} />
+                <div className="g2-skel" style={{ width: '98%' }} />
+                <div className="g2-skel" style={{ width: '76%' }} />
+                <div className="g2-skel" style={{ width: '88%', marginTop: 8 }} />
+                <div className="g2-skel" style={{ width: '65%' }} />
+                <div style={{ marginTop: 6, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
                   Searching across indexed documents…
                 </div>
-              </>
-            ) : error ? (
-              <div style={{ padding: 16, background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', borderRadius: 4, color: 'var(--err-text)', fontSize: 13 }}>
+              </div>
+            )}
+            {error && (
+              <div style={{ marginTop: 16, padding: 16, background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', borderRadius: 4, color: 'var(--err-text)', fontSize: 13 }}>
                 {error}
               </div>
-            ) : result ? (
-              <>
-                <div className="g2-qbar">
-                  <div className="g2-qtext">{queryText}</div>
-                  <div className="g2-route">
-                    <button className={routingPath === 'CONTENT' ? 'on' : ''}>CONTENT</button>
-                    <button className={routingPath === 'METADATA' ? 'on' : ''}>METADATA</button>
-                  </div>
-                  <div style={{ position: 'relative' }}>
-                    <button
-                      className="g2-export"
-                      ref={chevRef}
-                      onClick={() => {
-                        if (chevRef.current) {
-                          const r = chevRef.current.getBoundingClientRect();
-                          setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
-                        }
-                        setShowFormatMenu((m) => !m);
-                      }}
-                    >
-                      <DownloadIcon /> Export
-                    </button>
-                  </div>
-                </div>
-                <div className="g2-qmeta">
-                  query {result.query_id?.slice(0, 8)} · {formatDateTime(result.timestamp, true)} · {routingPath} routing · {citations.length} chunk{citations.length !== 1 ? 's' : ''} cited
-                </div>
-
-                <div className="g2-answer-body">
-                  {renderAnswer(result.answer, selectedIdx, handleCitationClick)}
-                  <p className="g2-disc">
-                    AI-generated answer based on retrieved regulatory documents. Verify critical requirements against current source documents. Queries requiring legal interpretation should be referred to a qualified regulatory professional.
-                  </p>
-                </div>
-
+            )}
+            {result && (
+              <div className="g2v2-body">
+                {renderAnswer(result.answer, selectedChunkId, citations, handleCitationClick)}
+                <p className="g2v2-disc">
+                  AI-generated answer based on retrieved regulatory documents. Verify critical requirements against current source documents before relying on this response for compliance decisions.
+                </p>
                 <QueryExpansion subQueries={result.sub_queries} />
-              </>
-            ) : null}
+
+                {/* Export button */}
+                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', position: 'relative' }}>
+                  <button
+                    className="g2-export"
+                    ref={chevRef}
+                    onClick={() => {
+                      if (chevRef.current) {
+                        const r = chevRef.current.getBoundingClientRect();
+                        setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+                      }
+                      setShowFormatMenu((m) => !m);
+                    }}
+                  >
+                    <DownloadIcon /> Export
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {result && (
-          <AuditFooter
-            queryId={result?.query_id}
-            timestamp={result?.timestamp}
-            routingPath={result?.routing_path}
-            onViewTrace={() => {}}
+        {/* Evidence bar — pinned below answer */}
+        {result && !loading && !isMetadata && citations.length > 0 && (
+          <EvidenceBar
+            citations={citations}
+            panelOpen={panelOpen}
+            onOpenPanel={handleOpenPanel}
           />
         )}
-      </div>
-
-      {/* ── Bottom: 3 provenance panels ── */}
-      <div className="g2-prov" data-testid="query-provenance-region">
-        {loading ? (
-          <>
-            <div className="g2-panel side">
-              <div className="g2-panel-lbl">Source Origin</div>
-              <div className="g2-panel-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {[1, 2, 3].map((i) => <div key={i} className="g2-skel" style={{ width: `${60 + i * 10}%` }} />)}
-              </div>
-            </div>
-            <ChunkPanel chunks={[]} selectedIdx={null} onSelect={() => {}} loading={true} />
-            <div className="g2-panel side">
-              <div className="g2-panel-lbl">Ingestion Trace</div>
-              <div className="g2-panel-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {[1, 2, 3].map((i) => <div key={i} className="g2-skel" style={{ width: `${50 + i * 12}%` }} />)}
-              </div>
-            </div>
-          </>
-        ) : isMetadata || !citations.length ? (
-          <div className="g2-empty" style={{ gridColumn: '1 / -1' }}>
-            {isMetadata ? 'No chunk provenance available for metadata queries' : 'Ask a question to see source provenance'}
+        {result && !loading && isMetadata && (
+          <div className="g2v2-evidence">
+            <span className="ev-chunks" style={{ color: 'var(--doc-text-2)' }}>Metadata query — no chunk provenance</span>
           </div>
-        ) : (
-          <>
-            <SourcePanel chunk={selectedChunk} onViewSource={() => setPdfOpen(true)} />
-            <ChunkPanel
-              chunks={citations}
-              selectedIdx={selectedIdx}
-              onSelect={setSelectedIdx}
-              loading={false}
-            />
-            <TracePanel chunk={selectedChunk} />
-          </>
         )}
       </div>
 
-      {/* PDF modal */}
-      {pdfOpen && selectedChunk && (
-        <PdfModal chunk={selectedChunk} onClose={() => setPdfOpen(false)} />
+      {/* Traceability panel */}
+      {panelOpen && (
+        <TraceabilityPanel
+          queryId={result?.query_id}
+          citations={citations}
+          selectedChunkId={selectedChunkId}
+          onChunkSelect={handleChunkSelect}
+          onClose={handleClosePanel}
+          onViewSource={handleViewSource}
+        />
       )}
+
+      {/* PDF modal */}
+      {pdfChunk && <PdfModal chunk={pdfChunk} onClose={() => setPdfChunk(null)} />}
 
       {/* Export format menu */}
       {showFormatMenu && (
@@ -652,7 +640,7 @@ export default function QueryPage() {
           {['PDF', 'JSON'].map((fmt) => (
             <div
               key={fmt}
-              onClick={() => { setExportFormat(fmt.toLowerCase()); handleExport(fmt.toLowerCase()); }}
+              onClick={() => handleExport(fmt.toLowerCase())}
               style={{ padding: '8px 16px', cursor: 'pointer', fontSize: 13, color: 'var(--doc-text)', whiteSpace: 'nowrap' }}
             >
               {fmt}
