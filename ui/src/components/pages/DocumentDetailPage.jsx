@@ -132,11 +132,7 @@ export default function DocumentDetailPage() {
             ) : '—'}
           </MetaRow>
           <MetaRow label="Run ID">
-            {doc.run_id ? (
-              <Link to={`/corpus/runs?run=${doc.run_id}`} style={{ color: 'var(--accent-l)', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                {doc.run_id.substring(0, 12)}…
-              </Link>
-            ) : '—'}
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.run_id || '—'}</span>
           </MetaRow>
 
           <SectionLabel>Source Integrity</SectionLabel>
