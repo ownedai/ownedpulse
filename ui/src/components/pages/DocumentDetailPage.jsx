@@ -5,12 +5,12 @@ import Tooltip from '../common/Tooltip';
 import { formatDate, formatDateTime } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
-function SectionLabel({ children }) {
+function SectionLabel({ children, style }) {
   return (
     <div style={{
       fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.1em',
       textTransform: 'uppercase', color: 'var(--accent-l)', fontWeight: 600,
-      marginBottom: 10, marginTop: 24,
+      marginBottom: 10, marginTop: 24, ...style,
     }}>
       {children}
     </div>
@@ -135,7 +135,18 @@ export default function DocumentDetailPage() {
             <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.run_id || '—'}</span>
           </MetaRow>
 
-          <SectionLabel>Source Integrity</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 24, marginBottom: 10 }}>
+            <SectionLabel style={{ margin: 0 }}>Source Integrity</SectionLabel>
+            {doc.hash_match ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--ok-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '2px 8px', borderRadius: 3 }}>
+                ✓ Hashes match
+              </span>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--err-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '2px 8px', borderRadius: 3 }}>
+                ✗ Mismatch
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
               <Tooltip tip="SHA-256 of the source file recorded at ingestion time (document registry)">
@@ -152,17 +163,6 @@ export default function DocumentDetailPage() {
               <Tooltip tip={doc.qdrant_source_hash || 'Not recorded'}>
                 <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.qdrant_source_hash)}</code>
               </Tooltip>
-            </div>
-            <div style={{ marginTop: 10 }}>
-              {doc.hash_match ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--ok-text)', fontSize: 12, background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '4px 10px', borderRadius: 4 }}>
-                  <span style={{ fontSize: 16 }}>✓</span> Hashes match
-                </span>
-              ) : (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--err-text)', fontSize: 12, background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '4px 10px', borderRadius: 4 }}>
-                  ✗ Hash mismatch — investigate
-                </span>
-              )}
             </div>
           </div>
 
