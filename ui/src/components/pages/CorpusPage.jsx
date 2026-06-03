@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { getCorpusDocumentsV2, getCorpusStats } from '../../api/client';
-import { formatDate, formatDateTime } from '../../dateFormat';
+import { getCorpusDocumentsV2 } from '../../api/client';
+import { formatDate } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
-const AGENCY_TABS = ['All', 'FDA', 'EMA', 'ICH'];
+const AGENCY_OPTS = [
+  { label: 'All bodies', value: null },
+  { label: 'FDA', value: 'FDA' },
+  { label: 'EMA', value: 'EMA' },
+  { label: 'ICH', value: 'ICH' },
+];
 const DOC_TYPES = [
   { label: 'All types', value: null },
   { label: 'Guidance', value: 'guidance' },
@@ -23,6 +28,12 @@ const STATUS_OPTS = [
   { label: 'Error', value: 'error' },
   { label: 'Superseded', value: 'superseded' },
 ];
+const DOC_TYPE_LABELS = {
+  guidance_pdf: 'Guidance', guidance: 'Guidance',
+  press_release: 'Press Release', reflection_paper: 'Reflection Paper',
+  drug_approval: 'Drug Approval', safety_alert: 'Safety Alert',
+  news_item: 'News', other: 'Other',
+};
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -41,7 +52,6 @@ function FilterDropdown({ options, value, onChange }) {
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
   useClickOutside(popRef, () => { if (open) setOpen(false); });
-
   const current = options.find((o) => o.value === value) || options[0];
 
   function handleOpen() {
@@ -54,23 +64,14 @@ function FilterDropdown({ options, value, onChange }) {
 
   return (
     <>
-      <button
-        ref={btnRef}
-        className={`rp-dropdown-btn${open ? ' open' : ''}`}
-        onClick={handleOpen}
-        style={{ fontSize: 12.5 }}
-      >
+      <button ref={btnRef} className={`rp-dropdown-btn${open ? ' open' : ''}`} onClick={handleOpen} style={{ fontSize: 12.5 }}>
         <span>{current.label}</span>
         <svg width="9" height="9" viewBox="0 0 10 6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
       </button>
       {open && createPortal(
         <div ref={popRef} className="rp-popover" style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: 160 }}>
           {options.map((o) => (
-            <div
-              key={o.label}
-              className={`rp-popover-item${value === o.value ? ' active' : ''}`}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
+            <div key={o.label} className={`rp-popover-item${value === o.value ? ' active' : ''}`} onClick={() => { onChange(o.value); setOpen(false); }}>
               {o.label}
             </div>
           ))}
@@ -86,65 +87,104 @@ function StatusBadge({ status }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 600,
+      fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600,
       letterSpacing: '0.06em', textTransform: 'uppercase',
-      padding: '2px 7px', borderRadius: 3,
+      padding: '2px 7px', borderRadius: 2,
       background: c.bg, color: c.color, border: `1px solid ${c.border}`,
     }}>
-      <span style={{ width: 5, height: 5, borderRadius: 3, background: c.dot, flexShrink: 0 }} />
       {c.label}
     </span>
   );
 }
 
+function Pager({ page, pageSize, total, onPage, onPageSize }) {
+  const totalPages = Math.ceil(total / pageSize);
+  if (total === 0) return null;
+
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+
+  // Sliding window of up to 7 page buttons
+  let pages = [];
+  if (totalPages <= 7) {
+    pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+  } else {
+    const left = Math.max(1, page - 3);
+    const right = Math.min(totalPages, left + 6);
+    pages = Array.from({ length: right - left + 1 }, (_, i) => left + i);
+  }
+
+  return (
+    <div className="rp-pager">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ color: 'var(--doc-text-3)' }}>Rows:</span>
+        <div style={{ display: 'inline-flex', border: '1px solid var(--doc-border)', borderRadius: 3, overflow: 'hidden' }}>
+          {[25, 50, 100].map((n) => (
+            <button
+              key={n}
+              onClick={() => { onPageSize(n); onPage(1); }}
+              style={{
+                background: pageSize === n ? 'var(--accent-l)' : 'var(--doc-surface)',
+                border: 'none',
+                borderRight: '1px solid var(--doc-border)',
+                color: pageSize === n ? '#fff' : 'var(--doc-text-2)',
+                fontFamily: 'var(--mono)', fontSize: 11,
+                padding: '3px 9px', cursor: 'pointer',
+              }}
+            >{n}</button>
+          ))}
+        </div>
+        <span style={{ color: 'var(--doc-text-2)', marginLeft: 8 }}>{start}–{end} of {total.toLocaleString()}</span>
+      </div>
+      <div className="pages">
+        <button onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1}>←</button>
+        {pages[0] > 1 && <button onClick={() => onPage(1)}>1</button>}
+        {pages[0] > 2 && <button disabled>…</button>}
+        {pages.map((p) => (
+          <button key={p} className={p === page ? 'on' : ''} onClick={() => onPage(p)}>{p}</button>
+        ))}
+        {pages[pages.length - 1] < totalPages - 1 && <button disabled>…</button>}
+        {pages[pages.length - 1] < totalPages && <button onClick={() => onPage(totalPages)}>{totalPages}</button>}
+        <button onClick={() => onPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}>→</button>
+      </div>
+    </div>
+  );
+}
+
 export default function CorpusPage() {
   const [searchParams] = useSearchParams();
+
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState(null);
+
   const [agency, setAgency] = useState(() => {
     const a = searchParams.get('agency');
-    return AGENCY_TABS.includes(a) ? a : 'All';
+    return ['FDA', 'EMA', 'ICH'].includes(a) ? a : null;
   });
   const [docType, setDocType] = useState(() => searchParams.get('doc_type') || null);
   const [status, setStatus] = useState(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(50);
 
   useEffect(() => {
     const a = searchParams.get('agency');
     const dt = searchParams.get('doc_type');
-    setAgency(AGENCY_TABS.includes(a) ? a : 'All');
+    setAgency(['FDA', 'EMA', 'ICH'].includes(a) ? a : null);
     setDocType(dt || null);
     setPage(1);
   }, [searchParams]);
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    const params = {
-      page,
-      page_size: pageSize,
-      issuing_body: agency === 'All' ? null : agency,
-      doc_type: docType,
-      ingestion_status: status,
-    };
-    getCorpusDocumentsV2(params)
-      .then((data) => {
-        setItems(data.items || []);
-        setTotal(data.total || 0);
-      })
+    getCorpusDocumentsV2({ page, page_size: pageSize, issuing_body: agency, doc_type: docType, ingestion_status: status })
+      .then((data) => { setItems(data.items || []); setTotal(data.total || 0); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [agency, docType, status, page]);
+  }, [agency, docType, status, page, pageSize]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => {
-    getCorpusStats().then(setStats).catch(() => {});
-  }, []);
-
-  const totalPages = Math.ceil(total / pageSize);
 
   const filteredItems = search
     ? items.filter((d) =>
@@ -156,110 +196,74 @@ export default function CorpusPage() {
   return (
     <>
       <div className="rp-page-head">
-        <div>
-          <h1>Corpus</h1>
-        </div>
+        <h1>Corpus</h1>
       </div>
 
       <div className="rp-table-wrap">
-        {/* Filter row */}
         <div className="rp-filter-strip">
           <input
             type="text"
             placeholder="Search documents…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             style={{
-              height: 30,
-              padding: '0 10px',
-              fontSize: 12.5,
-              fontFamily: 'var(--sans)',
-              background: 'var(--doc-surface)',
-              border: '1px solid var(--doc-border)',
-              borderRadius: 3,
-              color: 'var(--doc-text)',
-              outline: 'none',
-              width: 200,
+              height: 30, padding: '0 10px', fontSize: 12.5,
+              fontFamily: 'var(--sans)', background: 'var(--doc-surface)',
+              border: '1px solid var(--doc-border)', borderRadius: 3,
+              color: 'var(--doc-text)', outline: 'none', width: 200,
             }}
           />
-          <FilterDropdown
-            options={[{ label: 'All bodies', value: null }, ...AGENCY_TABS.filter((a) => a !== 'All').map((a) => ({ label: a, value: a }))]}
-            value={agency === 'All' ? null : agency}
-            onChange={(v) => { setAgency(v || 'All'); setPage(1); }}
-          />
-          <FilterDropdown
-            options={DOC_TYPES}
-            value={docType}
-            onChange={(v) => { setDocType(v); setPage(1); }}
-          />
-          <FilterDropdown
-            options={STATUS_OPTS}
-            value={status}
-            onChange={(v) => { setStatus(v); setPage(1); }}
-          />
-          <div style={{ flex: 1 }} />
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)' }}>
-            {total.toLocaleString()} documents
-          </span>
+          <FilterDropdown options={AGENCY_OPTS} value={agency} onChange={(v) => { setAgency(v); setPage(1); }} />
+          <FilterDropdown options={DOC_TYPES} value={docType} onChange={(v) => { setDocType(v); setPage(1); }} />
+          <FilterDropdown options={STATUS_OPTS} value={status} onChange={(v) => { setStatus(v); setPage(1); }} />
         </div>
 
-        {/* Table */}
-        <table className="rp-table">
+        <table className="rp-table" style={{ fontSize: 12.5 }}>
           <thead>
             <tr>
-              <th style={{ width: 130 }}>Document ID</th>
-              <th>Title</th>
-              <th style={{ width: 60 }}>Version</th>
-              <th style={{ width: 70 }}>Agency</th>
+              <th>Document</th>
+              <th style={{ width: 55 }}>Agency</th>
               <th style={{ width: 110 }}>Type</th>
-              <th style={{ width: 100 }}>Published ↓</th>
+              <th style={{ width: 70 }}>Version</th>
+              <th style={{ width: 95 }}>Published</th>
               <th style={{ width: 90 }}>Status</th>
-              <th style={{ width: 60 }}>Chunks</th>
-              <th style={{ width: 120 }}>Last Indexed</th>
+              <th style={{ width: 55, textAlign: 'right' }}>Chunks</th>
             </tr>
           </thead>
           <tbody>
             {loading && filteredItems.length === 0 && (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>Loading...</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>Loading…</td></tr>
             )}
             {!loading && filteredItems.length === 0 && (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>No documents found.</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>No documents found.</td></tr>
             )}
             {filteredItems.map((doc) => (
               <tr key={doc.document_id}>
                 <td>
                   <Link
-                    to={`/corpus/${doc.document_id}`}
-                    style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent-l)', letterSpacing: '-0.02em' }}
+                    to={`/corpus/${encodeURIComponent(doc.document_id)}`}
                     title={doc.document_id}
+                    style={{ fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
-                    {doc.document_id}
+                    {doc.document_title || doc.document_id}
                   </Link>
                 </td>
-                <td style={{ fontSize: 13, color: 'var(--doc-text)' }} className="truncate" title={doc.document_title}>
-                  {doc.document_title}
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
+                  {doc.issuing_body === 'EU-Commission' ? 'EMA' : (doc.issuing_body || '—')}
                 </td>
-                <td className="mono" style={{ fontSize: 11 }}>{doc.document_version || '—'}</td>
-                <td className="mono" style={{ fontSize: 11 }}>{doc.issuing_body}</td>
-                <td className="mono" style={{ fontSize: 11 }}>{(doc.document_type || doc.doc_type || '—').replace(/-/g, ' ')}</td>
-                <td className="mono" style={{ fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
+                  {DOC_TYPE_LABELS[doc.doc_type] || DOC_TYPE_LABELS[doc.document_type] || (doc.doc_type || '—').replace(/_/g, ' ')}
+                </td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version || '—'}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
                 <td><StatusBadge status={doc.ingestion_status} /></td>
-                <td className="mono">{doc.chunk_count || 0}</td>
-                <td className="mono" style={{ fontSize: 10 }}>{doc.last_indexed_at ? formatDateTime(doc.last_indexed_at) : '—'}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.chunk_count || '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        {totalPages > 1 && (
-          <div className="rp-pager">
-            <span>{((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, total)} of {total.toLocaleString()}</span>
-            <div className="pages">
-              <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page <= 1}>&larr;</button>
-              <button onClick={() => setPage(page + 1)} disabled={page >= totalPages}>&rarr;</button>
-            </div>
-          </div>
-        )}
+        <Pager page={page} pageSize={pageSize} total={search ? filteredItems.length : total} onPage={setPage} onPageSize={setPageSize} />
       </div>
     </>
   );
