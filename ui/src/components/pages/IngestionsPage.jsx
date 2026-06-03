@@ -49,12 +49,11 @@ function TraceViewer({ traceId }) {
     return <span className="g3-trace-err">Run info unavailable</span>;
   }
 
-  const rows = [
+  const fields = [
     ['Trigger', data.trigger_source],
     ['Feed', data.feed_source || '—'],
     ['Status', data.status],
     ['Started', data.triggered_at ? formatDateTime(data.triggered_at) : '—'],
-    ['Completed', data.completed_at ? formatDateTime(data.completed_at) : '—'],
     ['Duration', data.duration_ms != null ? `${data.duration_ms} ms` : '—'],
     ['New', data.items_new],
     ['Skipped', data.items_skipped],
@@ -63,24 +62,21 @@ function TraceViewer({ traceId }) {
 
   return (
     <div className="g3-trace-inline">
-      <div className="g3-trace-header">
-        <span className="g3-trace-name">Ingestion run</span>
+      <div className="g3-trace-strip">
+        {fields.map(([k, v], i) => (
+          <span key={k} className="g3-trace-field">
+            <span className="g3-trace-fk">{k}</span>
+            <span className="g3-trace-fv">{v}</span>
+          </span>
+        ))}
         <button className="g3-trace-close" onClick={() => setState('idle')}>✕</button>
       </div>
-      <div className="g3-trace-kv">
-        {rows.map(([k, v]) => (
-          <div key={k} className="g3-trace-kv-row">
-            <span className="g3-trace-kv-k">{k}</span>
-            <span className="g3-trace-kv-v">{v}</span>
-          </div>
-        ))}
-        {data.error_detail && (
-          <div className="g3-trace-kv-row full">
-            <span className="g3-trace-kv-k">Error</span>
-            <span className="g3-trace-kv-v err">{data.error_detail}</span>
-          </div>
-        )}
-      </div>
+      {data.error_detail && (
+        <div className="g3-trace-err-row">
+          <span className="g3-trace-fk">Error</span>
+          <span className="g3-trace-fv err">{data.error_detail}</span>
+        </div>
+      )}
     </div>
   );
 }
