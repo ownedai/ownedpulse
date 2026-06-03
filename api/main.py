@@ -25,7 +25,9 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="regpulse API", version="0.8.0")
+APP_VERSION = "0.8.07"
+
+app = FastAPI(title="regpulse API", version=APP_VERSION)
 
 app.include_router(corpus_router, prefix="/api/corpus")
 app.include_router(admin_router, prefix="/api/admin")
@@ -593,9 +595,14 @@ def fetch_chunk_provenance_batch(pg_conn, doc_ids: list) -> dict:
             """
             SELECT DISTINCT ON (id.doc_id)
                 id.doc_id,
+                id.span_id::text,
                 id.trace_id::text,
                 id.embedding_model,
                 id.created_at AS ingested_at,
+                id.fetched_at,
+                id.parsed_at,
+                id.chunk_count,
+                id.status AS ingestion_status,
                 rl.trigger_source AS ingestion_source,
                 rl.triggered_by
             FROM ingestion_doc id
@@ -608,11 +615,18 @@ def fetch_chunk_provenance_batch(pg_conn, doc_ids: list) -> dict:
         rows = cur.fetchall()
         cur.close()
         result = {}
-        for doc_id, trace_id, embedding_model, ingested_at, ingestion_source, triggered_by in rows:
+        for (doc_id, span_id, trace_id, embedding_model, ingested_at,
+             fetched_at, parsed_at, chunk_count, ingestion_status,
+             ingestion_source, triggered_by) in rows:
             result[doc_id] = {
+                "span_id": span_id,
                 "trace_id": trace_id,
                 "embedding_model": embedding_model,
                 "ingested_at": ingested_at.isoformat() if ingested_at else None,
+                "fetched_at": fetched_at.isoformat() if fetched_at else None,
+                "parsed_at": parsed_at.isoformat() if parsed_at else None,
+                "chunk_count": chunk_count,
+                "ingestion_status": ingestion_status,
                 "ingestion_source": ingestion_source,
                 "triggered_by": triggered_by,
             }
@@ -653,17 +667,46 @@ def build_citation(chunk: dict, index: int, cited_by_llm: bool, provenance: dict
         "source_local_path": chunk.get("source_local_path"),
         "source_url": chunk.get("source_url", ""),
         # G2 provenance fields
+        "span_id": prov.get("span_id"),
         "trace_id": prov.get("trace_id"),
         "ingestion_source": prov.get("ingestion_source"),
         "triggered_by": prov.get("triggered_by"),
         "ingested_at": prov.get("ingested_at"),
+        "fetched_at": prov.get("fetched_at"),
+        "parsed_at": prov.get("parsed_at"),
+        "chunk_count": prov.get("chunk_count"),
+        "ingestion_status": prov.get("ingestion_status"),
         "embedding_model": prov.get("embedding_model"),
         "relevance_rank": index,
         "collection": "knowledge_base",
     }
 
 
+# ── GET /api/chunk/provenance ─────────────────────────────────────────────────
+
+
+@app.get("/api/chunk/provenance")
+async def get_chunk_provenance(document_id: str):
+    """Return ingestion provenance for a document — used for lazy-load in ChunkCard."""
+    try:
+        conn = get_pg_conn()
+        prov_map = fetch_chunk_provenance_batch(conn, [document_id])
+        conn.close()
+        prov = prov_map.get(document_id)
+        if not prov:
+            return {}
+        return prov
+    except Exception as e:
+        logger.error("Provenance fetch failed: %s", e)
+        return {}
+
+
 # ── Health endpoint ───────────────────────────────────────────────────────────
+
+
+@app.get("/api/version")
+async def get_version():
+    return {"version": APP_VERSION}
 
 
 @app.get("/api/health")
@@ -1898,7 +1941,7 @@ async def pdf_page(file_path: str, page_no: int):
             raise HTTPException(status_code=404, detail=f"Page {page_no} out of range (0-{doc.page_count - 1})")
 
         page = doc.load_page(page_no)
-        pix = page.get_pixmap(dpi=150)
+        pix = page.get_pixmap(dpi=200)
         img_bytes = pix.tobytes("png")
         return Response(content=img_bytes, media_type="image/png")
     except HTTPException:

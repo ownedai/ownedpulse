@@ -5,7 +5,7 @@ import QueryInput from '../query/QueryInput';
 import QueryExpansion from '../query/QueryExpansion';
 import EmptyState from '../query/EmptyState';
 import useQuery from '../../hooks/useQuery';
-import { exportQuery, getPdfPage, getQueryTrace, getSystemPrompt } from '../../api/client';
+import { exportQuery, getPdfPage, getQueryTrace, getSystemPrompt, getChunkProvenance } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -64,6 +64,22 @@ function DownloadIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
       <path d="M8 3v8M4 7l4 4 4-4M3 13h10" />
+    </svg>
+  );
+}
+function MaximizeIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>
+  );
+}
+function MinimizeIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 14 10 14 10 20"/><polyline points="20 4 14 4 14 10"/>
+      <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
     </svg>
   );
 }
@@ -236,8 +252,10 @@ function LlmCallBlock({ queryId }) {
 
 // ── Traceability Panel — Chunk card ──────────────────────────────────────
 
-function ChunkCard({ chunk, highlighted, onViewSource }) {
+function ChunkCard({ chunk, highlighted, onViewSource, dimText = false }) {
   const [showMore, setShowMore] = useState(false);
+  const [ingOpen, setIngOpen] = useState(false);
+  const [prov, setProv] = useState(null);
   const text = chunk.chunk_text || '';
   const isLong = text.length > 300;
 
@@ -245,9 +263,29 @@ function ChunkCard({ chunk, highlighted, onViewSource }) {
     if (highlighted) setShowMore(false);
   }, [highlighted]);
 
+  const handleIngToggle = () => {
+    const next = !ingOpen;
+    setIngOpen(next);
+    if (next && !prov && chunk.document_id) {
+      getChunkProvenance(chunk.document_id)
+        .then((d) => setProv(d))
+        .catch(() => setProv({}));
+    }
+  };
+
+  // Merge: fetched provenance wins over stale fields on the chunk object
+  const p = { ...chunk, ...prov };
+
   const agency = chunk.issuing_body || chunk.agency || '—';
-  const ingDate = chunk.ingested_at ? formatDate(chunk.ingested_at) : '—';
-  const srcLabel = INGESTION_SOURCE_LABELS[chunk.ingestion_source] || chunk.ingestion_source || '—';
+  const d = (v) => (v != null && v !== '') ? v : '—';
+  const srcLabel = INGESTION_SOURCE_LABELS[p.ingestion_source] || p.ingestion_source || '—';
+  const chunkSize = text.length;
+  const chunkOf = p.chunk_count != null
+    ? `${(chunk.chunk_index ?? 0) + 1} of ${p.chunk_count}`
+    : (chunk.chunk_index != null ? String((chunk.chunk_index ?? 0) + 1) : '—');
+  const charOffset = (chunk.char_offset_start != null && chunk.char_offset_end != null)
+    ? `${chunk.char_offset_start}–${chunk.char_offset_end}`
+    : '—';
 
   return (
     <div
@@ -255,7 +293,7 @@ function ChunkCard({ chunk, highlighted, onViewSource }) {
       data-testid={`chunk-card-${chunk.chunk_id}`}
     >
       <div className="ch-top">
-        <span className="ch-badge">{chunk.index}</span>
+        {chunk.index != null && <span className="ch-badge">{chunk.index}</span>}
         <span className="ch-title">{chunk.document_title || chunk.document_id || '—'}</span>
         <span className="ch-agency">{agency}</span>
       </div>
@@ -265,7 +303,7 @@ function ChunkCard({ chunk, highlighted, onViewSource }) {
         <span><span className="k">type</span> <span className="v">{DOCTYPE_LABEL[chunk.doc_type] || chunk.doc_type || '—'}</span></span>
         <span><span className="k">published</span> <span className="v">{formatDate(chunk.publication_date) || '—'}</span></span>
       </div>
-      <div className="ch-text">
+      <div className="ch-text" style={dimText ? { color: 'var(--doc-text-2)' } : undefined}>
         {isLong && !showMore ? text.slice(0, 300) + '… ' : text}
         {isLong && (
           <span className="ch-showmore" onClick={() => setShowMore((v) => !v)}>
@@ -273,8 +311,31 @@ function ChunkCard({ chunk, highlighted, onViewSource }) {
           </span>
         )}
       </div>
+
+      {/* Ingestion record — collapsible, lazy-fetched */}
+      <div className="ch-ing-wrap">
+        <div className="ch-ing-head" onClick={handleIngToggle}>
+          <span className="ch-ing-lbl">INGESTION RECORD</span>
+          <span className={`chev-sm${ingOpen ? ' open' : ''}`}><ChevRightIcon /></span>
+        </div>
+        {ingOpen && (
+          <div className="g2v2-llm-grid" style={{ marginTop: 6 }}>
+            <span className="k">ingested at</span><span className="v">{p.ingested_at ? formatDateTime(p.ingested_at, true) : '—'}</span>
+            <span className="k">source</span><span className="v">{srcLabel}</span>
+            <span className="k">run ID</span><span className="v" style={{ fontSize: 10 }}>{d(p.trace_id)}</span>
+            <span className="k">span ID</span><span className="v" style={{ fontSize: 10 }}>{d(p.span_id)}</span>
+            <span className="k">fetched at</span><span className="v">{p.fetched_at ? formatDateTime(p.fetched_at, true) : '—'}</span>
+            <span className="k">parsed at</span><span className="v">{p.parsed_at ? formatDateTime(p.parsed_at, true) : '—'}</span>
+            <span className="k">status</span><span className="v">{d(p.ingestion_status)}</span>
+            <span className="k">embed model</span><span className="v">{d(p.embedding_model)}</span>
+            <span className="k">chunk index</span><span className="v">{chunkOf}</span>
+            <span className="k">chunk size</span><span className="v">{chunkSize} chars</span>
+            <span className="k">char offset</span><span className="v">{charOffset}</span>
+          </div>
+        )}
+      </div>
+
       <div className="ch-foot">
-        <span className="ch-ingest">{ingDate} · {srcLabel} · {chunk.embedding_model || 'mxbai-embed-large'}</span>
         <button
           className="ch-view"
           data-testid={`chunk-view-source-${chunk.chunk_id}`}
@@ -397,13 +458,15 @@ function TraceabilityPanel({ queryId, result, citations, selectedChunkId, onChun
               <span className="summary">{uncited.length} chunk{uncited.length !== 1 ? 's' : ''}</span>
             </div>
             {uncitedOpen && (
-              <div style={{ borderTop: '1px solid var(--doc-border)' }}>
+              <div style={{ borderTop: '1px solid var(--doc-border)', paddingTop: 4 }}>
                 {uncited.map((u) => (
-                  <div key={u.chunk_id} className="g2v2-uncited">
-                    <span className="u-agency">{u.issuing_body || u.agency || '—'}</span>
-                    <span className="u-title">{u.document_title || u.document_id || '—'}</span>
-                    <span className="u-score">{u.score != null ? u.score.toFixed(2) : '—'}</span>
-                  </div>
+                  <ChunkCard
+                    key={u.chunk_id}
+                    chunk={{ ...u, index: null }}
+                    highlighted={false}
+                    onViewSource={onViewSource}
+                    dimText
+                  />
                 ))}
               </div>
             )}
@@ -417,8 +480,12 @@ function TraceabilityPanel({ queryId, result, citations, selectedChunkId, onChun
 // ── PDF Modal ─────────────────────────────────────────────────────────────
 
 function PdfModal({ chunk, onClose }) {
+  const modalRef = useRef(null);
   const [imgSrc, setImgSrc] = useState(null);
   const [pageNo, setPageNo] = useState(chunk?.page_no ?? 0);
+  const [zoom, setZoom] = useState(100);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pageInput, setPageInput] = useState(String((chunk?.page_no ?? 0) + 1));
 
   useEffect(() => {
     if (chunk?.source_local_path) {
@@ -426,19 +493,55 @@ function PdfModal({ chunk, onClose }) {
     } else {
       setImgSrc(null);
     }
+    setPageInput(String(pageNo + 1));
   }, [chunk?.source_local_path, pageNo]);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  function toggleFullscreen() {
+    if (!isFullscreen) {
+      modalRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  function navigatePage(raw) {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 1) {
+      setPageNo(n - 1);
+    } else {
+      setPageInput(String(pageNo + 1));
+    }
+  }
 
   return (
     <div className="g2-pdf-modal" data-testid="pdf-modal" onClick={onClose}>
-      <div className="g2-pdf-box" onClick={(e) => e.stopPropagation()}>
+      <div className="g2-pdf-box" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <div className="g2-pdf-bar">
           <span className="t">{chunk?.document_title || 'Source Document'}</span>
-          <span className="pg">Page {pageNo + 1}</span>
-          <button className="close" onClick={onClose}><CloseIcon /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>Page</span>
+            <input
+              className="g2-pdf-page-input"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') navigatePage(pageInput); }}
+              onBlur={() => navigatePage(pageInput)}
+            />
+            <button className="close" title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>
+              {isFullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
+            </button>
+            <button className="close" onClick={onClose}><CloseIcon /></button>
+          </div>
         </div>
         <div className="g2-pdf-stage">
           {imgSrc ? (
-            <img src={imgSrc} alt={`Page ${pageNo + 1}`} style={{ width: 540 }} onError={() => setImgSrc(null)} />
+            <img src={imgSrc} alt={`Page ${pageNo + 1}`} style={{ width: `${zoom}%` }} onError={() => setImgSrc(null)} />
           ) : chunk?.source_url ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--doc-text-2)', fontSize: 13.5 }}>
               <p style={{ marginBottom: 12 }}>PDF preview not available for this document.</p>
@@ -453,16 +556,14 @@ function PdfModal({ chunk, onClose }) {
           )}
         </div>
         {chunk?.source_local_path && (
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: '10px 16px', borderTop: '1px solid var(--doc-border)' }}>
-            <button
-              style={{ padding: '4px 12px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--doc-text)', fontSize: 12 }}
-              onClick={() => setPageNo((p) => Math.max(0, p - 1))}
-              disabled={pageNo <= 0}
-            >‹</button>
-            <button
-              style={{ padding: '4px 12px', background: 'var(--doc-surface)', border: '1px solid var(--doc-border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--doc-text)', fontSize: 12 }}
-              onClick={() => setPageNo((p) => p + 1)}
-            >›</button>
+          <div className="g2-pdf-footer">
+            <button className="g2-pdf-nav" onClick={() => setPageNo((p) => Math.max(0, p - 1))} disabled={pageNo <= 0}>‹</button>
+            <button className="g2-pdf-nav" onClick={() => setPageNo((p) => p + 1)}>›</button>
+            <div className="g2-pdf-zoom">
+              <button className="g2-pdf-zoom-btn" onClick={() => setZoom((z) => Math.max(25, z - 25))}>−</button>
+              <span className="g2-pdf-zoom-lbl">{zoom}%</span>
+              <button className="g2-pdf-zoom-btn" onClick={() => setZoom((z) => Math.min(300, z + 25))}>+</button>
+            </div>
           </div>
         )}
       </div>

@@ -1,8 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Logo from '../common/Logo';
 import useHistory from '../../hooks/useHistory';
 import useCorpusStats from '../../hooks/useCorpusStats';
 import { formatDate, formatDateTime } from '../../dateFormat';
+import { getAppVersion } from '../../api/client';
 
 function relativeTime(iso) {
   if (!iso) return '';
@@ -68,6 +70,10 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
   const { items } = useHistory(5);
   const { stats } = useCorpusStats();
   const isQueryPage = pathname === '/';
+  const [appVersion, setAppVersion] = useState(null);
+  useEffect(() => {
+    getAppVersion().then((d) => setAppVersion(d.version)).catch(() => {});
+  }, []);
 
   return (
     <aside className="rp-sidebar">
@@ -145,7 +151,7 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
         </div>
         <div className="row">
           <span className="k">Build</span>
-          <span className="v">v{import.meta.env.VITE_APP_VERSION}</span>
+          <span className="v">{appVersion ? `v${appVersion}` : '…'}</span>
         </div>
       </div>
     </aside>

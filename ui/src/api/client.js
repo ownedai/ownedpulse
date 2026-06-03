@@ -52,6 +52,10 @@ export function getQueryTrace(queryId) {
   return request(`/api/query/${queryId}/trace`);
 }
 
+export function getChunkProvenance(documentId) {
+  return request(`/api/chunk/provenance?document_id=${encodeURIComponent(documentId)}`);
+}
+
 export function getSystemPrompt() {
   return request('/api/system-prompt');
 }
@@ -78,6 +82,10 @@ export function getCorpusDocuments(params) {
 
 export function getHealth() {
   return request('/api/health');
+}
+
+export function getAppVersion() {
+  return request('/api/version');
 }
 
 // ── Corpus routes ────────────────────────────────────────────────────────────
