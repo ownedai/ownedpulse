@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getAdminHealth, getAdminModels, updateActiveModel, getSchedulerStatus, triggerSchedulerNow, pauseScheduler, resumeScheduler } from '../../api/client';
+import { getAdminHealth, getAdminModels, updateActiveModel } from '../../api/client';
 import { useModelStatusContext } from '../../context/ModelStatusContext';
 
 function SectionLabel({ children }) {
@@ -16,37 +16,17 @@ function SectionLabel({ children }) {
 
 function HealthPanel() {
   const [health, setHealth] = useState(null);
-  const [sched, setSched] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [triggering, setTriggering] = useState(false);
 
   const fetch = useCallback(() => {
     setLoading(true);
-    Promise.all([
-      getAdminHealth().catch(() => null),
-      getSchedulerStatus().catch(() => null),
-    ]).then(([h, s]) => {
-      setHealth(h);
-      setSched(s);
-    }).finally(() => setLoading(false));
+    getAdminHealth()
+      .catch(() => null)
+      .then((h) => setHealth(h))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
-
-  async function handleTrigger() {
-    setTriggering(true);
-    try { await triggerSchedulerNow(); } catch (_) {}
-    setTriggering(false);
-  }
-
-  async function handlePauseResume() {
-    try {
-      if (sched?.scheduler_running) await pauseScheduler();
-      else await resumeScheduler();
-      const updated = await getSchedulerStatus();
-      setSched(updated);
-    } catch (_) {}
-  }
 
   const services = [
     {
@@ -66,10 +46,6 @@ function HealthPanel() {
       warn: (s) => s?.response_ms > 2000,
     },
   ];
-
-  const nextRun = sched?.next_run_time
-    ? new Date(sched.next_run_time).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : null;
 
   return (
     <div className="rp-card">
@@ -102,27 +78,6 @@ function HealthPanel() {
           );
         })}
 
-        {/* Scheduler row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, marginTop: 4, paddingTop: 10, borderTop: '1px solid var(--doc-border)' }}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, background: sched?.scheduler_running ? 'var(--ok)' : 'var(--warn)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 500, minWidth: 80 }}>Scheduler</span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)', flex: 1 }}>
-            {sched?.scheduler_running ? `Next run: ${nextRun || sched.schedule}` : 'Not running'}
-          </span>
-          <button
-            onClick={handleTrigger}
-            disabled={triggering}
-            style={{ padding: '2px 8px', fontSize: 11, fontFamily: 'var(--mono)', borderRadius: 3, border: '1px solid var(--accent-l)', color: 'var(--accent-l)', background: 'transparent', cursor: 'pointer' }}
-          >
-            {triggering ? 'Triggering…' : 'Run now'}
-          </button>
-          <button
-            onClick={handlePauseResume}
-            style={{ padding: '2px 8px', fontSize: 11, fontFamily: 'var(--mono)', borderRadius: 3, border: '1px solid var(--doc-border)', color: 'var(--doc-text-2)', background: 'transparent', cursor: 'pointer' }}
-          >
-            {sched?.scheduler_running ? 'Pause' : 'Resume'}
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -143,6 +143,18 @@ export function resumeScheduler() {
   return request('/api/admin/scheduler/resume', { method: 'POST' });
 }
 
+export function getSchedulerConfig() {
+  return request('/api/admin/scheduler/config');
+}
+
+export function updateSchedulerConfig(hour, minute, timezone) {
+  return request('/api/admin/scheduler/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hour, minute, timezone }),
+  });
+}
+
 export function triggerFeedRun(feedId) {
   return request(`/api/admin/feeds/${encodeURIComponent(feedId)}/trigger`, { method: 'POST' });
 }

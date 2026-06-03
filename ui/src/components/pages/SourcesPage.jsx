@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom';
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
-  getAdminFeeds, toggleFeed, triggerFeedRun, triggerPipelineRun,
+  getAdminFeeds, toggleFeed, triggerFeedRun,
+  getSchedulerStatus, pauseScheduler, resumeScheduler,
+  getSchedulerConfig, updateSchedulerConfig,
   getCorpusDocumentsV2, reingestDoc,
   openBootstrapProgress,
 } from '../../api/client';
@@ -322,25 +324,204 @@ function StatusBadge({ status }) {
   );
 }
 
+// ── Schedule Modal ────────────────────────────────────────────────────────────
+
+const TIMEZONES = [
+  'Europe/Berlin',
+  'Europe/London',
+  'UTC',
+  'US/Eastern',
+  'US/Pacific',
+  'Asia/Tokyo',
+];
+
+function ScheduleModal({ schedStatus, onClose, onSaved }) {
+  const [config, setConfig] = useState(null);
+  const [hour, setHour] = useState(9);
+  const [minute, setMinute] = useState(0);
+  const [timezone, setTimezone] = useState('Europe/Berlin');
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
+  const [pausing, setPausing] = useState(false);
+
+  useEffect(() => {
+    getSchedulerConfig()
+      .then((c) => {
+        setConfig(c);
+        setHour(c.hour);
+        setMinute(c.minute);
+        setTimezone(c.timezone);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await updateSchedulerConfig(hour, minute, timezone);
+      setSaveMsg({ type: 'ok', text: `Schedule saved: daily at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${timezone}` });
+      onSaved();
+    } catch (err) {
+      setSaveMsg({ type: 'err', text: err.message || 'Failed to save' });
+    }
+    setSaving(false);
+  }
+
+  async function handlePauseResume() {
+    setPausing(true);
+    try {
+      if (schedStatus?.scheduler_running) await pauseScheduler();
+      else await resumeScheduler();
+      onSaved();
+    } catch (_) {}
+    setPausing(false);
+  }
+
+  const nextRun = schedStatus?.next_run_time
+    ? new Date(schedStatus.next_run_time).toLocaleString('en-GB', {
+        weekday: 'long', day: '2-digit', month: 'long',
+        year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+    : null;
+
+  const inputStyle = {
+    padding: '5px 8px', borderRadius: 4, border: '1px solid var(--doc-border)',
+    background: 'var(--doc-surface)', color: 'var(--doc-text)',
+    fontFamily: 'var(--mono)', fontSize: 13, width: '100%',
+  };
+
+  return createPortal(
+    <div className="rp-modal-backdrop" onClick={onClose}>
+      <div className="rp-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <h3>RSS Schedule</h3>
+          <button className="close" onClick={onClose}><CloseIcon /></button>
+        </div>
+
+        <div className="mbody">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* Scheduler status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 4, background: 'var(--doc-bg)', border: '1px solid var(--doc-border)' }}>
+              <span style={{ width: 8, height: 8, borderRadius: 4, background: schedStatus?.scheduler_running ? 'var(--ok)' : 'var(--warn)', flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                <span style={{ color: 'var(--doc-text)' }}>{schedStatus?.scheduler_running ? 'Scheduler running' : 'Scheduler paused'}</span>
+                {nextRun && (
+                  <span style={{ color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 8 }}>
+                    · next: {nextRun}
+                  </span>
+                )}
+                {!nextRun && schedStatus?.scheduler_running && (
+                  <span style={{ color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 8 }}>· not scheduled</span>
+                )}
+              </div>
+              <button
+                onClick={handlePauseResume}
+                disabled={pausing}
+                style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 11, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)', whiteSpace: 'nowrap' }}
+              >
+                {pausing ? '…' : schedStatus?.scheduler_running ? 'Pause' : 'Resume'}
+              </button>
+            </div>
+
+            {/* Time config */}
+            <div>
+              <div style={{ fontSize: 10, fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--doc-text-3)', fontWeight: 600, marginBottom: 10 }}>
+                Scheduled time
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 8, alignItems: 'end' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 4 }}>Hour (0–23)</div>
+                  <input
+                    type="number"
+                    min={0} max={23}
+                    value={hour}
+                    onChange={(e) => setHour(Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 4 }}>Minute (0–59)</div>
+                  <input
+                    type="number"
+                    min={0} max={59}
+                    value={minute}
+                    onChange={(e) => setMinute(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 4 }}>Timezone</div>
+                  <select
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    style={inputStyle}
+                  >
+                    {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--doc-text-3)', fontFamily: 'var(--mono)' }}>
+                Will run daily at {String(hour).padStart(2, '0')}:{String(minute).padStart(2, '0')} {timezone}
+              </div>
+            </div>
+
+            {/* Save feedback */}
+            {saveMsg && (
+              <div style={{
+                padding: '7px 10px', borderRadius: 4, fontSize: 12, fontFamily: 'var(--mono)',
+                background: saveMsg.type === 'ok' ? 'var(--ok-tint)' : 'var(--err-tint)',
+                color: saveMsg.type === 'ok' ? 'var(--ok-text)' : 'var(--err-text)',
+                border: `1px solid ${saveMsg.type === 'ok' ? 'var(--ok-tint-border)' : 'var(--err-tint-border)'}`,
+              }}>
+                {saveMsg.text}
+              </div>
+            )}
+
+          </div>
+        </div>
+
+        <div className="mfoot">
+          <button className="rp-mbtn ghost" onClick={onClose}>Close</button>
+          <button
+            className="rp-mbtn primary"
+            onClick={handleSave}
+            disabled={saving || !config}
+          >
+            {saving ? 'Saving…' : 'Save schedule'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── RSS Feeds Card ────────────────────────────────────────────────────────────
 
 function RssFeedsCard() {
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(null);
-  // runState per feed: null | 'running' | 'ok' | 'error'
-  const [runState, setRunState] = useState({});
-  const [runAllState, setRunAllState] = useState(null); // null | 'running' | 'ok' | 'error'
+  const [runState, setRunState] = useState(null); // null | 'running' | 'ok' | 'error'
+  const [schedStatus, setSchedStatus] = useState(null);
+  const [showSchedule, setShowSchedule] = useState(false);
 
-  const fetchFeeds = useCallback(() => {
+  const fetchData = useCallback(() => {
     setLoading(true);
-    getAdminFeeds()
-      .then(setFeeds)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      getAdminFeeds().catch(() => []),
+      getSchedulerStatus().catch(() => null),
+    ]).then(([f, s]) => {
+      setFeeds(f);
+      setSchedStatus(s);
+    }).finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetchFeeds(); }, [fetchFeeds]);
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const enabledFeeds = feeds.filter((f) => f.enabled);
 
   async function handleToggle(feedId, current) {
     setToggling(feedId);
@@ -351,144 +532,139 @@ function RssFeedsCard() {
     setToggling(null);
   }
 
-  async function handleRunFeed(feedId) {
-    setRunState((s) => ({ ...s, [feedId]: 'running' }));
+  async function handleRunNow() {
+    if (runState === 'running' || enabledFeeds.length === 0) return;
+    setRunState('running');
     try {
-      await triggerFeedRun(feedId);
-      setRunState((s) => ({ ...s, [feedId]: 'ok' }));
-      setTimeout(() => setRunState((s) => ({ ...s, [feedId]: null })), 4000);
+      await Promise.all(enabledFeeds.map((f) => triggerFeedRun(f.feed_id)));
+      setRunState('ok');
+      setTimeout(() => { setRunState(null); fetchData(); }, 3000);
     } catch (_) {
-      setRunState((s) => ({ ...s, [feedId]: 'error' }));
-      setTimeout(() => setRunState((s) => ({ ...s, [feedId]: null })), 4000);
+      setRunState('error');
+      setTimeout(() => setRunState(null), 4000);
     }
   }
 
-  async function handleRunAll() {
-    setRunAllState('running');
-    try {
-      await triggerPipelineRun();
-      setRunAllState('ok');
-      setTimeout(() => setRunAllState(null), 4000);
-    } catch (_) {
-      setRunAllState('error');
-      setTimeout(() => setRunAllState(null), 4000);
-    }
+  function formatNextRun(isoStr) {
+    const d = new Date(isoStr);
+    return d.toLocaleString('en-GB', {
+      weekday: 'short', day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
   }
 
-  const runAllLabel = runAllState === 'running' ? 'Triggering…'
-    : runAllState === 'ok' ? '✓ Triggered'
-    : runAllState === 'error' ? '✕ Failed'
-    : 'Run all';
+  const nextRunFormatted = schedStatus?.next_run_time ? formatNextRun(schedStatus.next_run_time) : null;
+  const schedLine = schedStatus == null ? null
+    : !schedStatus.scheduler_running ? 'Next run not scheduled — scheduler paused'
+    : nextRunFormatted ? `Next scheduled run on: ${nextRunFormatted}`
+    : 'Next run not scheduled';
+  const schedOk = schedStatus?.scheduler_running && !!nextRunFormatted;
+
+  const runBtnLabel = runState === 'running' ? 'Running…'
+    : runState === 'ok' ? '✓ Triggered'
+    : runState === 'error' ? '✕ Failed'
+    : 'Run now';
 
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
         <span>RSS Feeds</span>
         <button
-          onClick={fetchFeeds}
+          onClick={fetchData}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center', marginLeft: 6 }}
           title="Refresh"
         >
           <RefreshIcon />
         </button>
-        <div style={{ marginLeft: 'auto' }}>
+        {schedLine && (
+          <span style={{ marginLeft: 12, fontSize: 11.5, fontFamily: 'var(--mono)', color: schedOk ? 'var(--doc-text-2)' : 'var(--warn-text)', fontWeight: 400 }}>
+            {schedLine}
+          </span>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
-            onClick={handleRunAll}
-            disabled={runAllState === 'running'}
+            onClick={() => setShowSchedule(true)}
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
+          >
+            Schedule
+          </button>
+          <button
+            onClick={handleRunNow}
+            disabled={runState === 'running' || enabledFeeds.length === 0}
+            title="Run all enabled feeds now"
             style={{
               padding: '4px 12px', borderRadius: 4, border: '1px solid',
-              fontSize: 12, fontFamily: 'var(--mono)', cursor: runAllState === 'running' ? 'default' : 'pointer',
-              borderColor: runAllState === 'error' ? 'var(--err-text)' : runAllState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
-              background: runAllState === 'error' ? 'var(--err-tint)' : runAllState === 'ok' ? 'var(--ok-tint)' : 'var(--accent-tint)',
-              color: runAllState === 'error' ? 'var(--err-text)' : runAllState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
+              fontSize: 12, fontFamily: 'var(--mono)',
+              cursor: runState === 'running' ? 'default' : 'pointer',
+              borderColor: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
+              background: runState === 'error' ? 'var(--err-tint)' : runState === 'ok' ? 'var(--ok-tint)' : 'transparent',
+              color: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
               transition: 'all 150ms ease',
             }}
           >
-            {runAllLabel}
+            {runBtnLabel}
           </button>
         </div>
       </div>
+
       <table className="rp-table" style={{ fontSize: 12.5 }}>
         <thead>
           <tr>
             <th>Feed</th>
             <th style={{ width: 65, textAlign: 'center' }}>Enabled</th>
             <th style={{ width: 140 }}>Last Fetch</th>
-            <th style={{ width: 100, textAlign: 'right' }}>Action</th>
           </tr>
         </thead>
         <tbody>
           {loading && (
-            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>Loading…</td></tr>
+            <tr><td colSpan={3} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>Loading…</td></tr>
           )}
           {!loading && feeds.length === 0 && (
-            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>No feeds configured.</td></tr>
+            <tr><td colSpan={3} style={{ textAlign: 'center', padding: 24, color: 'var(--doc-text-2)' }}>No feeds configured.</td></tr>
           )}
-          {feeds.map((f) => {
-            const rs = runState[f.feed_id];
-            return (
-              <tr key={f.feed_id}>
-                <td>
-                  <div style={{ fontWeight: 500, fontSize: 13 }}>{f.name}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-3)', marginTop: 2 }}>
-                    {f.feed_id} · {f.feed_type}
-                    {f.url && (
-                      <span title={f.url} style={{ marginLeft: 4, cursor: 'help' }}>
-                        · <span style={{ textDecoration: 'underline dotted' }}>
-                          {f.url.length > 40 ? f.url.slice(0, 40) + '…' : f.url}
-                        </span>
+          {feeds.map((f) => (
+            <tr key={f.feed_id} style={{ opacity: f.enabled ? 1 : 0.55 }}>
+              <td>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>{f.name}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-3)', marginTop: 2 }}>
+                  {f.feed_id} · {f.feed_type}
+                  {f.url && (
+                    <span title={f.url} style={{ marginLeft: 4, cursor: 'help' }}>
+                      · <span style={{ textDecoration: 'underline dotted' }}>
+                        {f.url.length > 40 ? f.url.slice(0, 40) + '…' : f.url}
                       </span>
-                    )}
-                  </div>
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <button
-                    className={`rp-toggle ${f.enabled ? 'on' : ''} ${toggling === f.feed_id ? 'loading' : ''}`}
-                    onClick={() => handleToggle(f.feed_id, f.enabled)}
-                    disabled={toggling === f.feed_id}
-                    title={f.enabled ? 'Click to disable' : 'Click to enable'}
-                  >
-                    <span className="thumb" />
-                  </button>
-                </td>
-                <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
-                  {f.last_run_at ? formatDateTime(f.last_run_at) : '—'}
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  {rs === 'running' ? (
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent-l)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <span className="sp" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, border: '2px solid var(--accent-l)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
-                      Running…
                     </span>
-                  ) : rs === 'ok' ? (
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ok-text)', fontWeight: 500 }}>✓ Triggered</span>
-                  ) : rs === 'error' ? (
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err-text)', fontWeight: 500 }}>✕ Failed</span>
-                  ) : (
-                    <button
-                      onClick={() => handleRunFeed(f.feed_id)}
-                      disabled={!f.enabled}
-                      title={!f.enabled ? 'Feed is disabled' : 'Trigger this feed now'}
-                      style={{
-                        padding: '3px 10px', fontSize: 11, fontFamily: 'var(--mono)',
-                        borderRadius: 4, border: '1px solid',
-                        cursor: f.enabled ? 'pointer' : 'default',
-                        borderColor: f.enabled ? 'var(--accent-l)' : 'var(--doc-border)',
-                        color: f.enabled ? 'var(--accent-l)' : 'var(--doc-text-3)',
-                        background: 'transparent',
-                        transition: 'all 120ms ease',
-                        opacity: f.enabled ? 1 : 0.5,
-                      }}
-                    >
-                      Run now
-                    </button>
                   )}
-                </td>
-              </tr>
-            );
-          })}
+                </div>
+              </td>
+              <td style={{ textAlign: 'center' }}>
+                <button
+                  className={`rp-toggle ${f.enabled ? 'on' : ''} ${toggling === f.feed_id ? 'loading' : ''}`}
+                  onClick={() => handleToggle(f.feed_id, f.enabled)}
+                  disabled={toggling === f.feed_id}
+                  title={f.enabled ? 'Disable — excludes from all runs' : 'Enable — includes in scheduled and manual runs'}
+                >
+                  <span className="thumb" />
+                </button>
+              </td>
+              <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
+                {f.last_run_at ? formatDateTime(f.last_run_at) : '—'}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
+
+      {showSchedule && (
+        <ScheduleModal
+          schedStatus={schedStatus}
+          onClose={() => setShowSchedule(false)}
+          onSaved={() => {
+            setShowSchedule(false);
+            getSchedulerStatus().then(setSchedStatus).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

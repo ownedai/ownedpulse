@@ -128,6 +128,15 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
             _write_run_log_error_or_insert(run_id, trigger_source, triggered_by, fid, error_detail)
 
 
+def reschedule_rss_job(hour: int, minute: int, timezone: str):
+    """Reschedule the RSS ingestion job with new cron parameters at runtime."""
+    scheduler.reschedule_job(
+        "rss_daily_ingestion",
+        trigger=CronTrigger(hour=hour, minute=minute, timezone=timezone),
+    )
+    logger.info(f"RSS ingestion rescheduled: daily at {hour:02d}:{minute:02d} {timezone}")
+
+
 def setup_scheduler():
     """Add jobs and configure schedule. Called once at application startup."""
     scheduler.add_job(

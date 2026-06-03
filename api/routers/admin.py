@@ -45,6 +45,14 @@ class ModelUpdateRequest(BaseModel):
     model: str
 
 
+# ── PUT /admin/scheduler/config request model ─────────────────────────────────
+
+class SchedulerConfigRequest(BaseModel):
+    hour: int
+    minute: int
+    timezone: str
+
+
 # ── GET /admin/health ─────────────────────────────────────────────────────────
 
 @router.get("/health")
@@ -437,3 +445,64 @@ async def resume_scheduler():
     from lib.scheduler import get_scheduler
     get_scheduler().resume_job("rss_daily_ingestion")
     return {"status": "resumed"}
+
+
+# ── GET /admin/scheduler/config ───────────────────────────────────────────────
+
+@router.get("/scheduler/config")
+async def get_scheduler_config():
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT key, value FROM system_config WHERE key IN "
+            "('rss_schedule_hour', 'rss_schedule_minute', 'rss_schedule_timezone')"
+        )
+        rows = dict(cur.fetchall())
+        cur.close()
+    finally:
+        conn.close()
+    return {
+        "hour": int(rows.get("rss_schedule_hour", RSS_SCHEDULE_HOUR)),
+        "minute": int(rows.get("rss_schedule_minute", RSS_SCHEDULE_MINUTE)),
+        "timezone": rows.get("rss_schedule_timezone", RSS_SCHEDULE_TIMEZONE),
+    }
+
+
+# ── PUT /admin/scheduler/config ───────────────────────────────────────────────
+
+@router.put("/scheduler/config")
+async def update_scheduler_config(body: SchedulerConfigRequest):
+    if not (0 <= body.hour <= 23):
+        raise HTTPException(status_code=400, detail="Hour must be 0–23")
+    if not (0 <= body.minute <= 59):
+        raise HTTPException(status_code=400, detail="Minute must be 0–59")
+
+    try:
+        import zoneinfo
+        zoneinfo.ZoneInfo(body.timezone)
+    except (ImportError, KeyError, Exception):
+        raise HTTPException(status_code=400, detail=f"Invalid timezone: {body.timezone}")
+
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        for key, value in [
+            ("rss_schedule_hour", str(body.hour)),
+            ("rss_schedule_minute", str(body.minute)),
+            ("rss_schedule_timezone", body.timezone),
+        ]:
+            cur.execute(
+                "INSERT INTO system_config (key, value, updated_at) VALUES (%s, %s, NOW()) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+                (key, value),
+            )
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
+
+    from lib.scheduler import reschedule_rss_job
+    reschedule_rss_job(body.hour, body.minute, body.timezone)
+
+    return {"hour": body.hour, "minute": body.minute, "timezone": body.timezone}
