@@ -11,10 +11,14 @@ POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "").rstrip("/")
-
 SESSION_SOURCES = ("bootstrap_ui", "manual_cli")
 RSS_SOURCES = ("n8n_rss", "scheduled", "manual")
+
+# UI category → internal trigger_source values
+SOURCE_CATEGORIES = {
+    "scheduled": ("n8n_rss", "scheduled"),
+    "manual": ("manual_cli", "bootstrap_ui", "manual"),
+}
 
 
 def get_pg_conn():
@@ -24,12 +28,6 @@ def get_pg_conn():
         dbname=POSTGRES_DB, user=POSTGRES_USER,
         password=POSTGRES_PASSWORD, connect_timeout=10
     )
-
-
-def _langfuse_url(trace_id: str | None) -> str | None:
-    if trace_id and LANGFUSE_HOST:
-        return f"{LANGFUSE_HOST}/trace/{trace_id}"
-    return None
 
 
 def _fmt_dt(dt) -> str | None:
@@ -87,19 +85,19 @@ async def list_ingestions(
             ts, grp_date, triggered_at, run_count, succeeded, failed = row
             run_token = f"{grp_date}_{ts}"
             total = succeeded + failed
-            if total == 0:
-                grp_status = "success"
-            elif failed == 0:
+            if failed == 0:
                 grp_status = "success"
             elif succeeded == 0:
-                grp_status = "failed"
+                grp_status = "error"
             else:
                 grp_status = "partial"
 
             if status and grp_status != status:
                 continue
-            if source and ts not in source:
-                continue
+            if source:
+                allowed = SOURCE_CATEGORIES.get(source, (source,))
+                if ts not in allowed:
+                    continue
 
             session_groups.append({
                 "type": "session_group",
@@ -125,13 +123,14 @@ async def list_ingestions(
             rss_where.append("status = %s")
             rss_params.append(status)
         if source:
-            rss_where.append("trigger_source = %s")
-            rss_params.append(source)
+            allowed = SOURCE_CATEGORIES.get(source, (source,))
+            rss_where.append("trigger_source = ANY(%s)")
+            rss_params.append(list(allowed))
 
         cur.execute(
             f"""
             SELECT run_id, trigger_source, triggered_at, feed_source,
-                   status, items_new, items_skipped, error_count, duration_ms
+                   status, items_new, items_skipped, error_count, duration_ms, error_detail
             FROM run_log
             WHERE {' AND '.join(rss_where)}
             ORDER BY triggered_at DESC
@@ -140,7 +139,7 @@ async def list_ingestions(
         )
         rss_runs = []
         for row in cur.fetchall():
-            run_id, ts, triggered_at, feed_source, run_status, items_new, items_skipped, error_count, duration_ms = row
+            run_id, ts, triggered_at, feed_source, run_status, items_new, items_skipped, error_count, duration_ms, error_detail = row
             rss_runs.append({
                 "type": "rss_run",
                 "run_id": str(run_id),
@@ -152,6 +151,7 @@ async def list_ingestions(
                 "doc_count_skipped": items_skipped or 0,
                 "doc_count_errors": error_count or 0,
                 "duration_seconds": round(duration_ms / 1000, 1) if duration_ms else None,
+                "error_detail": error_detail or None,
             })
 
         cur.close()
@@ -255,7 +255,6 @@ async def session_documents(
                 "chunk_count": chunk_count or 0,
                 "failure_reason": failure_reason,
                 "trace_id": trace_id,
-                "langfuse_url": _langfuse_url(trace_id),
                 "source_url": source_url,
                 "fetched_at": _fmt_dt(fetched_at),
                 "parsed_at": _fmt_dt(parsed_at),
@@ -330,7 +329,6 @@ async def run_documents(
                 "chunk_count": chunk_count or 0,
                 "failure_reason": failure_reason,
                 "trace_id": trace_id,
-                "langfuse_url": _langfuse_url(trace_id),
                 "source_url": source_url,
                 "fetched_at": _fmt_dt(fetched_at),
                 "parsed_at": _fmt_dt(parsed_at),

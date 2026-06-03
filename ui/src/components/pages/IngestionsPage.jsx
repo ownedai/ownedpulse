@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getIngestions, getSessionDocuments, getRunDocuments } from '../../api/client';
+import { getIngestions, getSessionDocuments, getRunDocuments, getTrace } from '../../api/client';
 import { formatDateTime } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
@@ -11,7 +11,7 @@ const DOCTYPE_LABEL = {
 
 function deriveSessionStatus(succeeded, failed) {
   if (failed === 0) return 'success';
-  if (succeeded === 0) return 'failed';
+  if (succeeded === 0) return 'error';
   return 'partial';
 }
 
@@ -23,25 +23,67 @@ function ChevronIcon() {
   );
 }
 
-function ExtIcon() {
+function TraceViewer({ traceId }) {
+  const [state, setState] = useState('idle'); // idle | loading | loaded | error
+  const [data, setData] = useState(null);
+
+  const load = async () => {
+    if (state === 'loading') return;
+    setState('loading');
+    try {
+      const d = await getTrace(traceId);
+      setData(d);
+      setState('loaded');
+    } catch {
+      setState('error');
+    }
+  };
+
+  if (state === 'idle') {
+    return (
+      <button className="g3-trace-btn" onClick={load}>
+        View Trace
+      </button>
+    );
+  }
+  if (state === 'loading') {
+    return <span className="g3-trace-loading">Loading trace…</span>;
+  }
+  if (state === 'error') {
+    return <span className="g3-trace-err">Trace unavailable</span>;
+  }
+
+  const obs = data?.observations || [];
   return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
-    </svg>
+    <div className="g3-trace-inline">
+      <div className="g3-trace-header">
+        <span className="g3-trace-name">{data.name || 'Ingestion trace'}</span>
+        {data.latency != null && <span className="g3-trace-lat">{data.latency} ms</span>}
+        <button className="g3-trace-close" onClick={() => setState('idle')}>✕</button>
+      </div>
+      {obs.length > 0 && (
+        <div className="g3-trace-obs">
+          {obs.map((o, i) => (
+            <div key={i} className="g3-trace-obs-row">
+              <span className={`g3-trace-type ${(o.type || '').toLowerCase()}`}>{o.type || 'SPAN'}</span>
+              <span className="g3-trace-obs-name">{o.name}</span>
+              {o.latency != null && <span className="g3-trace-obs-lat">{o.latency} ms</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 function G3Status({ status }) {
-  const label = { success: 'Success', partial: 'Partial', failed: 'Failed', running: 'Running', pending: 'Pending', error: 'Error' }[status] || status;
+  const label = { success: 'Success', partial: 'Partial', error: 'Error', running: 'Running', pending: 'Pending' }[status] || status;
   return <span className={`g3-status ${status || 'pending'}${status === 'running' ? ' status-pulse' : ''}`}>{label}</span>;
 }
 
 function SrcPill({ src }) {
-  const map = { n8n_rss: ['scheduled', 'Scheduled RSS'], bootstrap_ui: ['bootstrap', 'Bootstrap'], manual_cli: ['manual', 'Manual'], scheduled: ['scheduled', 'Scheduled'], manual: ['manual', 'Manual'] };
-  const [cls, label] = map[src] || ['manual', src || '—'];
-  return <span className={`g2-srcpill ${cls}`}>{label}</span>;
+  const isScheduled = src === 'n8n_rss' || src === 'scheduled';
+  return <span className="g2-srcpill src">{isScheduled ? 'Scheduled' : 'Manual'}</span>;
 }
 
 function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
@@ -109,15 +151,9 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
                       {d.trace_id ? (
                         <>
                           <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id.slice(0, 16)}…</span>
-                          {d.langfuse_url ? (
-                            <a className="g3-langfuse" href={d.langfuse_url} target="_blank" rel="noreferrer">
-                              <ExtIcon /> View in Langfuse
-                            </a>
-                          ) : (
-                            <span className="g3-langfuse disabled" title="Trace not available"><ExtIcon /> View in Langfuse</span>
-                          )}
+                          <TraceViewer traceId={d.trace_id} />
                         </>
-                      ) : <span className="k">—</span>}
+                      ) : <span className="dim">—</span>}
                     </span>
                     <span className="k">Source URL</span>
                     <span className="v">
@@ -217,14 +253,16 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
     <div className="g3-row session" data-testid={`ingestion-session-group-${item.run_token}`}>
       <div className="g3-row-head" onClick={onToggle}>
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
-        <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
+        <span className="g3-cell mono"><span className="lbl">Triggered At</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
+        <span className="g3-cell dim"><span className="lbl">Feed</span><span className="g3-feed">all</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={status} /></span>
-        <span className="g3-cell mono"><span className="lbl">Documents</span>{(item.doc_count || 0).toLocaleString()}</span>
-        <span className="g3-cell num"><span className="lbl">Succeeded</span>{item.doc_count_succeeded ?? '—'}</span>
-        <span className={`g3-cell num failnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
-          <span className="lbl">Failed</span>{item.doc_count_failed ?? '—'}
+        <span className="g3-cell num"><span className="lbl">New</span>{item.doc_count ?? '—'}</span>
+        <span className="g3-cell num dim"><span className="lbl">Skipped</span>—</span>
+        <span className={`g3-cell num errnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
+          <span className="lbl">Errors</span>{item.doc_count_failed ?? '—'}
         </span>
+        <span className="g3-cell num dim"><span className="lbl">Duration</span>—</span>
       </div>
       {isOpen && (
         <div className="g3-sub">
@@ -279,6 +317,17 @@ function RssRunRow({ item, isOpen, onToggle }) {
       </div>
       {isOpen && (
         <div className="g3-sub">
+          {item.error_detail && (
+            <div style={{
+              margin: '10px 12px 4px', padding: '10px 14px', borderRadius: 4,
+              background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)',
+              color: 'var(--err-text)', fontFamily: 'var(--mono)', fontSize: 11.5,
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6,
+            }}>
+              <div style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>Error detail</div>
+              {item.error_detail}
+            </div>
+          )}
           <DocSubTable
             docs={docs}
             loadingDocs={loadingDocs}
@@ -337,17 +386,14 @@ const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
   { value: 'success', label: 'Success' },
   { value: 'partial', label: 'Partial' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'running', label: 'Running' },
   { value: 'error', label: 'Error' },
+  { value: 'running', label: 'Running' },
 ];
 
 const SOURCE_OPTIONS = [
   { value: '', label: 'All sources' },
-  { value: 'manual_cli', label: 'Manual CLI' },
-  { value: 'bootstrap_ui', label: 'Bootstrap UI' },
-  { value: 'n8n_rss', label: 'Scheduled RSS' },
   { value: 'scheduled', label: 'Scheduled' },
+  { value: 'manual', label: 'Manual' },
 ];
 
 export default function IngestionsPage() {
@@ -356,7 +402,7 @@ export default function IngestionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(25);
   const [openRows, setOpenRows] = useState({});
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
@@ -384,8 +430,10 @@ export default function IngestionsPage() {
     }
   }, [statusFilter, sourceFilter, dateFrom, dateTo, pageSize]);
 
-  useEffect(() => { setPage(1); load(1); }, [statusFilter, sourceFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); load(1); }, [statusFilter, sourceFilter, dateFrom, dateTo, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePageSize = (s) => { setPageSize(s); setPage(1); };
 
   const toggleRow = (key) => setOpenRows((o) => ({ ...o, [key]: !o[key] }));
 
@@ -469,20 +517,32 @@ export default function IngestionsPage() {
             );
           })}
 
-          {totalPages > 1 && (
+          {total > 0 && (
             <div className="g3-pager" style={{ paddingTop: 16 }}>
-              <span style={{ color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', fontSize: 11.5 }}>
-                Page {page} of {totalPages}
+              <span className="size">
+                Rows:
+                <span className="seg">
+                  {[25, 50, 100].map((s) => (
+                    <button key={s} className={pageSize === s ? 'on' : ''} onClick={() => handlePageSize(s)}>{s}</button>
+                  ))}
+                </span>
               </span>
-              <span className="nav" style={{ marginLeft: 'auto' }}>
-                <button
-                  className={page === 1 ? 'disabled' : ''}
-                  onClick={() => page > 1 && setPage((p) => p - 1)}
-                >‹ Prev</button>
-                <button
-                  className={page >= totalPages ? 'disabled' : ''}
-                  onClick={() => page < totalPages && setPage((p) => p + 1)}
-                >Next ›</button>
+              <span style={{ color: 'var(--doc-text-3)' }}>
+                {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total.toLocaleString()}
+              </span>
+              <span className="nav">
+                <button className={page === 1 ? 'disabled' : ''} onClick={() => page > 1 && setPage((p) => p - 1)}>‹ Prev</button>
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  const p = totalPages <= 7 ? i + 1
+                    : page <= 4 ? i + 1
+                    : page >= totalPages - 3 ? totalPages - 6 + i
+                    : page - 3 + i;
+                  return (
+                    <button key={p} className={p === page ? 'on' : ''} onClick={() => setPage(p)}>{p}</button>
+                  );
+                })}
+                {totalPages > 7 && page < totalPages - 3 && <button className="disabled">…</button>}
+                <button className={page >= totalPages ? 'disabled' : ''} onClick={() => page < totalPages && setPage((p) => p + 1)}>Next ›</button>
               </span>
             </div>
           )}

@@ -6,7 +6,7 @@ import QueryExpansion from '../query/QueryExpansion';
 import AuditFooter from '../query/AuditFooter';
 import EmptyState from '../query/EmptyState';
 import useQuery from '../../hooks/useQuery';
-import { exportQuery, getPdfPage } from '../../api/client';
+import { exportQuery, getPdfPage, getTrace } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
 
 const DOCTYPE_LABEL = {
@@ -244,6 +244,51 @@ function ChunkPanel({ chunks, selectedIdx, onSelect, loading }) {
 
 // ── Ingestion trace panel (right) ─────────────────────────────────────────
 
+function InlineTrace({ traceId }) {
+  const [state, setState] = useState('idle');
+  const [data, setData] = useState(null);
+
+  const load = async () => {
+    if (state === 'loading') return;
+    setState('loading');
+    try {
+      const d = await getTrace(traceId);
+      setData(d);
+      setState('loaded');
+    } catch {
+      setState('error');
+    }
+  };
+
+  if (state === 'idle') return (
+    <button className="g2-btn-outline" onClick={load} style={{ fontSize: 11 }}>View Trace</button>
+  );
+  if (state === 'loading') return <span className="g2-muted" style={{ fontSize: 11 }}>Loading…</span>;
+  if (state === 'error') return <span className="g2-muted" style={{ fontSize: 11 }}>Trace unavailable</span>;
+
+  const obs = data?.observations || [];
+  return (
+    <div className="g3-trace-inline" style={{ marginTop: 8 }}>
+      <div className="g3-trace-header">
+        <span className="g3-trace-name">{data.name || 'Ingestion trace'}</span>
+        {data.latency != null && <span className="g3-trace-lat">{data.latency} ms</span>}
+        <button className="g3-trace-close" onClick={() => setState('idle')}>✕</button>
+      </div>
+      {obs.length > 0 && (
+        <div className="g3-trace-obs">
+          {obs.map((o, i) => (
+            <div key={i} className="g3-trace-obs-row">
+              <span className={`g3-trace-type ${(o.type || '').toLowerCase()}`}>{o.type || 'SPAN'}</span>
+              <span className="g3-trace-obs-name">{o.name}</span>
+              {o.latency != null && <span className="g3-trace-obs-lat">{o.latency} ms</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TracePanel({ chunk }) {
   const [copied, setCopied] = useState(false);
 
@@ -300,27 +345,11 @@ function TracePanel({ chunk }) {
           </span>
         </div>
       </div>
-      <div className="g2-panel-action">
-        {chunk.langfuse_url ? (
-          <a
-            className="g2-btn-outline"
-            href={chunk.langfuse_url}
-            target="_blank"
-            rel="noreferrer"
-            data-testid="view-langfuse-btn"
-            style={{ textDecoration: 'none' }}
-          >
-            <ExtIcon /> View in Langfuse
-          </a>
-        ) : (
-          <button
-            className="g2-btn-outline disabled"
-            title="Trace not available for this document."
-          >
-            <ExtIcon /> View in Langfuse
-          </button>
-        )}
-      </div>
+      {chunk.trace_id && (
+        <div className="g2-panel-action" data-testid="view-trace-btn">
+          <InlineTrace traceId={chunk.trace_id} />
+        </div>
+      )}
     </div>
   );
 }

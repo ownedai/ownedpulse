@@ -596,12 +596,9 @@ def fetch_chunk_provenance_batch(pg_conn, doc_ids: list) -> dict:
         rows = cur.fetchall()
         cur.close()
         result = {}
-        lf_host = os.getenv("LANGFUSE_HOST", "").rstrip("/")
         for doc_id, trace_id, embedding_model, ingested_at, ingestion_source, triggered_by in rows:
-            langfuse_url = f"{lf_host}/trace/{trace_id}" if lf_host and trace_id else None
             result[doc_id] = {
                 "trace_id": trace_id,
-                "langfuse_url": langfuse_url,
                 "embedding_model": embedding_model,
                 "ingested_at": ingested_at.isoformat() if ingested_at else None,
                 "ingestion_source": ingestion_source,
@@ -645,7 +642,6 @@ def build_citation(chunk: dict, index: int, cited_by_llm: bool, provenance: dict
         "source_url": chunk.get("source_url", ""),
         # G2 provenance fields
         "trace_id": prov.get("trace_id"),
-        "langfuse_url": prov.get("langfuse_url"),
         "ingestion_source": prov.get("ingestion_source"),
         "triggered_by": prov.get("triggered_by"),
         "ingested_at": prov.get("ingested_at"),
