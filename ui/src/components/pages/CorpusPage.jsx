@@ -167,6 +167,8 @@ export default function CorpusPage() {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -178,25 +180,29 @@ export default function CorpusPage() {
     setPage(1);
   }, [searchParams]);
 
-  const hasFilters = !!(agency || docType || status || search || dateFrom || dateTo);
+  const hasFilters = !!(agency || docType || status || search || appliedDateFrom || appliedDateTo);
 
   function resetFilters() {
     setAgency(null); setDocType(null); setStatus(null);
     setSearch(''); setDateFrom(''); setDateTo('');
+    setAppliedDateFrom(''); setAppliedDateTo('');
     setPage(1);
   }
+
+  function commitDateFrom(val) { setAppliedDateFrom(val); setPage(1); }
+  function commitDateTo(val) { setAppliedDateTo(val); setPage(1); }
 
   const fetchData = useCallback(() => {
     setLoading(true);
     getCorpusDocumentsV2({
       page, page_size: pageSize,
       issuing_body: agency, doc_type: docType, ingestion_status: status,
-      date_from: dateFrom || null, date_to: dateTo || null,
+      date_from: appliedDateFrom || null, date_to: appliedDateTo || null,
     })
       .then((data) => { setItems(data.items || []); setTotal(data.total || 0); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [agency, docType, status, dateFrom, dateTo, page, pageSize]);
+  }, [agency, docType, status, appliedDateFrom, appliedDateTo, page, pageSize]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -234,12 +240,15 @@ export default function CorpusPage() {
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-              title="Published from"
+              onChange={(e) => setDateFrom(e.target.value)}
+              onBlur={(e) => commitDateFrom(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitDateFrom(e.target.value)}
+              title="Published from (press Enter or click away to apply)"
               style={{
                 height: 30, padding: '0 8px', fontSize: 12,
                 fontFamily: 'var(--mono)', background: 'var(--doc-surface)',
-                border: '1px solid var(--doc-border)', borderRadius: 3,
+                border: `1px solid ${dateFrom !== appliedDateFrom ? 'var(--accent-l)' : 'var(--doc-border)'}`,
+                borderRadius: 3,
                 color: dateFrom ? 'var(--doc-text)' : 'var(--doc-text-3)', outline: 'none',
               }}
             />
@@ -247,12 +256,15 @@ export default function CorpusPage() {
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-              title="Published to"
+              onChange={(e) => setDateTo(e.target.value)}
+              onBlur={(e) => commitDateTo(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commitDateTo(e.target.value)}
+              title="Published to (press Enter or click away to apply)"
               style={{
                 height: 30, padding: '0 8px', fontSize: 12,
                 fontFamily: 'var(--mono)', background: 'var(--doc-surface)',
-                border: '1px solid var(--doc-border)', borderRadius: 3,
+                border: `1px solid ${dateTo !== appliedDateTo ? 'var(--accent-l)' : 'var(--doc-border)'}`,
+                borderRadius: 3,
                 color: dateTo ? 'var(--doc-text)' : 'var(--doc-text-3)', outline: 'none',
               }}
             />
