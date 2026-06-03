@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { getDocumentDetail, getDocumentChunks, getSupersedeChain } from '../../api/client';
 import Tooltip from '../common/Tooltip';
@@ -202,30 +202,34 @@ export default function DocumentDetailPage() {
             <table className="rp-table" style={{ margin: 0 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 50 }}>#</th>
+                  <th style={{ width: 40 }}>#</th>
+                  <th style={{ width: 70 }}>Size</th>
+                  <th style={{ width: 130 }}>Offset</th>
                   <th>Clause ID</th>
-                  <th style={{ width: 80 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {chunks.items.map((ch) => (
-                  <>
+                {chunks.items.map((ch) => {
+                  const size = (ch.char_offset_end != null && ch.char_offset_start != null)
+                    ? ch.char_offset_end - ch.char_offset_start
+                    : (ch.chunk_text ? ch.chunk_text.length : null);
+                  const offset = (ch.char_offset_start != null && ch.char_offset_end != null)
+                    ? `${ch.char_offset_start}–${ch.char_offset_end}`
+                    : '—';
+                  return (
+                  <React.Fragment key={ch.chunk_id}>
                     <tr
-                      key={ch.chunk_id}
                       onClick={() => setExpandedChunk(expandedChunk === ch.chunk_id ? null : ch.chunk_id)}
                       style={{ cursor: 'pointer' }}
                     >
                       <td className="mono">{ch.chunk_index}</td>
+                      <td className="mono" style={{ fontSize: 11 }}>{size != null ? size.toLocaleString() : '—'}</td>
+                      <td className="mono" style={{ fontSize: 10 }}>{offset}</td>
                       <td className="mono" style={{ fontSize: 11 }}>{ch.clause_id || '—'}</td>
-                      <td>
-                        <span className={`status ${ch.chunk_status === 'active' ? 'ok' : 'warn'}`}>
-                          {ch.chunk_status}
-                        </span>
-                      </td>
                     </tr>
                     {expandedChunk === ch.chunk_id && (
-                      <tr key={`${ch.chunk_id}-exp`}>
-                        <td colSpan={3} style={{ padding: '10px 12px', background: 'var(--doc-bg)' }}>
+                      <tr>
+                        <td colSpan={4} style={{ padding: '10px 12px', background: 'var(--doc-bg)' }}>
                           <pre style={{
                             fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.6,
                             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
@@ -238,8 +242,9 @@ export default function DocumentDetailPage() {
                         </td>
                       </tr>
                     )}
-                  </>
-                ))}
+                  </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
