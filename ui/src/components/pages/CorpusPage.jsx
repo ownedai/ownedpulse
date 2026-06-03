@@ -165,6 +165,8 @@ export default function CorpusPage() {
   const [docType, setDocType] = useState(() => searchParams.get('doc_type') || null);
   const [status, setStatus] = useState(null);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -176,13 +178,25 @@ export default function CorpusPage() {
     setPage(1);
   }, [searchParams]);
 
+  const hasFilters = !!(agency || docType || status || search || dateFrom || dateTo);
+
+  function resetFilters() {
+    setAgency(null); setDocType(null); setStatus(null);
+    setSearch(''); setDateFrom(''); setDateTo('');
+    setPage(1);
+  }
+
   const fetchData = useCallback(() => {
     setLoading(true);
-    getCorpusDocumentsV2({ page, page_size: pageSize, issuing_body: agency, doc_type: docType, ingestion_status: status })
+    getCorpusDocumentsV2({
+      page, page_size: pageSize,
+      issuing_body: agency, doc_type: docType, ingestion_status: status,
+      date_from: dateFrom || null, date_to: dateTo || null,
+    })
       .then((data) => { setItems(data.items || []); setTotal(data.total || 0); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [agency, docType, status, page, pageSize]);
+  }, [agency, docType, status, dateFrom, dateTo, page, pageSize]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -200,7 +214,7 @@ export default function CorpusPage() {
       </div>
 
       <div className="rp-table-wrap">
-        <div className="rp-filter-strip">
+        <div className="rp-filter-strip" style={{ flexWrap: 'wrap', gap: '6px 8px' }}>
           <input
             type="text"
             placeholder="Search documents…"
@@ -216,6 +230,46 @@ export default function CorpusPage() {
           <FilterDropdown options={AGENCY_OPTS} value={agency} onChange={(v) => { setAgency(v); setPage(1); }} />
           <FilterDropdown options={DOC_TYPES} value={docType} onChange={(v) => { setDocType(v); setPage(1); }} />
           <FilterDropdown options={STATUS_OPTS} value={status} onChange={(v) => { setStatus(v); setPage(1); }} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              title="Published from"
+              style={{
+                height: 30, padding: '0 8px', fontSize: 12,
+                fontFamily: 'var(--mono)', background: 'var(--doc-surface)',
+                border: '1px solid var(--doc-border)', borderRadius: 3,
+                color: dateFrom ? 'var(--doc-text)' : 'var(--doc-text-3)', outline: 'none',
+              }}
+            />
+            <span style={{ color: 'var(--doc-text-3)', fontSize: 11, fontFamily: 'var(--mono)' }}>–</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              title="Published to"
+              style={{
+                height: 30, padding: '0 8px', fontSize: 12,
+                fontFamily: 'var(--mono)', background: 'var(--doc-surface)',
+                border: '1px solid var(--doc-border)', borderRadius: 3,
+                color: dateTo ? 'var(--doc-text)' : 'var(--doc-text-3)', outline: 'none',
+              }}
+            />
+          </div>
+          {hasFilters && (
+            <button
+              onClick={resetFilters}
+              style={{
+                height: 30, padding: '0 12px', fontSize: 12,
+                fontFamily: 'var(--sans)', background: 'transparent',
+                border: '1px solid var(--doc-border)', borderRadius: 3,
+                color: 'var(--doc-text-2)', cursor: 'pointer',
+              }}
+            >
+              Reset
+            </button>
+          )}
         </div>
 
         <table className="rp-table" style={{ fontSize: 12.5, tableLayout: 'fixed' }}>
