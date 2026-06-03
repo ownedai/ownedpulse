@@ -135,18 +135,18 @@ export default function DocumentDetailPage() {
             <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.run_id || '—'}</span>
           </MetaRow>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 24, marginBottom: 10 }}>
-            <SectionLabel style={{ margin: 0 }}>Source Integrity</SectionLabel>
+          <SectionLabel>
+            Source Integrity
             {doc.hash_match ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--ok-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '2px 8px', borderRadius: 3 }}>
+              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--ok-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '2px 8px', borderRadius: 3, verticalAlign: 'middle' }}>
                 ✓ Hashes match
               </span>
             ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--err-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '2px 8px', borderRadius: 3 }}>
+              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--err-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '2px 8px', borderRadius: 3, verticalAlign: 'middle' }}>
                 ✗ Mismatch
               </span>
             )}
-          </div>
+          </SectionLabel>
           <div style={{ fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
               <Tooltip tip="SHA-256 of the source file recorded at ingestion time (document registry)">
