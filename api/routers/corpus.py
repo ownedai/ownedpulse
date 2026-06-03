@@ -177,21 +177,12 @@ async def corpus_documents(
             conditions.append("ingestion_status = %s")
             params.append(ingestion_status)
 
-        _date_expr = (
-            "CASE "
-            "  WHEN metadata_json->>'publication_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' "
-            "    THEN (metadata_json->>'publication_date')::date "
-            "  WHEN metadata_json->>'publication_date' IS NOT NULL "
-            "    THEN TO_DATE(metadata_json->>'publication_date', 'DD Month YYYY') "
-            "  ELSE NULL "
-            "END"
-        )
         if date_from:
-            conditions.append(f"{_date_expr} >= %s::date")
+            conditions.append("publication_date >= %s::date")
             params.append(date_from)
 
         if date_to:
-            conditions.append(f"{_date_expr} <= %s::date")
+            conditions.append("publication_date <= %s::date")
             params.append(date_to)
 
         if corpus_doc is not None:
@@ -206,12 +197,12 @@ async def corpus_documents(
         total = cur.fetchone()[0]
 
         offset = (page - 1) * page_size
-        order_clause = f"ORDER BY {_date_expr} DESC NULLS LAST"
+        order_clause = "ORDER BY publication_date DESC NULLS LAST"
         cur.execute(
             f"""SELECT document_id, issuing_body, doc_type, ingestion_status,
                        chunk_count, last_indexed_at, run_id,
                        metadata_json->>'document_title' as title,
-                       metadata_json->>'publication_date' as pub_date,
+                       publication_date,
                        metadata_json->>'document_version' as version,
                        metadata_json->>'document_type' as regulatory_type,
                        metadata_json->>'source_url' as source_url,
@@ -233,7 +224,7 @@ async def corpus_documents(
                 "document_type": reg_type or None,
                 "doc_type": dt,
                 "document_version": version,
-                "publication_date": pub_date,
+                "publication_date": pub_date.isoformat() if pub_date else None,
                 "issuing_body": normalise_agency(ib),
                 "ingestion_status": status,
                 "chunk_count": chunk_count or 0,
