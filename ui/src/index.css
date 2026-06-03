@@ -3335,16 +3335,16 @@ a.ag-row:hover .n {
 .g3-docchev svg { width: 10px; height: 10px; }
 
 .g3-doc-detail td { background: var(--doc-surface); padding: 0 12px; }
-.g3-doc-detail .inner { padding: 12px 0 14px 30px; display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; font-family: var(--mono); font-size: 11px; }
-.g3-doc-detail .inner .k { color: var(--doc-text-2); }
-.g3-doc-detail .inner .v { color: var(--doc-text); display: flex; align-items: center; gap: 10px; }
+.g3-doc-detail .inner { padding: 12px 0 14px 30px; display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; font-family: var(--mono); font-size: 11px; align-items: start; }
+.g3-doc-detail .inner .k { color: var(--doc-text-2); padding-top: 2px; }
+.g3-doc-detail .inner .v { color: var(--doc-text); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .g3-doc-detail .inner .v a { color: var(--accent-l); text-decoration: none; border-bottom: 1px dashed var(--accent-tint-deep); }
 
 .g3-trace-btn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 11px; color: var(--accent-l); background: transparent; border: 1px solid var(--accent-tint-deep); padding: 3px 8px; border-radius: 3px; cursor: pointer; margin-left: 8px; }
 .g3-trace-btn:hover { background: var(--accent-tint); }
 .g3-trace-loading { font-family: var(--sans); font-size: 11px; color: var(--doc-text-3); margin-left: 8px; }
 .g3-trace-err { font-family: var(--sans); font-size: 11px; color: var(--error); margin-left: 8px; }
-.g3-trace-inline { background: var(--doc-surface); border: 1px solid var(--doc-border); border-radius: 4px; padding: 5px 10px; margin-top: 6px; font-family: var(--sans); }
+.g3-trace-inline { background: var(--doc-surface); border: 1px solid var(--doc-border); border-radius: 4px; padding: 5px 10px; font-family: var(--sans); flex: 1 1 100%; }
 .g3-trace-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
 .g3-trace-field { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px 2px 0; border-right: 1px solid var(--doc-border); margin-right: 10px; font-size: 11px; }
 .g3-trace-field:last-of-type { border-right: none; }
