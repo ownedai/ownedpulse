@@ -145,7 +145,7 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
         </div>
         <div className="row">
           <span className="k">Build</span>
-          <span className="v">v{__APP_VERSION__}</span>
+          <span className="v">v{import.meta.env.VITE_APP_VERSION}</span>
         </div>
       </div>
     </aside>
