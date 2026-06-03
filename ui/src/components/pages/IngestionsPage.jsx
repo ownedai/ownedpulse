@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getIngestions, getSessionDocuments, getRunDocuments, getRunInfo } from '../../api/client';
+import { getIngestions, getSessionDocuments, getRunDocuments } from '../../api/client';
 import { formatDateTime } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
@@ -20,64 +20,6 @@ function ChevronIcon() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="9 18 15 12 9 6" />
     </svg>
-  );
-}
-
-function TraceViewer({ traceId }) {
-  const [state, setState] = useState('idle'); // idle | loading | loaded | error
-  const [data, setData] = useState(null);
-
-  const load = async () => {
-    if (state === 'loading') return;
-    setState('loading');
-    try {
-      const d = await getRunInfo(traceId);
-      setData(d);
-      setState('loaded');
-    } catch {
-      setState('error');
-    }
-  };
-
-  if (state === 'idle') {
-    return <button className="g3-trace-btn" onClick={load}>View Run</button>;
-  }
-  if (state === 'loading') {
-    return <span className="g3-trace-loading">Loading…</span>;
-  }
-  if (state === 'error') {
-    return <span className="g3-trace-err">Run info unavailable</span>;
-  }
-
-  const fields = [
-    ['Trigger', data.trigger_source],
-    ['Feed', data.feed_source || '—'],
-    ['Status', data.status],
-    ['Started', data.triggered_at ? formatDateTime(data.triggered_at) : '—'],
-    ['Duration', data.duration_ms != null ? `${data.duration_ms} ms` : '—'],
-    ['New', data.items_new],
-    ['Skipped', data.items_skipped],
-    ['Errors', data.error_count],
-  ];
-
-  return (
-    <div className="g3-trace-inline">
-      <div className="g3-trace-strip">
-        {fields.map(([k, v], i) => (
-          <span key={k} className="g3-trace-field">
-            <span className="g3-trace-fk">{k}</span>
-            <span className="g3-trace-fv">{v}</span>
-          </span>
-        ))}
-        <button className="g3-trace-close" onClick={() => setState('idle')}>✕</button>
-      </div>
-      {data.error_detail && (
-        <div className="g3-trace-err-row">
-          <span className="g3-trace-fk">Error</span>
-          <span className="g3-trace-fv err">{data.error_detail}</span>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -153,12 +95,9 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
                   <div className="inner">
                     <span className="k">Trace ID</span>
                     <span className="v">
-                      {d.trace_id ? (
-                        <>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id.slice(0, 16)}…</span>
-                          <TraceViewer traceId={d.trace_id} />
-                        </>
-                      ) : <span className="dim">—</span>}
+                      {d.trace_id
+                        ? <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id}</span>
+                        : <span className="dim">—</span>}
                     </span>
                     <span className="k">Source URL</span>
                     <span className="v">
