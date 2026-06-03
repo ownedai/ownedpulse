@@ -84,6 +84,23 @@ def normalise_agency(agency: str) -> str:
     return agency
 
 
+_TITLE_SUFFIXES = (
+    " | European Medicines Agency (EMA)",
+    " | European Medicines Agency",
+    " | EMA",
+    " | FDA",
+    " | ICH",
+)
+
+def strip_title(title: str | None) -> str | None:
+    if not title:
+        return title
+    for s in _TITLE_SUFFIXES:
+        if title.endswith(s):
+            return title[: -len(s)].rstrip()
+    return title
+
+
 # ── GET /api/corpus/stats ─────────────────────────────────────────────────────
 
 @router.get("/stats")
@@ -203,7 +220,7 @@ async def corpus_documents(
             doc_id, ib, dt, status, chunk_count, li, run_id, title, pub_date, version, reg_type, source_url, fam_id, cdoc = row
             items.append({
                 "document_id": doc_id,
-                "document_title": title or "Untitled",
+                "document_title": strip_title(title) or "Untitled",
                 "document_type": reg_type or None,
                 "doc_type": dt,
                 "document_version": version,
@@ -549,7 +566,7 @@ async def feed_run_detail(run_id: str):
 
             documents.append({
                 "document_id": doc_id,
-                "document_title": title or source_url or "Untitled",
+                "document_title": strip_title(title) or source_url or "Untitled",
                 "document_type": doc_type,
                 "publication_date": pub_date,
                 "chunk_count": chunk_count or 0,
@@ -595,7 +612,7 @@ async def supersede_chain(document_family_id: str):
             is_superseded = status == "superseded"
             chain.append({
                 "document_id": doc_id,
-                "document_title": title or "Untitled",
+                "document_title": strip_title(title) or "Untitled",
                 "document_version": version,
                 "publication_date": pub_date,
                 "document_type": doc_type,

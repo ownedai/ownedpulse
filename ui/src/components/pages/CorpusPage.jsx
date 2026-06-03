@@ -218,7 +218,7 @@ export default function CorpusPage() {
           <FilterDropdown options={STATUS_OPTS} value={status} onChange={(v) => { setStatus(v); setPage(1); }} />
         </div>
 
-        <table className="rp-table" style={{ fontSize: 12.5 }}>
+        <table className="rp-table" style={{ fontSize: 12.5, tableLayout: 'fixed' }}>
           <thead>
             <tr>
               <th>Document</th>
@@ -239,10 +239,10 @@ export default function CorpusPage() {
             )}
             {filteredItems.map((doc) => (
               <tr key={doc.document_id}>
-                <td>
+                <td style={{ maxWidth: 0 }}>
                   <Link
                     to={`/corpus/${encodeURIComponent(doc.document_id)}`}
-                    title={doc.document_id}
+                    title={doc.document_title || doc.document_id}
                     style={{ fontSize: 12.5, color: 'var(--accent-l)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
                     {doc.document_title || doc.document_id}
