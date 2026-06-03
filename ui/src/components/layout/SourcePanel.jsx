@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../common/Tooltip';
-import { getPdfPage, getTrace } from '../../api/client';
+import { getPdfPage, getPdfInfo, getTrace } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
 
 const AGENCY_TIPS = {
@@ -142,10 +142,17 @@ function ChunkTab({ citation }) {
 function ProvenanceTab({ citation }) {
   const [pdfPage, setPdfPage] = useState(citation?.page_no ?? null);
   const [pdfError, setPdfError] = useState(false);
+  const [totalPages, setTotalPages] = useState(null);
 
   useEffect(() => {
     setPdfPage(citation?.page_no ?? null);
     setPdfError(false);
+    setTotalPages(null);
+    if (citation?.source_local_path) {
+      getPdfInfo(citation.source_local_path)
+        .then((info) => setTotalPages(info.page_count))
+        .catch(() => {});
+    }
   }, [citation?.chunk_id]);
 
   const {
@@ -230,11 +237,11 @@ function ProvenanceTab({ citation }) {
           {source_local_path ? (
             <div className="rp-pdf">
               <div className="head">
-                <span>Page {pdfPage != null ? pdfPage + 1 : '—'}</span>
+                <span>Page {pdfPage != null ? pdfPage + 1 : '—'}{totalPages ? ` of ${totalPages}` : ''}</span>
                 <div className="pager">
-                  <button onClick={() => setPdfPage((p) => Math.max(0, (p || 0) - 1))} disabled={!pdfPage || pdfPage <= 0}>&larr;</button>
+                  <button onClick={() => { setPdfPage((p) => Math.max(0, (p || 0) - 1)); setPdfError(false); }} disabled={!pdfPage || pdfPage <= 0}>&larr;</button>
                   <span>{pdfPage != null ? pdfPage + 1 : '—'}</span>
-                  <button onClick={() => setPdfPage((p) => (p || 0) + 1)}>&rarr;</button>
+                  <button onClick={() => { setPdfPage((p) => (p || 0) + 1); setPdfError(false); }} disabled={totalPages !== null && (pdfPage || 0) + 1 >= totalPages}>&rarr;</button>
                 </div>
               </div>
               {pdfUrl && !pdfError ? (
