@@ -56,6 +56,13 @@ function renderAnswer(text, selectedIdx, onCitationClick) {
   });
 }
 
+const TRIGGERED_BY_LABELS = {
+  'admin-ui':           'Admin UI',
+  'scheduler':          'Scheduler',
+  'Full reingest (CLI)': 'Full reingest (CLI)',
+  'g-t3-full-reingestion': 'Full reingest (CLI)',
+};
+
 function SrcPill({ src }) {
   const map = {
     n8n_rss: ['scheduled', 'Scheduled RSS'], bootstrap_ui: ['bootstrap', 'Bootstrap'],
@@ -317,7 +324,7 @@ function TracePanel({ chunk }) {
         </div>
         <div className="g2-src-field">
           <span className="k">Triggered by</span>
-          <span className="v muted">{chunk.triggered_by || '—'}</span>
+          <span className="v muted">{TRIGGERED_BY_LABELS[chunk.triggered_by] || chunk.triggered_by || '—'}</span>
         </div>
         <div className="g2-src-field">
           <span className="k">Ingested at</span>
