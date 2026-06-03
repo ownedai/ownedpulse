@@ -253,6 +253,8 @@ from lib.observability import get_langfuse
 
 # ── System prompt V6 ──────────────────────────────────────────────────────────
 
+SYSTEM_PROMPT_VERSION = "v6"
+
 SYSTEM_PROMPT_V6 = (
     "You are a regulatory intelligence assistant for the pharmaceutical and "
     "life sciences industry. You answer questions based exclusively on the "
@@ -887,7 +889,7 @@ async def _run_content_query(
                 input={"prompt": prompt, "system": SYSTEM_PROMPT_V6},
                 output={"answer": answer},
                 usage=llm_usage,
-                metadata={"latency_ms": llm_latency_ms},
+                metadata={"latency_ms": llm_latency_ms, "system_prompt_version": SYSTEM_PROMPT_VERSION},
             )
 
         # Step 6: Determine which chunks were cited
@@ -1844,7 +1846,7 @@ async def get_query_trace(query_id: str):
                 "input_tokens": usage.get("input") or usage.get("promptTokens") or 0,
                 "output_tokens": usage.get("output") or usage.get("completionTokens") or 0,
                 "latency_ms": latency,
-                "system_prompt_version": (llm_obs.get("metadata") or {}).get("system_prompt_version"),
+                "system_prompt_version": (llm_obs.get("metadata") or {}).get("system_prompt_version") or SYSTEM_PROMPT_VERSION,
                 "chunks_sent_to_context": chunks_sent,
                 "chunks_retrieved": chunks_retrieved,
             }
@@ -1856,13 +1858,25 @@ async def get_query_trace(query_id: str):
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "latency_ms": round(data.get("latency", 0) * 1000) if data.get("latency") else None,
-                "system_prompt_version": None,
+                "system_prompt_version": SYSTEM_PROMPT_VERSION,
                 "chunks_sent_to_context": chunks_sent,
                 "chunks_retrieved": chunks_retrieved,
             }
     except Exception as e:
         logger.error("Query trace fetch failed: %s", e)
         return {"error": "trace_unavailable"}
+
+
+# ── GET /api/system-prompt ────────────────────────────────────────────────────
+
+
+@app.get("/api/system-prompt")
+async def get_system_prompt():
+    """Return the active system prompt text and version for the UI prompt viewer."""
+    return {
+        "version": SYSTEM_PROMPT_VERSION,
+        "text": SYSTEM_PROMPT_V6,
+    }
 
 
 # ── GET /api/pdf/page ─────────────────────────────────────────────────────────

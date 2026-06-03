@@ -5,7 +5,7 @@ import QueryInput from '../query/QueryInput';
 import QueryExpansion from '../query/QueryExpansion';
 import EmptyState from '../query/EmptyState';
 import useQuery from '../../hooks/useQuery';
-import { exportQuery, getPdfPage, getQueryTrace } from '../../api/client';
+import { exportQuery, getPdfPage, getQueryTrace, getSystemPrompt } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -70,16 +70,23 @@ function DownloadIcon() {
 
 // ── Answer text renderer ───────────────────────────────────────────────────
 
+const LEGAL_RE = /legal interpretation|qualified regulatory professional|not a substitute for regulatory|legal advice/i;
+
 function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
-  if (!text) return null;
+  if (!text) return { nodes: null, legalNote: null };
   const normalised = text
     .replace(/\n{1,2}(\[\d+\])\n([.,])/g, ' $1$2')
     .replace(/(\[\d+\])\s*\./g, '$1.')
     .replace(/\s*\.\s*(\[\d+\])/g, '$1.');
 
   const paragraphs = normalised.split('\n\n').filter((p) => p.trim());
+  let legalNote = null;
 
-  return paragraphs.map((para, i) => {
+  const nodes = paragraphs.map((para, i) => {
+    if (LEGAL_RE.test(para)) {
+      legalNote = para;
+      return null;
+    }
     const parts = [];
     let last = 0;
     const re = /\[(\d+)\]/g;
@@ -104,16 +111,59 @@ function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
     }
     if (last < para.length) parts.push(para.slice(last));
     return <p key={i}>{parts}</p>;
-  });
+  }).filter(Boolean);
+
+  return { nodes, legalNote };
+}
+
+// ── System Prompt Modal ───────────────────────────────────────────────────
+
+function PromptModal({ version, onClose }) {
+  const [text, setText] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getSystemPrompt()
+      .then((d) => { setText(d.text); setLoading(false); })
+      .catch(() => { setText(null); setLoading(false); });
+  }, []);
+
+  return (
+    <div className="g2-pdf-modal" data-testid="prompt-modal" onClick={onClose}>
+      <div
+        className="g2-pdf-box"
+        style={{ width: 640, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="g2-pdf-bar">
+          <span className="t">System prompt · {version}</span>
+          <button className="close" onClick={onClose}><CloseIcon /></button>
+        </div>
+        <div style={{ overflowY: 'auto', padding: '20px 24px', flex: 1 }}>
+          {loading && <div style={{ color: 'var(--doc-text-3)', fontSize: 13 }}>Loading…</div>}
+          {!loading && !text && <div style={{ color: 'var(--err-text)', fontSize: 13 }}>Prompt text unavailable</div>}
+          {text && (
+            <pre style={{
+              fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.7,
+              color: 'var(--doc-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0,
+            }}>
+              {text}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Traceability Panel — LLM Call block ──────────────────────────────────
 
 function LlmCallBlock({ queryId }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [trace, setTrace] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
 
   useEffect(() => {
     if (!queryId) return;
@@ -164,15 +214,21 @@ function LlmCallBlock({ queryId }) {
               <span className="k">input tokens</span><span className="v">{trace.input_tokens ? trace.input_tokens.toLocaleString() : '—'}</span>
               <span className="k">output tokens</span><span className="v">{trace.output_tokens ? trace.output_tokens.toLocaleString() : '—'}</span>
               <span className="k">latency</span><span className="v">{trace.latency_ms ? `${(trace.latency_ms / 1000).toFixed(1)}s` : '—'}</span>
-              <span className="k">prompt version</span><span className="v">{dash(trace.system_prompt_version)}</span>
-              <span className="k">chunks in context</span><span className="v">
-                {trace.chunks_sent_to_context != null
-                  ? `${trace.chunks_sent_to_context}${trace.chunks_retrieved != null ? ` of ${trace.chunks_retrieved} retrieved` : ''}`
+              <span className="k">prompt version</span>
+              <span className="v">
+                {trace.system_prompt_version
+                  ? <button className="g2v2-prompt-link" onClick={() => setPromptOpen(true)}>{trace.system_prompt_version} ↗</button>
                   : '—'}
+              </span>
+              <span className="k">chunks in context</span><span className="v">
+                {trace.chunks_sent_to_context != null ? trace.chunks_sent_to_context : '—'}
               </span>
             </div>
           )}
         </div>
+      )}
+      {promptOpen && trace?.system_prompt_version && (
+        <PromptModal version={trace.system_prompt_version} onClose={() => setPromptOpen(false)} />
       )}
     </div>
   );
@@ -231,9 +287,63 @@ function ChunkCard({ chunk, highlighted, onViewSource }) {
   );
 }
 
+// ── Traceability Panel — Query Parameters block ───────────────────────────
+
+function QueryParamsBlock({ result }) {
+  const [open, setOpen] = useState(false);
+  const rp = result?.retrieval_params_applied || {};
+  const filters = result?.filters_applied || {};
+  const subQueries = result?.sub_queries || [];
+  const routing = result?.routing_path || '—';
+
+  const activeFilters = Object.entries(filters)
+    .filter(([, v]) => v != null && v !== '' && !v.toString().startsWith('_'))
+    .map(([k, v]) => `${k}: ${v}`);
+
+  const summary = `${subQueries.length} variation${subQueries.length !== 1 ? 's' : ''} · top_k ${rp.top_k ?? '—'} · ${routing}`;
+
+  return (
+    <div className="g2v2-block" data-testid="query-params-block">
+      <div className="g2v2-block-head" onClick={() => setOpen((v) => !v)}>
+        <span className="lhs">
+          <span className={`chev${open ? ' open' : ''}`}><ChevRightIcon /></span>
+          <span className="name">Query Parameters</span>
+        </span>
+        {!open && <span className="summary">{summary}</span>}
+      </div>
+      {open && (
+        <div className="g2v2-block-body">
+          <div className="g2v2-llm-grid">
+            <span className="k">original query</span>
+            <span className="v" style={{ whiteSpace: 'normal', lineHeight: 1.5 }}>{result?.query_text || '—'}</span>
+            <span className="k">routing</span><span className="v">{routing}</span>
+            <span className="k">top_k</span><span className="v">{rp.top_k ?? '—'}</span>
+            <span className="k">score threshold</span><span className="v">{rp.score_threshold ?? '—'}</span>
+            <span className="k">query depth</span><span className="v">{rp.query_depth ?? '—'}</span>
+            <span className="k">filters</span>
+            <span className="v">{activeFilters.length > 0 ? activeFilters.join(' · ') : 'none'}</span>
+          </div>
+          {subQueries.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-3)', letterSpacing: '0.06em', marginBottom: 6 }}>
+                EXPANDED VARIATIONS
+              </div>
+              {subQueries.map((q, i) => (
+                <div key={i} style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)', padding: '3px 0', borderBottom: '1px solid var(--doc-border)' }}>
+                  <span style={{ color: 'var(--doc-text-3)', marginRight: 6 }}>{i + 1}.</span>{q}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Traceability Panel ────────────────────────────────────────────────────
 
-function TraceabilityPanel({ queryId, citations, selectedChunkId, onChunkSelect, onClose, onViewSource }) {
+function TraceabilityPanel({ queryId, result, citations, selectedChunkId, onChunkSelect, onClose, onViewSource }) {
   const [uncitedOpen, setUncitedOpen] = useState(false);
 
   const cited = citations.filter((c) => c.cited_by_llm);
@@ -259,6 +369,9 @@ function TraceabilityPanel({ queryId, citations, selectedChunkId, onChunkSelect,
 
         {/* LLM Call */}
         <LlmCallBlock queryId={queryId} />
+
+        {/* Query Parameters */}
+        <QueryParamsBlock result={result} />
 
         {/* Cited chunks */}
         <div className="g2v2-section-lbl" data-testid="cited-chunks-block">
@@ -357,41 +470,6 @@ function PdfModal({ chunk, onClose }) {
   );
 }
 
-// ── Evidence Bar ──────────────────────────────────────────────────────────
-
-function EvidenceBar({ citations, panelOpen, onOpenPanel }) {
-  const titles = [...new Set(citations.map((c) => c.document_title || c.document_id).filter(Boolean))];
-  const shown = titles.slice(0, 3);
-  const extra = titles.length - 3;
-
-  return (
-    <div className="g2v2-evidence" data-testid="query-evidence-bar">
-      <span className="ev-chunks">{citations.length} chunk{citations.length !== 1 ? 's' : ''} retrieved</span>
-      <span className="ev-docs">
-        {shown.map((t, i) => (
-          <span key={t}>
-            {i > 0 && ', '}
-            <span className="d">{t.length > 40 ? t.slice(0, 40) + '…' : t}</span>
-          </span>
-        ))}
-        {extra > 0 && <span>, +{extra} more</span>}
-      </span>
-      {!panelOpen && (
-        <button
-          className="g2v2-trace-btn"
-          data-testid="query-traceability-btn"
-          onClick={onOpenPanel}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-          </svg>
-          View traceability →
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ── Main QueryPage ─────────────────────────────────────────────────────────
 
 export default function QueryPage() {
@@ -405,7 +483,7 @@ export default function QueryPage() {
   const [selectedChunkId, setSelectedChunkId] = useState(null);
   const [pdfChunk, setPdfChunk] = useState(null);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const chevRef = useRef(null);
   const answerRef = useRef(null);
 
@@ -499,6 +577,10 @@ export default function QueryPage() {
   const routingPath = result?.routing_path;
   const isMetadata = routingPath === 'METADATA';
 
+  const { nodes: answerNodes, legalNote: answerLegalNote } = result
+    ? renderAnswer(result.answer, selectedChunkId, citations, handleCitationClick)
+    : { nodes: null, legalNote: null };
+
   if (isLanding) {
     return (
       <div className="rp-main-page landing">
@@ -530,29 +612,16 @@ export default function QueryPage() {
               <div className="g2v2-qtext" data-testid="query-input">
                 <QueryInput key={queryText} value={queryText} onSubmit={handleSubmit} disabled={loading} compact />
               </div>
-              {result && (
-                <div className="g2v2-route">
-                  <button className={routingPath === 'CONTENT' ? 'on' : ''}>CONTENT</button>
-                  <button className={routingPath === 'METADATA' ? 'on' : ''}>METADATA</button>
-                </div>
-              )}
             </div>
 
             {/* Filter bar below query */}
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: 6, marginBottom: 32 }}>
               <FilterBar filters={filters} onChange={setFilters} retrieval={retrieval} onRetrievalChange={setRetrieval} />
             </div>
 
-            {/* Metadata strip */}
-            {result && (
-              <div className="g2v2-meta">
-                q-{result.query_id?.slice(0, 8)} · {formatDateTime(result.timestamp, true)} · {routingPath} routing · {citations.length} chunk{citations.length !== 1 ? 's' : ''} retrieved
-              </div>
-            )}
-
             {/* Answer body */}
             {loading && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div className="g2-skel" style={{ width: '92%' }} />
                 <div className="g2-skel" style={{ width: '98%' }} />
                 <div className="g2-skel" style={{ width: '76%' }} />
@@ -570,21 +639,21 @@ export default function QueryPage() {
             )}
             {result && (
               <div className="g2v2-body">
-                {renderAnswer(result.answer, selectedChunkId, citations, handleCitationClick)}
+                {answerNodes}
                 <p className="g2v2-disc">
                   AI-generated answer based on retrieved regulatory documents. Verify critical requirements against current source documents before relying on this response for compliance decisions.
+                  {answerLegalNote && <>{' '}{answerLegalNote}</>}
                 </p>
-                <QueryExpansion subQueries={result.sub_queries} />
 
-                {/* Export button */}
-                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', position: 'relative' }}>
+                {/* Export button — flush left, above query expansion */}
+                <div style={{ marginTop: 14, marginBottom: 4 }}>
                   <button
                     className="g2-export"
                     ref={chevRef}
                     onClick={() => {
                       if (chevRef.current) {
                         const r = chevRef.current.getBoundingClientRect();
-                        setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+                        setMenuPos({ top: r.bottom + 4, left: r.left });
                       }
                       setShowFormatMenu((m) => !m);
                     }}
@@ -592,30 +661,38 @@ export default function QueryPage() {
                     <DownloadIcon /> Export
                   </button>
                 </div>
+                <QueryExpansion subQueries={result.sub_queries} />
+
+                {/* Consolidated footer — left: id · time · routing · chunks, right: traceability */}
+                <div className="g2v2-routing-footer">
+                  <span className="g2v2-routing-label">
+                    q-{result.query_id?.slice(0, 8)} · {formatDateTime(result.timestamp, true)} · {routingPath} · {citations.length} chunk{citations.length !== 1 ? 's' : ''} retrieved
+                  </span>
+                  {!panelOpen && !isMetadata && citations.length > 0 && (
+                    <button
+                      className="g2v2-trace-btn"
+                      data-testid="query-traceability-btn"
+                      onClick={handleOpenPanel}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                      View traceability →
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Evidence bar — pinned below answer */}
-        {result && !loading && !isMetadata && citations.length > 0 && (
-          <EvidenceBar
-            citations={citations}
-            panelOpen={panelOpen}
-            onOpenPanel={handleOpenPanel}
-          />
-        )}
-        {result && !loading && isMetadata && (
-          <div className="g2v2-evidence">
-            <span className="ev-chunks" style={{ color: 'var(--doc-text-2)' }}>Metadata query — no chunk provenance</span>
-          </div>
-        )}
       </div>
 
       {/* Traceability panel */}
       {panelOpen && (
         <TraceabilityPanel
           queryId={result?.query_id}
+          result={{ ...result, query_text: queryText }}
           citations={citations}
           selectedChunkId={selectedChunkId}
           onChunkSelect={handleChunkSelect}
@@ -631,7 +708,7 @@ export default function QueryPage() {
       {showFormatMenu && (
         <div
           style={{
-            position: 'fixed', top: menuPos.top, right: menuPos.right,
+            position: 'fixed', top: menuPos.top, left: menuPos.left,
             border: '1px solid var(--doc-border-strong)', borderRadius: 6,
             background: 'var(--doc-surface)', zIndex: 100,
           }}

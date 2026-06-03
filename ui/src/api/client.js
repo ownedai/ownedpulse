@@ -52,6 +52,10 @@ export function getQueryTrace(queryId) {
   return request(`/api/query/${queryId}/trace`);
 }
 
+export function getSystemPrompt() {
+  return request('/api/system-prompt');
+}
+
 export function getPdfPage(filePath, pageNo) {
   return `/api/pdf/page?file_path=${encodeURIComponent(filePath)}&page_no=${pageNo}`;
 }

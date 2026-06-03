@@ -3282,24 +3282,26 @@ a.ag-row:hover .n {
 
 /* answer column */
 .g2v2-answer { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; transition: flex-basis 280ms ease; }
-.g2v2.open .g2v2-answer { flex: 0 0 42%; }
+.g2v2.open .g2v2-answer { flex: 0 0 50%; }
 .g2v2-answer-scroll { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding: 24px 40px 0; }
 .g2v2.open .g2v2-answer-scroll { padding: 24px 28px 0; }
 .g2v2-answer-inner { max-width: 800px; margin: 0 auto; }
 .g2v2.open .g2v2-answer-inner { max-width: none; }
+.g2v2-qbar .rp-landing { max-width: none; margin: 0; }
 
 .g2v2-qbar { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
 .g2v2-qtext { flex: 1; font-size: 16px; color: var(--doc-text); font-weight: 500; letter-spacing: -0.01em; line-height: 1.35; }
 .g2v2-route { display: inline-flex; background: var(--doc-bg); border: 1px solid var(--doc-border); border-radius: 5px; padding: 2px; flex: 0 0 auto; }
 .g2v2-route button { background: transparent; border: none; font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; color: var(--doc-text-2); padding: 4px 8px; border-radius: 3px; cursor: pointer; }
 .g2v2-route button.on { background: var(--accent-l); color: #fff; }
-.g2v2-meta { font-family: var(--mono); font-size: 11px; color: var(--doc-text-3); margin-bottom: 20px; }
+.g2v2-routing-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--doc-border); }
+.g2v2-routing-label { font-family: var(--mono); font-size: 11px; color: var(--doc-text-3); }
 
 .g2v2-body p { font-size: 16px; line-height: 1.78; color: var(--doc-text); margin: 0 0 15px; letter-spacing: -0.003em; }
 .g2v2-cmark { font-family: var(--mono); font-size: 10px; color: var(--accent-l); font-weight: 500; vertical-align: super; line-height: 0; cursor: pointer; padding: 0 1px; }
 .g2v2-cmark:hover { text-decoration: underline; }
 .g2v2-cmark.on { color: #fff; background: var(--accent-l); border-radius: 2px; padding: 1px 4px; vertical-align: baseline; font-size: 9.5px; }
-.g2v2-disc { margin-top: 16px; font-size: 13px; font-style: italic; color: var(--doc-text-2); line-height: 1.55; }
+.g2v2-body p.g2v2-disc { margin-top: 16px; font-size: 11px; font-style: italic; color: var(--doc-text-3); line-height: 1.55; }
 
 /* evidence bar pinned below answer */
 .g2v2-evidence { flex: 0 0 auto; border-top: 1px solid var(--doc-border); background: var(--doc-bg); padding: 12px 40px; display: flex; align-items: center; gap: 16px; }
@@ -3312,7 +3314,7 @@ a.ag-row:hover .n {
 .g2v2-trace-btn svg { width: 13px; height: 13px; }
 
 /* traceability panel */
-.g2v2-panel { flex: 0 0 58%; min-width: 0; background: var(--doc-bg); border-left: 1px solid var(--doc-border-strong); display: flex; flex-direction: column; min-height: 0; }
+.g2v2-panel { flex: 0 0 50%; min-width: 0; background: var(--doc-bg); border-left: 1px solid var(--doc-border-strong); display: flex; flex-direction: column; min-height: 0; }
 .g2v2-panel-head { flex: 0 0 auto; padding: 16px 22px 14px; border-bottom: 1px solid var(--doc-border); display: flex; justify-content: space-between; align-items: center; background: var(--doc-surface); }
 .g2v2-panel-head .t { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--doc-text-2); }
 .g2v2-panel-head .close { background: transparent; border: 1px solid var(--doc-border); width: 28px; height: 28px; border-radius: 4px; cursor: pointer; color: var(--doc-text-2); display: flex; align-items: center; justify-content: center; }
@@ -3336,6 +3338,7 @@ a.ag-row:hover .n {
 .g2v2-llm-grid .k { color: var(--doc-text-2); padding: 6px 0; border-bottom: 1px solid var(--doc-border); }
 .g2v2-llm-grid .v { color: var(--doc-text); padding: 6px 0; border-bottom: 1px solid var(--doc-border); text-align: right; }
 .g2v2-llm-grid > div:nth-last-child(-n+2) { border-bottom: none; }
+.g2v2-prompt-link { background: none; border: none; padding: 0; font-family: var(--mono); font-size: 11.5px; color: var(--accent-l); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 /* cited chunk card */
 .g2v2-section-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--doc-text-2); margin: 6px 0 10px; }
