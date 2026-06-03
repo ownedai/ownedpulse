@@ -177,12 +177,21 @@ async def corpus_documents(
             conditions.append("ingestion_status = %s")
             params.append(ingestion_status)
 
+        _date_expr = (
+            "CASE "
+            "  WHEN metadata_json->>'publication_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' "
+            "    THEN (metadata_json->>'publication_date')::date "
+            "  WHEN metadata_json->>'publication_date' IS NOT NULL "
+            "    THEN TO_DATE(metadata_json->>'publication_date', 'DD Month YYYY') "
+            "  ELSE NULL "
+            "END"
+        )
         if date_from:
-            conditions.append("metadata_json->>'publication_date' >= %s")
+            conditions.append(f"{_date_expr} >= %s::date")
             params.append(date_from)
 
         if date_to:
-            conditions.append("metadata_json->>'publication_date' <= %s")
+            conditions.append(f"{_date_expr} <= %s::date")
             params.append(date_to)
 
         if corpus_doc is not None:
@@ -197,7 +206,7 @@ async def corpus_documents(
         total = cur.fetchone()[0]
 
         offset = (page - 1) * page_size
-        order_clause = "ORDER BY metadata_json->>'publication_date' DESC NULLS LAST" if corpus_doc else "ORDER BY last_indexed_at DESC NULLS LAST"
+        order_clause = f"ORDER BY {_date_expr} DESC NULLS LAST"
         cur.execute(
             f"""SELECT document_id, issuing_body, doc_type, ingestion_status,
                        chunk_count, last_indexed_at, run_id,
