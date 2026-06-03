@@ -109,7 +109,7 @@ async def corpus_stats():
         )
         per_doc_type = dict(cur.fetchall())
 
-        cur.execute("SELECT max(last_indexed_at) FROM document_registry")
+        cur.execute("SELECT max(completed_at) FROM run_log WHERE status = 'success'")
         last_run = cur.fetchone()[0]
         last_run_iso = last_run.isoformat() if last_run else None
 

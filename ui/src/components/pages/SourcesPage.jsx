@@ -921,23 +921,25 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
 function InitialLoadCard({ onOpenModal, lastBootstrap, docCount, bootstrapDocCount }) {
   return (
     <div className="rp-src-card">
-      <div className="rp-src-card-lbl">Initial Load</div>
-      <div className="rp-il-row">
-        <button className="rp-btn-outline" onClick={onOpenModal}>
-          <RefreshIcon />
-          {docCount > 0 ? 'Re-run Initial Load' : 'Run Initial Load'}
-        </button>
-        <div className="rp-il-meta">
+      <div className="rp-src-card-lbl" style={{ marginBottom: 0 }}>
+        <span>Initial Load</span>
+        <span style={{ marginLeft: 12, fontSize: 11.5, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)', fontWeight: 400 }}>
           {docCount > 0 ? (
             <>
-              Corpus last populated: <span className="v">{lastBootstrap ? formatDateTime(lastBootstrap) : '—'}</span>
+              Corpus last populated: <span style={{ color: 'var(--doc-text)' }}>{lastBootstrap ? formatDateTime(lastBootstrap) : '—'}</span>
               {' · '}
-              <span className="v">{(bootstrapDocCount || 0).toLocaleString()}</span> documents loaded in initial run
+              <span style={{ color: 'var(--doc-text)' }}>{(bootstrapDocCount || 0).toLocaleString()}</span> documents loaded
             </>
           ) : (
-            'Corpus is empty. Run Initial Load to ingest all regulatory documents.'
+            'Corpus is empty — run Initial Load to ingest all regulatory documents.'
           )}
-        </div>
+        </span>
+        <button
+          onClick={onOpenModal}
+          style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)', whiteSpace: 'nowrap' }}
+        >
+          {docCount > 0 ? 'Re-run Initial Load' : 'Run Initial Load'}
+        </button>
       </div>
     </div>
   );
