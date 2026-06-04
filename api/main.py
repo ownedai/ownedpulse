@@ -21,6 +21,7 @@ from routers.corpus import router as corpus_router
 from routers.admin import router as admin_router
 from routers.bootstrap import router as bootstrap_router
 from routers.ingestions import router as ingestions_router
+from routers.sources import router as sources_router
 from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ app.include_router(corpus_router, prefix="/api/corpus")
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(bootstrap_router, prefix="/api/bootstrap")
 app.include_router(ingestions_router, prefix="/api/ingestions")
+app.include_router(sources_router, prefix="/api/sources")
 
 app.add_middleware(
     CORSMiddleware,

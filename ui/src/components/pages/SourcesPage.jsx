@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
+import BootstrapModal from '../BootstrapModal';
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
@@ -1010,8 +1011,38 @@ function InitialLoadCard({ onOpenModal, lastBootstrap, docCount, bootstrapDocCou
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+function BootstrapToast({ result, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 8000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return createPortal(
+    <div style={{
+      position: 'fixed', bottom: 28, right: 28, zIndex: 400,
+      background: 'var(--doc-surface)', border: '1px solid var(--ok, #22c55e)',
+      borderLeft: '4px solid var(--ok, #22c55e)',
+      borderRadius: 6, padding: '12px 16px', maxWidth: 380,
+      boxShadow: '0 8px 24px rgba(2,6,23,0.3)',
+      display: 'flex', flexDirection: 'column', gap: 4,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--doc-text)' }}>Bootstrap run started</div>
+      <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)' }}>
+        Run ID: {result.run_id?.slice(0, 8)}…
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--doc-text-2)', marginTop: 2 }}>
+        Monitor progress in{' '}
+        <Link to="/ingestions" style={{ color: 'var(--accent-l)' }} onClick={onClose}>Run Log</Link>
+        .
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export default function SourcesPage() {
   const [showModal, setShowModal] = useState(false);
+  const [showBootstrapModal, setShowBootstrapModal] = useState(false);
+  const [bootstrapResult, setBootstrapResult] = useState(null);
   const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, bootstrap_doc_count: 0, last_bootstrap: null });
 
   useEffect(() => {
@@ -1020,8 +1051,31 @@ export default function SourcesPage() {
       .catch(() => {});
   }, []);
 
+  function handleBootstrapStarted(result) {
+    setBootstrapResult(result);
+  }
+
   return (
     <div className="rp-sources-page">
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px 0', marginBottom: 4 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--doc-text)' }}>Sources</div>
+        <button
+          onClick={() => setShowBootstrapModal(true)}
+          style={{
+            padding: '6px 14px', borderRadius: 5, fontSize: 12.5,
+            fontFamily: 'var(--mono)', cursor: 'pointer',
+            background: 'transparent', color: 'var(--doc-text-2)',
+            border: '1px solid var(--doc-border)',
+            transition: 'border-color 150ms ease, color 150ms ease',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--doc-text-2)'; e.currentTarget.style.color = 'var(--doc-text)'; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--doc-border)'; e.currentTarget.style.color = 'var(--doc-text-2)'; }}
+        >
+          Initial Load / Reload
+        </button>
+      </div>
+
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
         <RssFeedsCard />
@@ -1038,11 +1092,24 @@ export default function SourcesPage() {
         <InitialLoadModal
           onClose={() => {
             setShowModal(false);
-            // Refresh bootstrap state after modal closes
             getBootstrapState().then(setBootstrapState).catch(() => {});
           }}
           lastBootstrap={bootstrapState.last_bootstrap}
           docCount={bootstrapState.doc_count}
+        />
+      )}
+
+      {showBootstrapModal && (
+        <BootstrapModal
+          onClose={() => setShowBootstrapModal(false)}
+          onStarted={handleBootstrapStarted}
+        />
+      )}
+
+      {bootstrapResult && (
+        <BootstrapToast
+          result={bootstrapResult}
+          onClose={() => setBootstrapResult(null)}
         />
       )}
     </div>

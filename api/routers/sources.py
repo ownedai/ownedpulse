@@ -1,0 +1,238 @@
+"""Sources router — /api/sources/ bootstrap status, date estimate, and bootstrap trigger."""
+
+import os
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+router = APIRouter()
+
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+
+
+def get_pg_conn():
+    import psycopg2
+    return psycopg2.connect(
+        host=POSTGRES_HOST, port=POSTGRES_PORT,
+        dbname=POSTGRES_DB, user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD, connect_timeout=10
+    )
+
+
+# Presentation metadata per feed_id — fixed set of known feeds.
+FEED_METADATA: dict = {
+    "ema_reg_guidance":   {"agency": "EMA", "label": "Regulatory Guidance",  "description": "Regulatory guidance and procedural documents"},
+    "ema_sci_guidelines": {"agency": "EMA", "label": "Scientific Guidelines", "description": "Guidelines, reflection papers, scientific annexes"},
+    "fda_press_releases": {"agency": "FDA", "label": "Press Releases",        "description": "News and announcements"},
+    "ich_guidelines":     {"agency": "ICH", "label": "All ICH Guidelines",    "description": "Quality, safety, efficacy guidelines"},
+}
+
+
+# ── GET /sources/bootstrap-status ────────────────────────────────────────────
+
+@router.get("/bootstrap-status")
+async def bootstrap_status():
+    """
+    Returns current corpus state: base corpus documents and per-feed RSS stats.
+    Base corpus = documents with corpus_doc = TRUE (seed/curated set).
+    RSS feeds = entries in feed_config with aggregate stats from document_registry.
+    """
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+
+            # Base corpus documents
+            cur.execute("""
+                SELECT
+                    document_id,
+                    issuing_body,
+                    doc_type,
+                    ingestion_status,
+                    COALESCE(chunk_count, 0) AS chunk_count,
+                    last_indexed_at,
+                    metadata_json->>'document_title' AS document_title
+                FROM document_registry
+                WHERE corpus_doc = TRUE
+                ORDER BY issuing_body, document_id
+            """)
+            base_rows = cur.fetchall()
+
+            # RSS feeds: feed_config joined with aggregate stats from document_registry
+            cur.execute("""
+                SELECT
+                    fc.feed_id,
+                    fc.name,
+                    fc.enabled,
+                    fc.last_run_at,
+                    COUNT(dr.document_id) FILTER (
+                        WHERE dr.ingestion_status IN ('indexed', 'success')
+                    ) AS doc_count,
+                    MIN(dr.publication_date) FILTER (
+                        WHERE dr.ingestion_status IN ('indexed', 'success')
+                    ) AS date_min,
+                    MAX(dr.publication_date) FILTER (
+                        WHERE dr.ingestion_status IN ('indexed', 'success')
+                    ) AS date_max,
+                    MAX(dr.last_indexed_at) FILTER (
+                        WHERE dr.ingestion_status IN ('indexed', 'success')
+                    ) AS last_indexed_at
+                FROM feed_config fc
+                LEFT JOIN document_registry dr ON dr.feed_id = fc.feed_id
+                GROUP BY fc.feed_id, fc.name, fc.enabled, fc.last_run_at
+                ORDER BY fc.feed_id
+            """)
+            feed_rows = cur.fetchall()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {e}")
+
+    base_corpus = []
+    for row in base_rows:
+        doc_id, issuing_body, doc_type, ingestion_status, chunk_count, last_indexed_at, document_title = row
+        agency = "EMA" if issuing_body == "EU-Commission" else (issuing_body or "Unknown")
+        base_corpus.append({
+            "document_id": doc_id,
+            "document_title": document_title or doc_id,
+            "issuing_body": agency,
+            "doc_type": doc_type,
+            "ingestion_status": ingestion_status,
+            "chunk_count": chunk_count,
+            "last_indexed_at": last_indexed_at.isoformat() if last_indexed_at else None,
+        })
+
+    rss_feeds = []
+    for row in feed_rows:
+        feed_id, name, enabled, last_run_at, doc_count, date_min, date_max, last_indexed_at = row
+        meta = FEED_METADATA.get(feed_id, {"agency": "Unknown", "label": name, "description": ""})
+        rss_feeds.append({
+            "feed_id": feed_id,
+            "label": meta["label"],
+            "agency": meta["agency"],
+            "description": meta["description"],
+            "enabled": enabled,
+            "doc_count": int(doc_count) if doc_count else 0,
+            "date_min": date_min.isoformat() if date_min else None,
+            "date_max": date_max.isoformat() if date_max else None,
+            "last_indexed_at": last_indexed_at.isoformat() if last_indexed_at else None,
+            "last_run_at": last_run_at.isoformat() if last_run_at else None,
+        })
+
+    initialized = any(d["ingestion_status"] in ("indexed", "success") for d in base_corpus)
+
+    return {
+        "initialized": initialized,
+        "base_corpus": base_corpus,
+        "rss_feeds": rss_feeds,
+    }
+
+
+# ── GET /sources/date-estimate ────────────────────────────────────────────────
+
+@router.get("/date-estimate")
+async def date_estimate(
+    feed_ids: str = Query(..., description="Comma-separated feed IDs"),
+    date_from: Optional[str] = Query(None, description="Lower bound (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Upper bound (YYYY-MM-DD)"),
+):
+    """
+    Estimate document and chunk count for a given feed + date selection.
+    No ingestion is triggered. Returns estimated_docs: null if data is unreliable.
+    """
+    feed_id_list = [f.strip() for f in feed_ids.split(",") if f.strip()]
+    if not feed_id_list:
+        return {"estimated_docs": 0, "estimated_chunks": 0, "note": "No feeds selected."}
+
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            conditions = ["feed_id = ANY(%s)", "ingestion_status IN ('indexed', 'success')"]
+            params: list = [feed_id_list]
+
+            if date_from:
+                conditions.append("publication_date >= %s::date")
+                params.append(date_from)
+            if date_to:
+                conditions.append("publication_date <= %s::date")
+                params.append(date_to)
+
+            where = " AND ".join(conditions)
+            cur.execute(
+                f"SELECT COUNT(*), COALESCE(SUM(chunk_count), 0) FROM document_registry WHERE {where}",
+                params,
+            )
+            row = cur.fetchone()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception as e:
+        return {
+            "estimated_docs": None,
+            "estimated_chunks": None,
+            "note": f"Estimate unavailable — {str(e)[:100]}",
+        }
+
+    doc_count = int(row[0]) if row else 0
+    chunk_count = int(row[1]) if row else 0
+    return {
+        "estimated_docs": doc_count,
+        "estimated_chunks": chunk_count,
+        "note": "Estimate based on currently indexed documents. Actual count may differ after re-download.",
+    }
+
+
+# ── POST /sources/bootstrap ───────────────────────────────────────────────────
+
+class FeedSelection(BaseModel):
+    feed_id: str
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+class BootstrapRequest(BaseModel):
+    mode: str = "wipe_and_reload"          # "wipe_and_reload" | "reload_changed_only"
+    base_corpus: List[str] = []            # doc_ids to include
+    rss_feeds: List[FeedSelection] = []
+
+
+@router.post("/bootstrap")
+async def sources_bootstrap(body: BootstrapRequest):
+    """
+    Trigger a corpus bootstrap run. Returns immediately with a run_id.
+    Monitor progress via Run Log (/ingestions).
+
+    # TODO G-T3: wire to actual ingestion pipeline.
+    # Currently creates a run_log stub entry and returns the run_id.
+    """
+    if body.mode not in ("wipe_and_reload", "reload_changed_only"):
+        raise HTTPException(status_code=422, detail="Invalid mode. Use 'wipe_and_reload' or 'reload_changed_only'.")
+
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO run_log (trigger_source, status, triggered_by)
+                VALUES ('bootstrap_ui', 'pending', 'sources_ui')
+                RETURNING run_id
+            """)
+            run_id = str(cur.fetchone()[0])
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {e}")
+
+    return {
+        "run_id": run_id,
+        "status": "triggered",
+        "message": "Bootstrap run started. Monitor progress in Run Log.",
+    }

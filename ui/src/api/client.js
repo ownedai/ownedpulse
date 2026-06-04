@@ -257,3 +257,25 @@ export function getRunInfo(runId) {
 export function getDocSpans(docId) {
   return request(`/api/ingestions/spans/${encodeURIComponent(docId)}`);
 }
+
+// ── Sources routes ────────────────────────────────────────────────────────────
+
+export function getBootstrapStatus() {
+  return request('/api/sources/bootstrap-status');
+}
+
+export function getDateEstimate(feedIds, dateFrom, dateTo, signal) {
+  const params = new URLSearchParams({ feed_ids: feedIds.join(',') });
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  return fetch(`${API_BASE}/api/sources/date-estimate?${params}`, { signal })
+    .then(r => r.ok ? r.json() : { estimated_docs: null, estimated_chunks: null, note: 'Request failed' })
+    .catch(() => ({ estimated_docs: null, estimated_chunks: null, note: 'Request cancelled' }));
+}
+
+export function postSourcesBootstrap(body) {
+  return request('/api/sources/bootstrap', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
