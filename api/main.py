@@ -1861,95 +1861,24 @@ async def export_query(query_id: str, format: str = "json"):
             )
 
         elif format == "pdf":
-            from io import BytesIO
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.units import mm
-            from reportlab.platypus import (
-                SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-            )
-            from reportlab.lib import colors
-            from reportlab.lib.enums import TA_LEFT
+            from lib.pdf_export import generate_query_export_pdf
 
-            buf = BytesIO()
-            doc = SimpleDocTemplate(buf, pagesize=A4,
-                                    leftMargin=20*mm, rightMargin=20*mm,
-                                    topMargin=20*mm, bottomMargin=20*mm)
-            styles = getSampleStyleSheet()
-            story = []
-
-            # Title
-            story.append(Paragraph("regpulse — Query Export", styles['Title']))
-            story.append(Spacer(1, 6*mm))
-
-            # Query details
-            detail_style = ParagraphStyle('Detail', parent=styles['Normal'], fontSize=9, fontName='Courier')
-            story.append(Paragraph(f"Query ID: {query_id}", detail_style))
-            story.append(Paragraph(f"Timestamp: {ts_iso}", detail_style))
-            story.append(Paragraph(f"Routing: {routing_label}", detail_style))
-            story.append(Paragraph(f"Export date: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M:%S UTC')}", detail_style))
-            story.append(Spacer(1, 4*mm))
-
-            # Query text
-            story.append(Paragraph("<b>Query</b>", styles['Heading2']))
-            story.append(Paragraph(query_text, styles['Normal']))
-            story.append(Spacer(1, 4*mm))
-
-            # Answer
-            story.append(Paragraph("<b>Answer</b>", styles['Heading2']))
-            for para in (answer or '').split('\n\n'):
-                if para.strip():
-                    story.append(Paragraph(para.strip().replace('\n', '<br/>'), styles['Normal']))
-                    story.append(Spacer(1, 2*mm))
-            story.append(Spacer(1, 4*mm))
-
-            # Filter/retrieval info
-            story.append(Paragraph("<b>Retrieval Parameters</b>", styles['Heading2']))
-            story.append(Paragraph(f"Filters: {json.dumps(filters_dict)}", detail_style))
-            story.append(Paragraph(f"Params: {json.dumps(retrieval_dict)}", detail_style))
-            if sub_queries_list:
-                story.append(Paragraph(f"Sub-queries: {', '.join(sub_queries_list)}", detail_style))
-            story.append(Spacer(1, 4*mm))
-
-            # Citations — cited
-            cited = [c for c in citations_list if c.get("cited_by_llm")]
-            if cited:
-                story.append(Paragraph(f"<b>Cited Sources ({len(cited)})</b>", styles['Heading2']))
-                for c in cited:
-                    title = c.get('document_title', 'Unknown')
-                    story.append(Paragraph(f"[{c.get('index', '?')}] {title}", styles['Normal']))
-                    story.append(Paragraph(
-                        f"Agency: {c.get('issuing_body', '—')} · "
-                        f"Version: {c.get('document_version', '—')} · "
-                        f"Clause: {c.get('clause_id') or 'Not available'} · "
-                        f"Score: {c.get('score', 0):.2f} · "
-                        f"Published: {c.get('publication_date') or 'Not available'}",
-                        detail_style
-                    ))
-                    if c.get('chunk_text'):
-                        story.append(Paragraph(c['chunk_text'][:300] + ('...' if len(c['chunk_text']) > 300 else ''), detail_style))
-                    story.append(Spacer(1, 3*mm))
-
-            # Citations — uncited
-            uncited = [c for c in citations_list if not c.get("cited_by_llm")]
-            if uncited:
-                story.append(Paragraph(f"<b>Retrieved but Not Cited ({len(uncited)})</b>", styles['Heading2']))
-                for c in uncited:
-                    title = c.get('document_title', 'Unknown')
-                    story.append(Paragraph(f"[{c.get('index', '?')}] {title} (score: {c.get('score', 0):.2f})", detail_style))
-                    story.append(Spacer(1, 1*mm))
-
-            # Trace ID
-            if langfuse_trace_id:
-                story.append(Spacer(1, 4*mm))
-                story.append(Paragraph(f"Langfuse Trace ID: {langfuse_trace_id}", detail_style))
-
-            doc.build(story)
-            buf.seek(0)
-
+            payload = {
+                "query_id":               query_id,
+                "query_text":             query_text,
+                "timestamp":              ts_iso,
+                "routing_path":           routing_path,
+                "answer":                 answer,
+                "citations":              citations_list,
+                "sub_queries":            sub_queries_list,
+                "filters_applied":        filters_dict,
+                "retrieval_params_applied": retrieval_dict,
+                "langfuse_trace_id":      langfuse_trace_id,
+            }
+            pdf_bytes = generate_query_export_pdf(payload)
             filename = f"regpulse-export-{query_id[:8]}.pdf"
             return Response(
-                content=buf.getvalue(),
+                content=pdf_bytes,
                 media_type="application/pdf",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'}
             )
