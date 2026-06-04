@@ -3552,18 +3552,12 @@ a.ag-row:hover .n {
 .g3-cell.failnum.has { color: var(--warn-text); font-weight: 500; }
 .g3-feed { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--doc-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.g3-status { display: flex; align-items: center; justify-content: center; gap: 5px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; padding: 2px 0; border-radius: 3px; white-space: nowrap; width: 76px; }
-.g3-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+.g3-status { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; padding: 2px 0; border-radius: 3px; white-space: nowrap; width: 76px; text-align: center; }
 .g3-status.success { background: var(--ok-tint); color: var(--ok-text); border: 1px solid var(--ok-tint-border); }
-.g3-status.success::before { background: var(--status-ok); }
 .g3-status.partial { background: var(--warn-tint); color: var(--warn-text); border: 1px solid var(--warn-tint-border); }
-.g3-status.partial::before { background: var(--status-warn); }
 .g3-status.error { background: var(--err-tint); color: var(--err-text); border: 1px solid var(--err-tint-border); }
-.g3-status.error::before { background: var(--status-error); }
 .g3-status.running { background: var(--info-tint); color: var(--accent-l); border: 1px solid var(--info-tint-border); }
-.g3-status.running::before { background: var(--status-running); }
 .g3-status.pending { background: var(--doc-bg); color: var(--doc-text-2); border: 1px solid var(--doc-border-strong); }
-.g3-status.pending::before { background: var(--doc-text-3); }
 
 .g3-sub { border-top: 1px solid var(--doc-border); background: var(--doc-bg); }
 .g3-subtable { width: 100%; border-collapse: collapse; font-size: 12px; }
