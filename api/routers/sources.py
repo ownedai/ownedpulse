@@ -164,7 +164,7 @@ async def date_estimate(
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
-            conditions = ["feed_id = ANY(%s)", "ingestion_status IN ('indexed', 'success')"]
+            conditions = ["feed_id = ANY(%s)", "ingestion_status != 'excluded'"]
             params: list = [feed_id_list]
 
             if date_from:
