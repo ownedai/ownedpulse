@@ -7,6 +7,7 @@ export const STATUS_CONFIG = {
   superseded: { label: 'SUPERSEDED', color: 'var(--warn)', bg: 'var(--warn-tint)', border: 'var(--warn-tint-border)', dot: 'var(--warn)', pulse: false },
   stale:    { label: 'STALE',    color: 'var(--warn)',    bg: 'var(--warn-tint)',   border: 'var(--warn-tint-border)',  dot: 'var(--warn)',    pulse: false },
   pending:  { label: 'PENDING',  color: 'var(--doc-text-3)', bg: 'var(--doc-bg)', border: 'var(--doc-border)',         dot: 'var(--doc-text-3)', pulse: false },
+  deferred: { label: 'DEFERRED', color: 'var(--doc-text-2)', bg: 'var(--doc-bg)', border: 'var(--doc-border)',         dot: 'var(--doc-text-3)', pulse: false },
   indexed:  { label: 'INDEXED',  color: 'var(--ok)',      bg: 'var(--ok-tint)',     border: 'var(--ok-tint-border)',   dot: 'var(--ok)',      pulse: false },
   complete: { label: 'SUCCESS',  color: 'var(--ok)',      bg: 'var(--ok-tint)',     border: 'var(--ok-tint-border)',   dot: 'var(--ok)',      pulse: false },
 };

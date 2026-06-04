@@ -1,5 +1,5 @@
 import Tooltip from '../common/Tooltip';
-import { formatDate } from '../../dateFormat';
+import { formatDate, isFutureDate } from '../../dateFormat';
 
 const AGENCY_TIPS = {
   FDA: 'U.S. Food & Drug Administration',
@@ -51,7 +51,16 @@ export default function CitationCard({ citation, isActive, onClick, onViewSource
         <div className="meta">
           <span><span className="k">version</span><span className="v">{version}</span></span>
           <span><span className="k">clause</span><span className="v clause">{clause}</span></span>
-          <span><span className="k">published</span><span className="v">{date}</span></span>
+          <span>
+            <span className="k">published</span>
+            {isFutureDate(publication_date) ? (
+              <Tooltip tip="Future effective date — this document is not yet in force">
+                <span className="v" style={{ cursor: 'help', borderBottom: '1px dashed currentColor' }}>{date}</span>
+              </Tooltip>
+            ) : (
+              <span className="v">{date}</span>
+            )}
+          </span>
         </div>
         {superseded && superseded_by && (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--err-text)', marginTop: 6 }}>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../common/Tooltip';
 import { getPdfPage, getPdfInfo, getTrace } from '../../api/client';
-import { formatDate, formatDateTime } from '../../dateFormat';
+import { formatDate, formatDateTime, isFutureDate } from '../../dateFormat';
 
 const AGENCY_TIPS = {
   FDA: 'U.S. Food & Drug Administration',
@@ -189,7 +189,17 @@ function ProvenanceTab({ citation }) {
         </div>
         <div className="row">
           <span className="k">Publication date</span>
-          <span className="v">{publication_date ? formatDate(publication_date) : 'Not available'}</span>
+          {publication_date ? (
+            isFutureDate(publication_date) ? (
+              <Tooltip tip="Future effective date — this document is not yet in force">
+                <span className="v" style={{ cursor: 'help', borderBottom: '1px dashed currentColor' }}>{formatDate(publication_date)}</span>
+              </Tooltip>
+            ) : (
+              <span className="v">{formatDate(publication_date)}</span>
+            )
+          ) : (
+            <span className="v">Not available</span>
+          )}
         </div>
         <div className="row">
           <span className="k">Agency</span>

@@ -3,6 +3,7 @@
 import os
 import json
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
 router = APIRouter()
@@ -176,6 +177,8 @@ async def corpus_documents(
         if ingestion_status:
             conditions.append("ingestion_status = %s")
             params.append(ingestion_status)
+        else:
+            conditions.append("ingestion_status IN ('indexed', 'superseded')")
 
         if date_from:
             conditions.append("publication_date >= %s::date")
@@ -258,6 +261,7 @@ async def document_detail(doc_id: str):
                       source_hash as pg_source_hash,
                       metadata_json->>'source_file_format' as file_format,
                       metadata_json->>'archive_path' as archive_path_json,
+                      metadata_json->>'source_local_path' as source_local_path,
                       document_family_id, archive_path, feed_id, corpus_doc
                FROM document_registry WHERE document_id = %s""",
             (doc_id,)
@@ -269,7 +273,8 @@ async def document_detail(doc_id: str):
             raise HTTPException(status_code=404, detail="Document not found")
 
         (did, ib, dt, status, chunk_count, li, run_id, title, pub_date, version,
-         reg_type, source_url, pg_source_hash, file_format, archive_path_json, fam_id, archive_path, feed_id, corpus_doc) = row
+         reg_type, source_url, pg_source_hash, file_format, archive_path_json, source_local_path,
+         fam_id, archive_path, feed_id, corpus_doc) = row
 
         # Query Qdrant for the first chunk's source_hash and total point count
         qdrant_source_hash = None
@@ -317,6 +322,7 @@ async def document_detail(doc_id: str):
             "run_id": run_id,
             "document_family_id": fam_id,
             "source_url": source_url,
+            "source_local_path": source_local_path,
             "source_file_format": file_format,
             "archive_path": archive_path,
             "feed_id": feed_id,
@@ -623,5 +629,32 @@ async def supersede_chain(document_family_id: str):
             })
 
         return {"document_family_id": document_family_id, "chain": chain}
+    finally:
+        conn.close()
+
+
+# ── PATCH /api/corpus/documents/{doc_id}/ingestion-status ─────────────────────
+
+class IngestionStatusUpdate(BaseModel):
+    status: str  # "deferred" or "failed"
+
+@router.patch("/documents/{doc_id}/ingestion-status")
+async def update_ingestion_status(doc_id: str, body: IngestionStatusUpdate):
+    allowed = {"deferred", "failed"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {allowed}")
+
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE document_registry SET ingestion_status = %s, updated_at = NOW() WHERE document_id = %s",
+            (body.status, doc_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Document not found")
+        conn.commit()
+        cur.close()
+        return {"document_id": doc_id, "ingestion_status": body.status}
     finally:
         conn.close()

@@ -1,9 +1,104 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { getDocumentDetail, getDocumentChunks, getSupersedeChain } from '../../api/client';
+import { getDocumentDetail, getDocumentChunks, getSupersedeChain, getPdfPage } from '../../api/client';
 import Tooltip from '../common/Tooltip';
-import { formatDate, formatDateTime } from '../../dateFormat';
+import { formatDate, formatDateTime, isFutureDate } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
+
+function CloseIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+}
+function MaximizeIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>;
+}
+function MinimizeIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 4 14 4 14 10"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></svg>;
+}
+function ExtIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>;
+}
+
+function PdfModal({ doc, onClose }) {
+  const modalRef = useRef(null);
+  const [pageNo, setPageNo] = useState(0);
+  const [zoom, setZoom] = useState(100);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pageInput, setPageInput] = useState('1');
+  const [imgSrc, setImgSrc] = useState(null);
+
+  useEffect(() => {
+    if (doc?.source_local_path) {
+      setImgSrc(getPdfPage(doc.source_local_path, pageNo));
+    }
+    setPageInput(String(pageNo + 1));
+  }, [doc?.source_local_path, pageNo]);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  function toggleFullscreen() {
+    if (!isFullscreen) modalRef.current?.requestFullscreen();
+    else document.exitFullscreen();
+  }
+
+  function navigatePage(raw) {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 1) setPageNo(n - 1);
+    else setPageInput(String(pageNo + 1));
+  }
+
+  return (
+    <div className="g2-pdf-modal" data-testid="pdf-modal" onClick={onClose}>
+      <div className="g2-pdf-box" ref={modalRef} onClick={(e) => e.stopPropagation()}>
+        <div className="g2-pdf-bar">
+          <span className="t">{doc?.document_title || 'Source Document'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>Page</span>
+            <input
+              className="g2-pdf-page-input"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') navigatePage(pageInput); }}
+              onBlur={() => navigatePage(pageInput)}
+            />
+            <button className="close" title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>
+              {isFullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
+            </button>
+            <button className="close" onClick={onClose}><CloseIcon /></button>
+          </div>
+        </div>
+        <div className="g2-pdf-stage">
+          {imgSrc ? (
+            <img src={imgSrc} alt={`Page ${pageNo + 1}`} style={{ width: `${zoom}%` }} onError={() => setImgSrc(null)} />
+          ) : doc?.source_url ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--doc-text-2)', fontSize: 13.5 }}>
+              <p style={{ marginBottom: 12 }}>PDF preview not available for this document.</p>
+              <a href={doc.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-l)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                Open source document <ExtIcon />
+              </a>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--doc-text-3)', fontSize: 13.5 }}>PDF not available</div>
+          )}
+        </div>
+        {doc?.source_local_path && (
+          <div className="g2-pdf-footer">
+            <button className="g2-pdf-nav" onClick={() => setPageNo((p) => Math.max(0, p - 1))} disabled={pageNo <= 0}>‹</button>
+            <button className="g2-pdf-nav" onClick={() => setPageNo((p) => p + 1)}>›</button>
+            <div className="g2-pdf-zoom">
+              <button className="g2-pdf-zoom-btn" onClick={() => setZoom((z) => Math.max(25, z - 25))}>−</button>
+              <span className="g2-pdf-zoom-lbl">{zoom}%</span>
+              <button className="g2-pdf-zoom-btn" onClick={() => setZoom((z) => Math.min(300, z + 25))}>+</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SectionLabel({ children, style }) {
   return (
@@ -42,10 +137,6 @@ function StatusBadge({ status }) {
   );
 }
 
-function hashAbbr(h) {
-  if (!h) return '—';
-  return h.length > 20 ? h.substring(0, 20) + '…' : h;
-}
 
 export default function DocumentDetailPage() {
   const { docId } = useParams();
@@ -59,6 +150,7 @@ export default function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [chunkPage, setChunkPage] = useState(1);
   const [expandedChunk, setExpandedChunk] = useState(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const chunkPageSize = 50;
 
   useEffect(() => {
@@ -80,6 +172,7 @@ export default function DocumentDetailPage() {
       getSupersedeChain(doc.document_family_id).then(setChain).catch(() => {});
     }
   }, [doc?.document_family_id]);
+
 
   if (loading) {
     return <div className="rp-page-head"><h1>Document Detail</h1><p>Loading...</p></div>;
@@ -103,10 +196,41 @@ export default function DocumentDetailPage() {
         {backLabel}
       </Link>
 
-      <h1 style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.015em', margin: '8px 0 4px', color: 'var(--doc-text)', lineHeight: 1.3 }}>
-        {doc.document_title}
-      </h1>
-      <p style={{ fontSize: 13, color: 'var(--doc-text-2)', margin: '0 0 24px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, margin: '8px 0 4px' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.015em', margin: 0, color: 'var(--doc-text)', lineHeight: 1.3 }}>
+          {doc.document_title}
+        </h1>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0, paddingTop: 4 }}>
+          {doc.source_local_path && doc.source_file_format === 'pdf' && (
+            <button
+              onClick={() => setPdfOpen((v) => !v)}
+              style={{
+                padding: '6px 14px', fontSize: 12.5, borderRadius: 4, cursor: 'pointer',
+                background: pdfOpen ? 'var(--accent-l)' : 'transparent',
+                color: pdfOpen ? '#fff' : 'var(--accent-l)',
+                border: '1px solid var(--accent-l)', fontWeight: 500,
+              }}
+            >
+              {pdfOpen ? 'Hide PDF' : 'View PDF'}
+            </button>
+          )}
+          {doc.source_url && (
+            <a
+              href={doc.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                padding: '6px 14px', fontSize: 12.5, borderRadius: 4,
+                background: 'transparent', color: 'var(--doc-text-2)',
+                border: '1px solid var(--doc-border)', textDecoration: 'none', fontWeight: 500,
+              }}
+            >
+              Source ↗
+            </a>
+          )}
+        </div>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--doc-text-2)', margin: '4px 0 24px' }}>
         {doc.issuing_body} · {(doc.document_type || doc.doc_type || '').replace(/-/g, ' ')} · {doc.document_version || 'v1'}
       </p>
 
@@ -121,50 +245,36 @@ export default function DocumentDetailPage() {
           <MetaRow label="Issuing Body">{doc.issuing_body}</MetaRow>
           <MetaRow label="Document Type">{(doc.document_type || doc.doc_type || '—').replace(/-/g, ' ')}</MetaRow>
           <MetaRow label="Version">{doc.document_version || '—'}</MetaRow>
-          <MetaRow label="Publication Date">{formatDate(doc.publication_date)}</MetaRow>
+          <MetaRow label="Publication Date">
+            {isFutureDate(doc.publication_date) ? (
+              <Tooltip tip="Future effective date — this document is not yet in force">
+                <span style={{ cursor: 'help', borderBottom: '1px dashed currentColor' }}>{formatDate(doc.publication_date)}</span>
+              </Tooltip>
+            ) : formatDate(doc.publication_date)}
+          </MetaRow>
           <MetaRow label="Status"><StatusBadge status={doc.ingestion_status} /></MetaRow>
           <MetaRow label="Feed">{doc.feed_id || (doc.corpus_doc ? 'Base corpus' : '—')}</MetaRow>
-          <MetaRow label="Source URL">
-            {doc.source_url ? (
-              <a href={doc.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-l)', fontSize: 12 }}>
-                View source ↗
-              </a>
-            ) : '—'}
-          </MetaRow>
           <MetaRow label="Run ID">
             <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.run_id || '—'}</span>
           </MetaRow>
 
-          <SectionLabel>
-            Source Integrity
+          <SectionLabel>Source Integrity</SectionLabel>
+          <Tooltip tip={
+            <span>
+              <span style={{ display: 'block', marginBottom: 4 }}>Ingestion: {doc.pg_source_hash || 'Not recorded'}</span>
+              <span style={{ display: 'block' }}>Vector store: {doc.qdrant_source_hash || 'Not recorded'}</span>
+            </span>
+          }>
             {doc.hash_match ? (
-              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--ok-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '2px 8px', borderRadius: 3, verticalAlign: 'middle' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--ok-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--ok-tint)', border: '1px solid var(--ok-tint-border)', padding: '2px 8px', borderRadius: 3, cursor: 'help' }}>
                 ✓ Hashes match
               </span>
             ) : (
-              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--err-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '2px 8px', borderRadius: 3, verticalAlign: 'middle' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--err-text)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', padding: '2px 8px', borderRadius: 3, cursor: 'help' }}>
                 ✗ Mismatch
               </span>
             )}
-          </SectionLabel>
-          <div style={{ fontSize: 13 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
-              <Tooltip tip="SHA-256 of the source file recorded at ingestion time (document registry)">
-                <span style={{ color: 'var(--doc-text-2)', cursor: 'help' }}>Ingestion hash</span>
-              </Tooltip>
-              <Tooltip tip={doc.pg_source_hash || 'Not recorded'}>
-                <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.pg_source_hash)}</code>
-              </Tooltip>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--doc-border)', gap: 16 }}>
-              <Tooltip tip="SHA-256 stored in the vector index alongside chunk embeddings">
-                <span style={{ color: 'var(--doc-text-2)', cursor: 'help' }}>Vector store hash</span>
-              </Tooltip>
-              <Tooltip tip={doc.qdrant_source_hash || 'Not recorded'}>
-                <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{hashAbbr(doc.qdrant_source_hash)}</code>
-              </Tooltip>
-            </div>
-          </div>
+          </Tooltip>
 
           {chain && chain.chain && chain.chain.length > 1 && (
             <>
@@ -260,6 +370,10 @@ export default function DocumentDetailPage() {
           )}
         </div>
       </div>
+
+      {pdfOpen && (
+        <PdfModal doc={doc} onClose={() => setPdfOpen(false)} />
+      )}
     </div>
   );
 }

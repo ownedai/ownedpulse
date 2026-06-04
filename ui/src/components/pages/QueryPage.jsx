@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import FilterBar from '../layout/FilterBar';
 import QueryInput from '../query/QueryInput';
 import QueryExpansion from '../query/QueryExpansion';
@@ -98,35 +98,134 @@ function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
   const paragraphs = normalised.split('\n\n').filter((p) => p.trim());
   let legalNote = null;
 
+  function renderInline(line) {
+    const parts = [];
+    const re = /\[(\d+)\]|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(line)) !== null) {
+      if (m.index > last) parts.push(line.slice(last, m.index));
+      if (m[1] !== undefined) {
+        const n = parseInt(m[1], 10);
+        const chunkForN = citations?.find((c) => c.index === n);
+        const isActive = chunkForN && chunkForN.chunk_id === selectedChunkId;
+        parts.push(
+          <span
+            key={`c-${m.index}`}
+            className={`g2v2-cmark${isActive ? ' on' : ''}`}
+            data-testid={`citation-${n}`}
+            onClick={() => onCitationClick(n)}
+            title={`Citation [${n}]`}
+          >
+            {n}
+          </span>
+        );
+      } else if (m[2] !== undefined) {
+        const label = m[2];
+        const url = m[3].trim();
+        if (url.startsWith('/')) {
+          parts.push(
+            <Link key={`l-${m.index}`} to={url} style={{ color: 'var(--accent-l)', textDecoration: 'none' }}>
+              {label}
+            </Link>
+          );
+        } else {
+          parts.push(
+            <a key={`l-${m.index}`} href={url} target="_blank" rel="noopener noreferrer"
+              style={{ color: 'var(--accent-l)', textDecoration: 'none' }}>
+              {label}
+            </a>
+          );
+        }
+      } else if (m[4] !== undefined) {
+        parts.push(<strong key={`b-${m.index}`}>{m[4]}</strong>);
+      }
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) parts.push(line.slice(last));
+    return parts;
+  }
+
   const nodes = paragraphs.map((para, i) => {
     if (LEGAL_RE.test(para)) {
       legalNote = para;
       return null;
     }
-    const parts = [];
-    let last = 0;
-    const re = /\[(\d+)\]/g;
-    let m;
-    while ((m = re.exec(para)) !== null) {
-      if (m.index > last) parts.push(para.slice(last, m.index));
-      const n = parseInt(m[1], 10);
-      const chunkForN = citations?.find((c) => c.index === n);
-      const isActive = chunkForN && chunkForN.chunk_id === selectedChunkId;
-      parts.push(
-        <span
-          key={`c-${m.index}`}
-          className={`g2v2-cmark${isActive ? ' on' : ''}`}
-          data-testid={`citation-${n}`}
-          onClick={() => onCitationClick(n)}
-          title={`Citation [${n}]`}
-        >
-          {n}
-        </span>
+    const lines = para.split('\n').filter((l) => l.trim());
+
+    // Numbered list
+    const isNumbered = lines.length >= 1 && /^\d+\./.test(lines[0].trim());
+    if (isNumbered) {
+      // Try to parse as doc-link table: N. [title](url) · version · date
+      const isDateStr = (s) => /^\d{2}\/\d{2}\/\d{4}$/.test(s.trim());
+      const parsedRows = lines.map(line => {
+        const content = line.replace(/^\d+\.\s*/, '');
+        const m = content.match(/^\[([^\]]+)\]\(\s*([^)]+?)\s*\)(.*)/);
+        if (!m) return null;
+        const parts = m[3].split(/\s*·\s*/).filter(Boolean);
+        let version = null, date = null;
+        if (parts.length >= 2) { version = parts[0]; date = parts[1]; }
+        else if (parts.length === 1) {
+          if (isDateStr(parts[0])) date = parts[0]; else version = parts[0];
+        }
+        return { title: m[1], url: m[2].trim(), version, date };
+      });
+
+      if (parsedRows.every(r => r !== null)) {
+        const hasVersion = parsedRows.some(r => r.version);
+        const hasDate = parsedRows.some(r => r.date);
+        return (
+          <table key={i} className="rp-list-table">
+            <thead>
+              <tr>
+                <th className="col-n">#</th>
+                <th>Document</th>
+                {hasVersion && <th className="col-ver">Version</th>}
+                {hasDate && <th className="col-date">Published</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {parsedRows.map((row, j) => (
+                <tr key={j}>
+                  <td className="col-n">{j + 1}</td>
+                  <td>
+                    <Link to={row.url} className="rp-list-link">{row.title}</Link>
+                  </td>
+                  {hasVersion && <td className="col-ver">{row.version || '—'}</td>}
+                  {hasDate && <td className="col-date">{row.date || '—'}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      }
+
+      return (
+        <ol key={i} style={{ paddingLeft: 20, margin: '0 0 12px' }}>
+          {lines.map((line, j) => (
+            <li key={j} style={{ marginBottom: 5, lineHeight: 1.6 }}>
+              {renderInline(line.replace(/^\d+\.\s*/, ''))}
+            </li>
+          ))}
+        </ol>
       );
-      last = m.index + m[0].length;
     }
-    if (last < para.length) parts.push(para.slice(last));
-    return <p key={i}>{parts}</p>;
+
+    // Bullet list
+    const isBullet = lines.length >= 1 && lines[0].trim().startsWith('- ');
+    if (isBullet) {
+      return (
+        <ul key={i} style={{ paddingLeft: 20, margin: '0 0 12px' }}>
+          {lines.map((line, j) => (
+            <li key={j} style={{ marginBottom: 5, lineHeight: 1.6 }}>
+              {renderInline(line.replace(/^-\s*/, ''))}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    return <p key={i}>{renderInline(lines.join(' '))}</p>;
   }).filter(Boolean);
 
   return { nodes, legalNote };

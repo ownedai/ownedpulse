@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation } from 'react-router-dom';
 import Logo from '../common/Logo';
 import useHistory from '../../hooks/useHistory';
 import useCorpusStats from '../../hooks/useCorpusStats';
 import { formatDate, formatDateTime } from '../../dateFormat';
-import { getAppVersion } from '../../api/client';
+import { getAppVersion, getAdminModels, updateActiveModel } from '../../api/client';
 
 function relativeTime(iso) {
   if (!iso) return '';
@@ -57,6 +58,103 @@ const SettingsIcon = () => (
   </svg>
 );
 
+const SwapIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/>
+  </svg>
+);
+
+function ModelPickerModal({ current, onClose, onChanged }) {
+  const [models, setModels] = useState([]);
+  const [selected, setSelected] = useState(current);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    getAdminModels()
+      .then(d => {
+        setModels(d.available_models || []);
+        setSelected(d.active_model || current);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError('Could not reach Ollama');
+        setLoading(false);
+      });
+  }, [current]);
+
+  async function handleApply() {
+    if (!selected || selected === current) { onClose(); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await updateActiveModel(selected);
+      setDone(true);
+      onChanged(selected);
+      setTimeout(onClose, 1400);
+    } catch (e) {
+      setError(e.message || 'Failed to update model');
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="rp-modal-back" onClick={onClose}>
+      <div className="rp-model-modal" onClick={e => e.stopPropagation()}>
+        <div className="rp-model-modal-hd">
+          <span>Change LLM model</span>
+          <button className="rp-model-modal-x" onClick={onClose}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {loading && <div className="rp-model-modal-msg muted">Loading available models…</div>}
+        {!loading && error && <div className="rp-model-modal-msg err">{error}</div>}
+
+        {!loading && !error && !done && (
+          <div className="rp-model-modal-list">
+            {models.map(m => (
+              <div
+                key={m}
+                className={`rp-model-row${selected === m ? ' sel' : ''}`}
+                onClick={() => setSelected(m)}
+              >
+                <span className="rp-model-radio">{selected === m ? '●' : '○'}</span>
+                <span className="rp-model-name">{m}</span>
+                {m === current && <span className="rp-model-active-badge">active</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {done && (
+          <div className="rp-model-modal-msg ok">
+            ✓ Switched to {selected} — loading into Ollama…
+          </div>
+        )}
+
+        {!loading && !done && (
+          <div className="rp-model-modal-ft">
+            <button className="rp-model-btn cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            <button
+              className="rp-model-btn apply"
+              onClick={handleApply}
+              disabled={saving || !selected || selected === current}
+            >
+              {saving ? 'Applying…' : 'Apply'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 const NAV_ITEMS = [
   { to: '/history', label: 'Query Log', Icon: SearchIcon },
   { to: '/corpus', label: 'Corpus', Icon: DatabaseIcon },
@@ -71,9 +169,15 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
   const { stats } = useCorpusStats();
   const isQueryPage = pathname === '/';
   const [appVersion, setAppVersion] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   useEffect(() => {
     getAppVersion().then((d) => setAppVersion(d.version)).catch(() => {});
   }, []);
+
+  function handleModelChanged(newModel) {
+    modelStatus.recheck?.();
+  }
 
   return (
     <aside className="rp-sidebar">
@@ -129,8 +233,17 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
         <div className="rp-status-section-lbl">System</div>
 
 
-        <div className="row">
-          <span className="k">LLM</span>
+        <div className="row rp-llm-row">
+          <span className="k" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            LLM
+            <button
+              className="rp-model-swap-btn"
+              title="Change model"
+              onClick={() => setPickerOpen(true)}
+            >
+              <SwapIcon />
+            </button>
+          </span>
           <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span
               className={`rp-model-dot${modelStatus.loaded ? ' loaded' : ''}`}
@@ -139,6 +252,13 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
             {modelStatus.model || 'phi4:14b-q8'}
           </span>
         </div>
+        {pickerOpen && (
+          <ModelPickerModal
+            current={modelStatus.model}
+            onClose={() => setPickerOpen(false)}
+            onChanged={handleModelChanged}
+          />
+        )}
         <div className="row">
           <span className="k">Embed</span>
           <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

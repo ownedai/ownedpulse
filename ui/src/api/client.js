@@ -122,6 +122,20 @@ export function getSupersedeChain(familyId) {
   return request(`/api/corpus/supersede/${encodeURIComponent(familyId)}`);
 }
 
+export function deferDocument(docId) {
+  return request(`/api/corpus/documents/${encodeURIComponent(docId)}/ingestion-status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'deferred' }),
+  });
+}
+
+export function resumeDocument(docId) {
+  return request(`/api/corpus/documents/${encodeURIComponent(docId)}/ingestion-status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'failed' }),
+  });
+}
+
 // ── Admin routes ─────────────────────────────────────────────────────────────
 
 export function getAdminHealth() {
@@ -238,4 +252,8 @@ export function getRunDocuments(runId, page = 1, pageSize = 25) {
 
 export function getRunInfo(runId) {
   return request(`/api/ingestions/runs/${encodeURIComponent(runId)}`);
+}
+
+export function getDocSpans(docId) {
+  return request(`/api/ingestions/spans/${encodeURIComponent(docId)}`);
 }

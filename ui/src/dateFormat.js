@@ -30,3 +30,21 @@ export function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+export function isFutureDate(iso) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return false;
+  return d > new Date();
+}
+
+// Convert Python logging UTC timestamps (YYYY-MM-DD HH:MM:SS,mmm) to local time
+export function convertLogTimestamps(text) {
+  if (!text) return text;
+  return text.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}),(\d+)/g, (match, date, time, ms) => {
+    const d = new Date(`${date}T${time}Z`);
+    if (isNaN(d.getTime())) return match;
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())},${ms}`;
+  });
+}

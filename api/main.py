@@ -8,7 +8,7 @@ import re
 import uuid
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as _date, timedelta as _timedelta
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -25,7 +25,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.07"
+APP_VERSION = "0.8.08"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -488,15 +488,9 @@ def build_qdrant_filter(filters: QueryFilters | None) -> Optional[Filter]:
                 FieldCondition(key="document_type", match=MatchValue(value=filters.document_type))
             )
 
-        if filters.date_from or filters.date_to:
-            date_range = {}
-            if filters.date_from:
-                date_range["gte"] = filters.date_from
-            if filters.date_to:
-                date_range["lte"] = filters.date_to
-            conditions.append(
-                FieldCondition(key="publication_date", range=Range(**date_range))
-            )
+        # publication_date is stored as an ISO string in Qdrant — Range/DatetimeRange
+        # don't work on keyword fields. Date filtering is applied post-retrieval
+        # (CONTENT path) and via PostgreSQL (METADATA path).
 
     return Filter(must=conditions)
 
@@ -544,6 +538,115 @@ def deduplicate_chunks(chunks: list[dict], top_n: int = 8) -> list[dict]:
 
     deduped = sorted(seen.values(), key=lambda c: c["score"], reverse=True)
     return deduped[:top_n]
+
+
+# ── Supersede-pair detection ──────────────────────────────────────────────────
+
+def detect_supersede_pair(chunks: list[dict], pg_conn) -> dict | None:
+    """Check retrieved chunks for a document_family_id. If found, resolve the
+    full family from PostgreSQL and return a supersede_context dict.
+
+    Returns None when no supersede pair is detected — caller is unaffected.
+    Only issues one PG query when a family is triggered; zero queries otherwise.
+    """
+    # Scan chunk payloads for a non-null document_family_id (already in Qdrant payload).
+    family_id = None
+    triggered_by = None
+    for chunk in chunks:
+        fid = chunk.get("document_family_id") or ""
+        if fid:
+            family_id = fid
+            triggered_by = chunk.get("document_id", "")
+            break
+
+    if not family_id:
+        return None
+
+    try:
+        cur = pg_conn.cursor()
+        cur.execute(
+            """SELECT document_id, document_family_id, document_status,
+                      document_version,
+                      metadata_json->>'document_title' AS document_title
+               FROM document_registry
+               WHERE document_family_id = %s
+               ORDER BY CASE WHEN document_status = 'superseded' THEN 0 ELSE 1 END,
+                        document_id""",
+            (family_id,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+    except Exception:
+        return None
+
+    if len(rows) < 2:
+        # Family exists but only one member in registry — not a true supersede pair.
+        return None
+
+    members = [
+        {
+            "document_id": r[0],
+            "document_family_id": r[1],
+            "status": r[2],
+            "version": r[3] or "",
+            "title": strip_title_suffix(r[4] or r[0]),
+        }
+        for r in rows
+    ]
+
+    return {
+        "family_id": family_id,
+        "members": members,
+        "triggered_by": triggered_by,
+    }
+
+
+def fetch_family_supplement_chunks(missing_doc_id: str, limit: int = 5) -> list[dict]:
+    """Fetch a representative sample of chunks from a family member that did not
+    appear in the semantic results. Uses scroll (no query vector needed).
+    Prefers chunks with a non-null clause_id.
+    """
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    points, _ = client.scroll(
+        collection_name=QDRANT_COLLECTION,
+        scroll_filter=Filter(
+            must=[FieldCondition(key="document_id", match=MatchValue(value=missing_doc_id))]
+        ),
+        limit=50,
+        with_payload=True,
+    )
+    if not points:
+        return []
+
+    # Prefer chunks that have a clause_id, then fall back to any.
+    with_clause = [p for p in points if p.payload and p.payload.get("clause_id")]
+    candidates = with_clause if with_clause else points
+    selected = candidates[:limit]
+
+    return [
+        {"chunk_id": str(p.id), "score": 0.0, "supplemented": True, **p.payload}
+        for p in selected
+    ]
+
+
+def build_supersede_framing(supersede_context: dict) -> str:
+    """Return the framing block prepended to the generation prompt when a
+    supersede pair is detected. Empty string when context is None."""
+    if not supersede_context:
+        return ""
+    superseded = next((m for m in supersede_context["members"] if m["status"] == "superseded"), None)
+    active = next((m for m in supersede_context["members"] if m["status"] != "superseded"), None)
+    if not superseded or not active:
+        return ""
+    lines = [
+        "NOTE: This query involves a superseded document pair.",
+        f"[SUPERSEDED] {superseded['title']} ({superseded['version']}) — replaced by the document below.",
+        f"[ACTIVE]     {active['title']} ({active['version']}) — current version.",
+        "When answering, distinguish clearly between the two versions. "
+        "If the question asks about changes, compare them explicitly.",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 # ── LLM answer generation ─────────────────────────────────────────────────────
@@ -872,8 +975,38 @@ async def _run_content_query(
             chunks = await retrieve_chunks(sq, qdrant_filter, retrieval.top_k, retrieval.score_threshold)
             all_chunks.extend(chunks)
 
+        # Step 3b: Post-retrieval date filtering (Qdrant stores dates as strings,
+        # so date range must be applied here rather than in the Qdrant query)
+        if filters.date_from or filters.date_to:
+            def _in_date_range(chunk):
+                d = chunk.get("publication_date") or ""
+                if filters.date_from and d and d < filters.date_from:
+                    return False
+                if filters.date_to and d and d > filters.date_to:
+                    return False
+                return True
+            all_chunks = [c for c in all_chunks if _in_date_range(c)]
+
         # Step 4: Deduplicate — best score per document_id, top 8
         deduped_chunks = deduplicate_chunks(all_chunks, top_n=8)
+
+        # Step 4b: Supersede-pair detection — zero overhead when no family present
+        supersede_context = None
+        try:
+            _pg_sup = get_pg_conn()
+            supersede_context = detect_supersede_pair(deduped_chunks, _pg_sup)
+            if supersede_context:
+                # Determine which family member is absent from semantic results
+                retrieved_doc_ids = {c.get("document_id") for c in deduped_chunks}
+                for member in supersede_context["members"]:
+                    if member["document_id"] not in retrieved_doc_ids:
+                        supplement = fetch_family_supplement_chunks(member["document_id"])
+                        deduped_chunks = deduped_chunks + supplement
+                        break
+            _pg_sup.close()
+        except Exception:
+            supersede_context = None
+
         t_retrieval2 = _time.monotonic()
 
         if lf and lf_trace:
@@ -919,7 +1052,8 @@ async def _run_content_query(
             return result
 
         context = build_context(deduped_chunks)
-        prompt = f"Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
+        framing = build_supersede_framing(supersede_context)
+        prompt = f"{framing}Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
         t_llm = _time.monotonic()
         answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V6, return_usage=True)
         t_llm2 = _time.monotonic()
@@ -980,6 +1114,7 @@ async def _run_content_query(
             "sub_queries": sub_queries,
             "answer": answer.strip(),
             "citations": all_citations,
+            "supersede_context": supersede_context,
             "retrieval_params_applied": {
                 "query_depth": retrieval.query_depth,
                 "top_k": retrieval.top_k,
@@ -997,6 +1132,41 @@ async def _run_content_query(
         except Exception:
             pass
         raise
+
+
+def _infer_date_range(query_lower: str, existing_from=None, existing_to=None):
+    """Parse natural-language date expressions and return (date_from_iso, date_to_iso).
+    Returns the existing values unchanged if they are already set."""
+    if existing_from or existing_to:
+        return existing_from, existing_to
+    today = _date.today()
+    m = re.search(r'last\s+(\d+)\s+days?', query_lower)
+    if m:
+        return (today - _timedelta(days=int(m.group(1)))).isoformat(), None
+    m = re.search(r'last\s+(\d+)\s+weeks?', query_lower)
+    if m:
+        return (today - _timedelta(weeks=int(m.group(1)))).isoformat(), None
+    m = re.search(r'last\s+(\d+)\s+months?', query_lower)
+    if m:
+        try:
+            from dateutil.relativedelta import relativedelta as _rd
+            return (today - _rd(months=int(m.group(1)))).isoformat(), None
+        except ImportError:
+            return (today - _timedelta(days=int(m.group(1)) * 30)).isoformat(), None
+    m = re.search(r'(last|past)\s+year', query_lower)
+    if m:
+        try:
+            from dateutil.relativedelta import relativedelta as _rd
+            return (today - _rd(years=1)).isoformat(), None
+        except ImportError:
+            return (today - _timedelta(days=365)).isoformat(), None
+    if 'this year' in query_lower:
+        return _date(today.year, 1, 1).isoformat(), None
+    m = re.search(r'\bin\s+(20\d{2})\b', query_lower)
+    if m:
+        yr = int(m.group(1))
+        return _date(yr, 1, 1).isoformat(), _date(yr, 12, 31).isoformat()
+    return existing_from, existing_to
 
 
 async def _run_metadata_query(
@@ -1055,13 +1225,19 @@ async def _run_metadata_query(
         elif any(w in query_lower for w in ["reflection paper", "reflection papers"]):
             inferred_doc_type = "reflection-paper"
 
-    # Rebuild filter using inferred values when query text contains agency/type hints
-    if inferred_agency != filters.agency or inferred_doc_type != filters.document_type:
+    # Infer date range from query text when not set by filter bar
+    inferred_date_from, inferred_date_to = _infer_date_range(
+        query_lower, filters.date_from, filters.date_to
+    )
+
+    # Rebuild filter using inferred values when query text contains agency/type/date hints
+    if (inferred_agency != filters.agency or inferred_doc_type != filters.document_type
+            or inferred_date_from != filters.date_from or inferred_date_to != filters.date_to):
         inferred_filters = QueryFilters(
             agency=inferred_agency,
             document_type=inferred_doc_type,
-            date_from=filters.date_from,
-            date_to=filters.date_to,
+            date_from=inferred_date_from,
+            date_to=inferred_date_to,
         )
         qdrant_filter = build_qdrant_filter(inferred_filters)
     else:
@@ -1092,15 +1268,25 @@ async def _run_metadata_query(
                 else:
                     params.append([inferred_filters.agency])
             if inferred_filters.document_type:
-                # document_registry stores underscored doc_type; map hyphenated → underscored
+                # Map hyphenated UI values to the actual doc_type values in document_registry.
+                # "guidance" covers both old guidance_pdf and new guidance ingestion paths.
                 doc_type_map = {
-                    "guidance": "guidance_pdf",
-                    "press-release": "press_release",
-                    "reflection-paper": "reflection_paper",
+                    "guidance": ["guidance", "guidance_pdf"],
+                    "press-release": ["press_release"],
+                    "reflection-paper": ["reflection_paper"],
                 }
-                pg_doc_type = doc_type_map.get(inferred_filters.document_type, inferred_filters.document_type.replace("-", "_"))
-                where_clauses.append("doc_type = %s")
-                params.append(pg_doc_type)
+                pg_doc_types = doc_type_map.get(
+                    inferred_filters.document_type,
+                    [inferred_filters.document_type.replace("-", "_")]
+                )
+                where_clauses.append("doc_type = ANY(%s)")
+                params.append(pg_doc_types)
+            if inferred_filters.date_from:
+                where_clauses.append("publication_date >= %s::date")
+                params.append(inferred_filters.date_from)
+            if inferred_filters.date_to:
+                where_clauses.append("publication_date <= %s::date")
+                params.append(inferred_filters.date_to)
             where_sql = "WHERE " + " AND ".join(where_clauses)
             _cur.execute(
                 f"SELECT COUNT(*) FROM document_registry {where_sql}", params
@@ -1168,8 +1354,14 @@ async def _run_metadata_query(
 
         agency_str = f"from {inferred_filters.agency}" if inferred_filters.agency else "across all agencies"
         type_str = f" {inferred_filters.document_type} " if inferred_filters.document_type else " "
+        if inferred_filters.date_from and inferred_filters.date_to:
+            date_str = f" published between {inferred_filters.date_from} and {inferred_filters.date_to}"
+        elif inferred_filters.date_from:
+            date_str = f" published since {inferred_filters.date_from}"
+        else:
+            date_str = ""
 
-        answer = f"There are {total}{type_str}documents {agency_str} in the indexed corpus."
+        answer = f"There are {total}{type_str}documents {agency_str}{date_str} in the indexed corpus."
 
     elif is_current_version:
         # Look up document version from PostgreSQL document_registry
@@ -1266,56 +1458,113 @@ async def _run_metadata_query(
             answer = f"Unable to look up document versions: {e}"
 
     elif is_list:
-        # Scroll through Qdrant to list matching documents
-        scroll_result = client.scroll(
-            collection_name=QDRANT_COLLECTION,
-            scroll_filter=qdrant_filter,
-            limit=20,
-            with_payload=True,
-        )
-        points, _ = scroll_result
-        seen_docs = {}
-        for point in points:
-            payload = point.payload or {}
-            doc_id = payload.get("document_id", "")
-            if doc_id and doc_id not in seen_docs:
-                seen_docs[doc_id] = payload
+        # List documents from PostgreSQL with all inferred filters applied
+        import psycopg2 as _psycopg2
+        pg_rows = []
+        try:
+            _conn = _psycopg2.connect(
+                host=POSTGRES_HOST, port=POSTGRES_PORT,
+                dbname=POSTGRES_DB, user=POSTGRES_USER,
+                password=POSTGRES_PASSWORD, connect_timeout=5
+            )
+            _cur = _conn.cursor()
+            where_clauses = ["ingestion_status = 'indexed'"]
+            params = []
+            if inferred_filters.agency:
+                if inferred_filters.agency == "EMA":
+                    where_clauses.append("issuing_body = ANY(%s)")
+                    params.append(["EMA", "EU-Commission"])
+                else:
+                    where_clauses.append("issuing_body = ANY(%s)")
+                    params.append([inferred_filters.agency])
+            if inferred_filters.document_type:
+                doc_type_map = {
+                    "guidance": ["guidance", "guidance_pdf"],
+                    "press-release": ["press_release"],
+                    "reflection-paper": ["reflection_paper"],
+                }
+                pg_doc_types = doc_type_map.get(
+                    inferred_filters.document_type,
+                    [inferred_filters.document_type.replace("-", "_")]
+                )
+                where_clauses.append("doc_type = ANY(%s)")
+                params.append(pg_doc_types)
+            if inferred_filters.date_from:
+                where_clauses.append("publication_date >= %s::date")
+                params.append(inferred_filters.date_from)
+            if inferred_filters.date_to:
+                where_clauses.append("publication_date <= %s::date")
+                params.append(inferred_filters.date_to)
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+            _cur.execute(
+                f"""SELECT document_id,
+                           metadata_json->>'document_title' as title,
+                           issuing_body, document_version,
+                           publication_date, source_url
+                    FROM document_registry {where_sql}
+                    ORDER BY publication_date DESC NULLS LAST
+                    LIMIT 50""",
+                params
+            )
+            pg_rows = _cur.fetchall()
+            _cur.close()
+            _conn.close()
+        except Exception as _e:
+            logger.warning(f"Metadata list PG query failed: {_e}")
+
+        def _fmt_date(d):
+            if not d:
+                return ""
+            s = str(d)[:10]
+            try:
+                from datetime import date as _d
+                parts = s.split("-")
+                return f"{parts[2]}/{parts[1]}/{parts[0]}"
+            except Exception:
+                return s
 
         items = []
-        for i, (doc_id, payload) in enumerate(seen_docs.items(), 1):
-            title = strip_title_suffix(payload.get("document_title", "Unknown"))
-            agency = normalise_agency(payload.get("issuing_body", "Unknown"))
-            version = payload.get("document_version", "")
-            pub_date = payload.get("publication_date", "")
-            doc_type = payload.get("document_type", "")
-
-            items.append(f"{i}. {title} — {agency}{', ' + version if version else ''}{' (' + pub_date + ')' if pub_date else ''}")
-
+        for i, row in enumerate(pg_rows, 1):
+            doc_id, title, agency, version, pub_date, src_url = row
+            title_clean = strip_title_suffix(title or "") or "Untitled"
+            agency_norm = normalise_agency(agency or "")
+            date_part = f" · {_fmt_date(pub_date)}" if pub_date else ""
+            version_part = f" · {version}" if version else ""
+            items.append(
+                f"{i}. [{title_clean}](/corpus/{doc_id}){version_part}{date_part}"
+            )
             citations.append({
                 "index": i,
-                "chunk_id": str(point.id),
+                "chunk_id": "",
                 "document_id": doc_id,
                 "chunk_text": "",
-                "document_title": title or "Untitled",
-                "issuing_body": agency,
+                "document_title": title_clean,
+                "issuing_body": agency_norm,
                 "document_version": version,
-                "clause_id": payload.get("clause_id"),
-                "publication_date": pub_date,
-                "page_no": payload.get("page_no"),
-                "chunk_index": payload.get("chunk_index"),
-                "char_offset_start": payload.get("char_offset_start"),
-                "char_offset_end": payload.get("char_offset_end"),
-                "chunked_at": payload.get("chunked_at"),
+                "clause_id": None,
+                "publication_date": str(pub_date)[:10] if pub_date else None,
+                "page_no": None,
+                "chunk_index": None,
+                "char_offset_start": None,
+                "char_offset_end": None,
+                "chunked_at": None,
                 "score": 1.0,
                 "cited_by_llm": True,
                 "superseded": False,
                 "superseded_by": None,
-                "source_local_path": payload.get("source_local_path"),
-                "source_url": payload.get("source_url", ""),
+                "source_local_path": None,
+                "source_url": src_url or "",
             })
 
         if items:
-            answer = "Documents matching your query:\n\n" + "\n".join(items)
+            agency_str = f"{inferred_filters.agency} " if inferred_filters.agency else ""
+            type_str = f"{inferred_filters.document_type} " if inferred_filters.document_type else ""
+            if inferred_filters.date_from:
+                date_str = f" published since {_fmt_date(inferred_filters.date_from)}"
+            else:
+                date_str = ""
+            header = f"{len(items)} {agency_str}{type_str}document{'s' if len(items) != 1 else ''}{date_str}:"
+            answer = header + "\n\n" + "\n".join(items)
         else:
             answer = "No documents found matching your criteria."
     else:

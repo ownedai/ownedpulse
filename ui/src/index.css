@@ -507,6 +507,130 @@ body {
   animation: none;
 }
 
+/* Swap icon button — appears on LLM row hover */
+.rp-model-swap-btn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--shell-muted);
+  display: inline-flex;
+  align-items: center;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.rp-model-swap-btn:hover { color: var(--accent-d); background: rgba(255,255,255,0.07); }
+
+/* Model picker modal */
+.rp-modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.rp-model-modal {
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  width: 340px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+}
+.rp-model-modal-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--shell-border);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: #E2E8F0;
+}
+.rp-model-modal-x {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--shell-muted);
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 4px;
+}
+.rp-model-modal-x:hover { color: #E2E8F0; background: rgba(255,255,255,0.07); }
+.rp-model-modal-list {
+  overflow-y: auto;
+  padding: 6px 0;
+  max-height: 320px;
+}
+.rp-model-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--shell-muted);
+  transition: background 0.1s;
+}
+.rp-model-row:hover { background: rgba(255,255,255,0.06); color: #E2E8F0; }
+.rp-model-row.sel { color: #E2E8F0; }
+.rp-model-radio { font-size: 10px; color: var(--accent-d); flex-shrink: 0; line-height: 1; }
+.rp-model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-model-active-badge {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--accent-d);
+  background: rgba(96,165,250,0.14);
+  border-radius: 3px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+.rp-model-modal-msg {
+  padding: 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rp-model-modal-msg.muted { color: var(--shell-muted); }
+.rp-model-modal-msg.err { color: #f87171; }
+.rp-model-modal-msg.ok { color: #4ade80; }
+.rp-model-modal-ft {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--shell-border);
+}
+.rp-model-btn {
+  border-radius: 5px;
+  padding: 7px 16px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+.rp-model-btn.cancel {
+  background: none;
+  border: 1px solid var(--shell-border);
+  color: var(--shell-muted);
+}
+.rp-model-btn.cancel:hover { color: #E2E8F0; border-color: #64748B; }
+.rp-model-btn.apply { background: var(--accent-d); color: #0F172A; }
+.rp-model-btn.apply:hover:not(:disabled) { background: #93C5FD; }
+.rp-model-btn.apply:disabled { opacity: 0.45; cursor: not-allowed; }
+
 .rp-status-divider {
   border: none;
   border-top: 1px solid var(--shell-border);
@@ -3307,6 +3431,20 @@ a.ag-row:hover .n {
 .g2v2-routing-label { font-family: var(--mono); font-size: 11px; color: var(--doc-text-3); }
 
 .g2v2-body p { font-size: 16px; line-height: 1.78; color: var(--doc-text); margin: 0 0 15px; letter-spacing: -0.003em; }
+
+/* Document list table — rendered when answer contains numbered doc links */
+.rp-list-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 18px; }
+.rp-list-table thead tr { border-bottom: 1.5px solid var(--doc-border-strong); }
+.rp-list-table th { font-family: var(--mono); font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--doc-text-3); padding: 0 10px 7px 0; text-align: left; }
+.rp-list-table td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--doc-border); vertical-align: middle; line-height: 1.4; }
+.rp-list-table tbody tr:last-child td { border-bottom: none; }
+.rp-list-table tbody tr:hover td { background: var(--doc-hover); }
+.rp-list-table .col-n { width: 28px; text-align: right; padding-right: 14px; font-family: var(--mono); font-size: 11px; color: var(--doc-text-3); }
+.rp-list-table .col-ver { width: 100px; font-size: 12px; color: var(--doc-text-2); }
+.rp-list-table .col-date { width: 90px; font-family: var(--mono); font-size: 11px; color: var(--doc-text-2); white-space: nowrap; }
+.rp-list-link { color: var(--accent-l); text-decoration: none; font-weight: 450; }
+.rp-list-link:hover { text-decoration: underline; }
+
 .g2v2-cmark { font-family: var(--mono); font-size: 10px; color: var(--accent-l); font-weight: 500; vertical-align: super; line-height: 0; cursor: pointer; padding: 0 1px; }
 .g2v2-cmark:hover { text-decoration: underline; }
 .g2v2-cmark.on { color: #fff; background: var(--accent-l); border-radius: 2px; padding: 1px 4px; vertical-align: baseline; font-size: 9.5px; }
@@ -3436,7 +3574,7 @@ a.ag-row:hover .n {
 .g3-subtable tbody tr.docrow:hover td { background: var(--doc-hover); }
 .g3-subtable td.mono { font-family: var(--mono); font-size: 11px; }
 .g3-subtable td.dim { color: var(--doc-text-2); }
-.g3-subtable td .truncate { display: block; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g3-subtable td .truncate { display: inline-block; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .g3-subtable td .reason { color: var(--err-text); font-family: var(--mono); font-size: 10.5px; }
 .g3-subtable .agency-mini { font-family: var(--mono); font-size: 10px; color: var(--doc-text-2); }
 .g3-docchev { color: var(--doc-text-3); display: inline-flex; margin-right: 6px; transition: transform 150ms ease; }
@@ -3449,6 +3587,49 @@ a.ag-row:hover .n {
 .g3-doc-detail .inner .v { color: var(--doc-text); display: flex; align-items: center; gap: 10px; }
 .g3-doc-detail .inner .v a { color: var(--accent-l); text-decoration: none; border-bottom: 1px dashed var(--accent-tint-deep); }
 
+/* Retry badge — amber pill shown on rows with has_retries=true */
+.g3-retry-badge {
+  display: inline-flex; align-items: center;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  background: var(--warn-tint); color: var(--warn-text);
+  border: 1px solid var(--warn-tint-border); border-radius: 3px;
+  cursor: pointer; white-space: nowrap; line-height: 1.6;
+  transition: background 120ms ease, border-color 120ms ease;
+  vertical-align: middle;
+}
+.g3-retry-badge:hover { background: var(--warn-tint-deep); border-color: var(--warn); }
+.g3-retry-badge.open { background: var(--warn-tint-deep); border-color: var(--warn); }
+
+/* Retry expansion row */
+.g3-retry-expand-row td { background: var(--doc-surface); padding: 0; }
+.g3-retry-timeline {
+  padding: 10px 12px 12px 30px;
+  border-bottom: 1px solid var(--doc-border);
+}
+.g3-retry-label {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--doc-text-3); font-weight: 500;
+  margin-bottom: 8px;
+}
+.g3-retry-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 0;
+  font-family: var(--mono); font-size: 11px;
+}
+.g3-retry-num { color: var(--doc-text-3); min-width: 24px; }
+.g3-retry-time { color: var(--doc-text-2); min-width: 140px; }
+.g3-retry-reason {
+  color: var(--err-text); font-size: 10.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 400px;
+}
+.g3-retry-spinner {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--doc-text-2); font-family: var(--mono); font-size: 11px;
+}
+.g3-retry-spinner svg { animation: rp-spin 0.8s linear infinite; }
 
 .g3-pager { display: flex; align-items: center; gap: 16px; padding: 12px 0 4px; font-family: var(--mono); font-size: 11.5px; color: var(--doc-text-2); }
 .g3-pager .size { display: inline-flex; align-items: center; gap: 8px; }

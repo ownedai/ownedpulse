@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getIngestions, getSessionDocuments, getRunDocuments } from '../../api/client';
-import { formatDateTime } from '../../dateFormat';
+import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans } from '../../api/client';
+import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
 const DOCTYPE_LABEL = {
@@ -40,7 +40,44 @@ function SrcPill({ src }) {
   return <span className={`g2-srcpill ${cls}`}>{label}</span>;
 }
 
-function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
+function RetryTimeline({ docId, data, loading, error }) {
+  if (loading) {
+    return (
+      <div className="g3-retry-timeline">
+        <div className="g3-retry-spinner">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 0.8s linear infinite' }}>
+            <path d="M21 12a9 9 0 11-6.219-8.56" />
+          </svg>
+          Loading attempt history…
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="g3-retry-timeline">
+        <span style={{ color: 'var(--err-text)', fontFamily: 'var(--mono)', fontSize: 11 }}>Could not load attempt history</span>
+      </div>
+    );
+  }
+  return (
+    <div className="g3-retry-timeline">
+      <div className="g3-retry-label">Attempt history</div>
+      {(data || []).map((span) => (
+        <div key={span.span_id} className="g3-retry-row">
+          <span className="g3-retry-num">#{span.attempt}</span>
+          <span className="g3-retry-time">{formatDateTime(span.created_at)}</span>
+          <G3Status status={span.status} />
+          {span.failure_reason && (
+            <span className="g3-retry-reason">{span.failure_reason}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetry, retryDataMap, onToggleRetry }) {
   if (loadingDocs) {
     return (
       <table className="g3-subtable">
@@ -78,73 +115,80 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc }) {
         </tr>
       </thead>
       <tbody>
-        {docs.map((d) => (
-          <>
-            <tr
-              key={d.doc_id}
-              className="docrow"
-              data-testid={`ingestion-doc-row-${d.doc_id}`}
-              onClick={() => onToggleDoc(d.doc_id)}
-            >
-              <td>
-                <span className={`g3-docchev ${expandedDoc === d.doc_id ? 'open' : ''}`}><ChevronIcon /></span>
-                <span className="truncate" style={{ display: 'inline', maxWidth: 320 }}>{d.document_title || d.doc_id}</span>
-              </td>
-              <td><span className="agency-mini">{d.agency || '—'}</span></td>
-              <td className="dim">{DOCTYPE_LABEL[d.doc_type] || d.doc_type || '—'}</td>
-              <td><G3Status status={d.ingestion_status} /></td>
-              <td className="num mono">{d.chunk_count > 0 ? d.chunk_count : '—'}</td>
-              <td>{d.failure_reason ? <span className="reason truncate">{d.failure_reason}</span> : <span className="dim">—</span>}</td>
-            </tr>
-            {expandedDoc === d.doc_id && (
-              <tr className="g3-doc-detail" key={`${d.doc_id}-detail`} data-testid={`ingestion-doc-expand-${d.doc_id}`}>
-                <td colSpan={6}>
-                  <div className="inner">
-                    <span className="k">Trace ID</span>
-                    <span className="v">
-                      {d.trace_id
-                        ? <><span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id.slice(0, 16)}…</span>
-                            <button
-                              className={`g3-langfuse`}
-                              data-testid={`ingestion-doc-langfuse-${d.doc_id}`}
-                              title="View in Langfuse"
-                            >
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-                              </svg>
-                              Langfuse ↗
-                            </button></>
-                        : <><span className="dim">—</span>
-                            <button
-                              className="g3-langfuse disabled"
-                              data-testid={`ingestion-doc-langfuse-${d.doc_id}`}
-                              title="Trace not available for this document"
-                              disabled
-                            >
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-                              </svg>
-                              Langfuse ↗
-                            </button></>}
-                    </span>
-                    <span className="k">Source URL</span>
-                    <span className="v">
-                      {d.source_url ? <a href={d.source_url} target="_blank" rel="noreferrer">{d.source_url}</a> : '—'}
-                    </span>
-                    <span className="k">Fetched at</span>
-                    <span className="v">{formatDateTime(d.fetched_at) || '—'}</span>
-                    <span className="k">Parsed at</span>
-                    <span className="v">{formatDateTime(d.parsed_at) || '—'}</span>
-                    <span className="k">Embedding</span>
-                    <span className="v">{d.embedding_model || '—'}</span>
-                    <span className="k">Chunks</span>
-                    <span className="v">{d.chunk_count || 0}</span>
-                  </div>
+        {docs.map((d) => {
+          const retryState = retryDataMap[d.doc_id] || {};
+          const retryOpen = expandedRetry === d.doc_id;
+          return (
+            <>
+              <tr
+                key={d.doc_id}
+                className="docrow"
+                data-testid={`ingestion-doc-row-${d.doc_id}`}
+                onClick={() => onToggleDoc(d.doc_id)}
+              >
+                <td>
+                  <span className={`g3-docchev ${expandedDoc === d.doc_id ? 'open' : ''}`}><ChevronIcon /></span>
+                  <span className="truncate">{d.document_title || d.doc_id}</span>
+                  {d.has_retries && (
+                    <button
+                      className={`g3-retry-badge${retryOpen ? ' open' : ''}`}
+                      data-testid={`ingestion-doc-retry-${d.doc_id}`}
+                      title="Show attempt history"
+                      onClick={(e) => { e.stopPropagation(); onToggleRetry(d.doc_id); }}
+                    >
+                      {d.retry_count} attempts
+                    </button>
+                  )}
+                </td>
+                <td><span className="agency-mini">{d.agency || '—'}</span></td>
+                <td className="dim">{DOCTYPE_LABEL[d.doc_type] || d.doc_type || '—'}</td>
+                <td><G3Status status={d.ingestion_status} /></td>
+                <td className="num mono">{d.chunk_count > 0 ? d.chunk_count : '—'}</td>
+                <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45, paddingTop: 6, paddingBottom: 6 }}>
+                  {d.failure_reason ? <span className="reason">{d.failure_reason}</span> : <span className="dim">—</span>}
                 </td>
               </tr>
-            )}
-          </>
-        ))}
+              {retryOpen && (
+                <tr className="g3-retry-expand-row" key={`${d.doc_id}-retry`} data-testid={`ingestion-doc-retry-expand-${d.doc_id}`}>
+                  <td colSpan={6}>
+                    <RetryTimeline
+                      docId={d.doc_id}
+                      data={retryState.items}
+                      loading={retryState.loading}
+                      error={retryState.error}
+                    />
+                  </td>
+                </tr>
+              )}
+              {expandedDoc === d.doc_id && (
+                <tr className="g3-doc-detail" key={`${d.doc_id}-detail`} data-testid={`ingestion-doc-expand-${d.doc_id}`}>
+                  <td colSpan={6}>
+                    <div className="inner">
+                      <span className="k">Trace ID</span>
+                      <span className="v">
+                        {d.trace_id
+                          ? <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id}</span>
+                          : <span className="dim">—</span>}
+                      </span>
+                      <span className="k">Source URL</span>
+                      <span className="v">
+                        {d.source_url ? <a href={d.source_url} target="_blank" rel="noreferrer">{d.source_url}</a> : '—'}
+                      </span>
+                      <span className="k">Fetched at</span>
+                      <span className="v">{formatDateTime(d.fetched_at) || '—'}</span>
+                      <span className="k">Parsed at</span>
+                      <span className="v">{formatDateTime(d.parsed_at) || '—'}</span>
+                      <span className="k">Embedding</span>
+                      <span className="v">{d.embedding_model || '—'}</span>
+                      <span className="k">Chunks</span>
+                      <span className="v">{d.chunk_count || 0}</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -187,6 +231,29 @@ function SubPager({ page, pageSize, total, onPage, onPageSize }) {
   );
 }
 
+function useRetryState() {
+  const [expandedRetry, setExpandedRetry] = useState(null);
+  const [retryDataMap, setRetryDataMap] = useState({});
+
+  const handleToggleRetry = useCallback(async (docId) => {
+    if (expandedRetry === docId) {
+      setExpandedRetry(null);
+      return;
+    }
+    setExpandedRetry(docId);
+    if (retryDataMap[docId]) return;
+    setRetryDataMap((m) => ({ ...m, [docId]: { loading: true, items: null, error: null } }));
+    try {
+      const data = await getDocSpans(docId);
+      setRetryDataMap((m) => ({ ...m, [docId]: { loading: false, items: data.items || [], error: null } }));
+    } catch {
+      setRetryDataMap((m) => ({ ...m, [docId]: { loading: false, items: null, error: true } }));
+    }
+  }, [expandedRetry, retryDataMap]);
+
+  return { expandedRetry, retryDataMap, handleToggleRetry };
+}
+
 function SessionGroupRow({ item, isOpen, onToggle }) {
   const [docs, setDocs] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
@@ -194,6 +261,7 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
   const [docPageSize, setDocPageSize] = useState(25);
   const [docTotal, setDocTotal] = useState(0);
   const [expandedDoc, setExpandedDoc] = useState(null);
+  const { expandedRetry, retryDataMap, handleToggleRetry } = useRetryState();
   const fetchedRef = useRef(false);
 
   const fetchDocs = useCallback(async (page, pageSize) => {
@@ -241,6 +309,9 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
             loadingDocs={loadingDocs}
             expandedDoc={expandedDoc}
             onToggleDoc={(id) => setExpandedDoc(expandedDoc === id ? null : id)}
+            expandedRetry={expandedRetry}
+            retryDataMap={retryDataMap}
+            onToggleRetry={handleToggleRetry}
           />
           {docTotal > docPageSize && (
             <SubPager page={docPage} pageSize={docPageSize} total={docTotal} onPage={handlePage} onPageSize={handlePageSize} />
@@ -255,6 +326,7 @@ function RssRunRow({ item, isOpen, onToggle }) {
   const [docs, setDocs] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [expandedDoc, setExpandedDoc] = useState(null);
+  const { expandedRetry, retryDataMap, handleToggleRetry } = useRetryState();
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -295,7 +367,7 @@ function RssRunRow({ item, isOpen, onToggle }) {
               whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6,
             }}>
               <div style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>Error detail</div>
-              {item.error_detail}
+              {convertLogTimestamps(item.error_detail)}
             </div>
           )}
           <DocSubTable
@@ -303,6 +375,9 @@ function RssRunRow({ item, isOpen, onToggle }) {
             loadingDocs={loadingDocs}
             expandedDoc={expandedDoc}
             onToggleDoc={(id) => setExpandedDoc(expandedDoc === id ? null : id)}
+            expandedRetry={expandedRetry}
+            retryDataMap={retryDataMap}
+            onToggleRetry={handleToggleRetry}
           />
         </div>
       )}

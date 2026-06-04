@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { getCorpusDocumentsV2 } from '../../api/client';
-import { formatDate } from '../../dateFormat';
+import { getCorpusDocumentsV2, deferDocument, resumeDocument } from '../../api/client';
+import { formatDate, isFutureDate } from '../../dateFormat';
+import Tooltip from '../common/Tooltip';
 import { getStatusConfig } from '../../utils/status';
 
 const AGENCY_OPTS = [
@@ -22,11 +23,12 @@ const DOC_TYPES = [
   { label: 'Other', value: 'other' },
 ];
 const STATUS_OPTS = [
-  { label: 'All statuses', value: null },
+  { label: 'All corpus', value: null },
   { label: 'Indexed', value: 'indexed' },
-  { label: 'Processing', value: 'pending' },
-  { label: 'Error', value: 'error' },
   { label: 'Superseded', value: 'superseded' },
+  { label: 'Failed', value: 'failed' },
+  { label: 'Deferred', value: 'deferred' },
+  { label: 'Processing', value: 'pending' },
 ];
 const DOC_TYPE_LABELS = {
   guidance_pdf: 'Guidance', guidance: 'Guidance',
@@ -171,6 +173,7 @@ export default function CorpusPage() {
   const [appliedDateTo, setAppliedDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [actionBusy, setActionBusy] = useState(null);
 
   useEffect(() => {
     const a = searchParams.get('agency');
@@ -205,6 +208,18 @@ export default function CorpusPage() {
   }, [agency, docType, status, appliedDateFrom, appliedDateTo, page, pageSize]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  async function handleDefer(docId) {
+    setActionBusy(docId);
+    try { await deferDocument(docId); fetchData(); } catch (e) { alert(e.message); }
+    finally { setActionBusy(null); }
+  }
+
+  async function handleResume(docId) {
+    setActionBusy(docId);
+    try { await resumeDocument(docId); fetchData(); } catch (e) { alert(e.message); }
+    finally { setActionBusy(null); }
+  }
 
   const filteredItems = search
     ? items.filter((d) =>
@@ -294,14 +309,15 @@ export default function CorpusPage() {
               <th style={{ width: 95 }}>Published</th>
               <th style={{ width: 90 }}>Status</th>
               <th style={{ width: 55, textAlign: 'right' }}>Chunks</th>
+              <th style={{ width: 70 }}></th>
             </tr>
           </thead>
           <tbody>
             {loading && filteredItems.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>Loading…</td></tr>
             )}
             {!loading && filteredItems.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>No documents found.</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>No documents found.</td></tr>
             )}
             {filteredItems.map((doc) => (
               <tr key={doc.document_id}>
@@ -321,9 +337,45 @@ export default function CorpusPage() {
                   {DOC_TYPE_LABELS[doc.doc_type] || DOC_TYPE_LABELS[doc.document_type] || (doc.doc_type || '—').replace(/_/g, ' ')}
                 </td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version || '—'}</td>
-                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
+                  {isFutureDate(doc.publication_date) ? (
+                    <Tooltip tip="Future effective date — this document is not yet in force">
+                      <span style={{ cursor: 'help', borderBottom: '1px dashed currentColor' }}>{formatDate(doc.publication_date)}</span>
+                    </Tooltip>
+                  ) : formatDate(doc.publication_date)}
+                </td>
                 <td><StatusBadge status={doc.ingestion_status} /></td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.chunk_count || '—'}</td>
+                <td style={{ textAlign: 'right' }}>
+                  {doc.ingestion_status === 'failed' && (
+                    <button
+                      disabled={actionBusy === doc.document_id}
+                      onClick={(e) => { e.preventDefault(); handleDefer(doc.document_id); }}
+                      style={{
+                        fontSize: 11, fontFamily: 'var(--mono)', padding: '2px 8px',
+                        borderRadius: 3, cursor: 'pointer', border: '1px solid var(--doc-border)',
+                        background: 'transparent', color: 'var(--doc-text-2)',
+                        opacity: actionBusy === doc.document_id ? 0.5 : 1,
+                      }}
+                    >
+                      Defer
+                    </button>
+                  )}
+                  {doc.ingestion_status === 'deferred' && (
+                    <button
+                      disabled={actionBusy === doc.document_id}
+                      onClick={(e) => { e.preventDefault(); handleResume(doc.document_id); }}
+                      style={{
+                        fontSize: 11, fontFamily: 'var(--mono)', padding: '2px 8px',
+                        borderRadius: 3, cursor: 'pointer', border: '1px solid var(--accent-l)',
+                        background: 'transparent', color: 'var(--accent-l)',
+                        opacity: actionBusy === doc.document_id ? 0.5 : 1,
+                      }}
+                    >
+                      Resume
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
