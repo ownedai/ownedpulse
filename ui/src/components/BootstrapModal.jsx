@@ -206,8 +206,14 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setStopping(true);
     try {
       await stopBootstrapSession(sessionId);
-    } catch (_) {}
-    // Worker will set status to 'failed' after current doc; SSE will transition to complete
+      // Backend confirmed stop — close SSE and transition directly
+      if (esRef.current) { esRef.current.close(); esRef.current = null; }
+      setProgress(prev => ({ ...prev, status: 'failed' }));
+      setUiMode('complete');
+    } catch (_) {
+      // If stop API failed (e.g. session already finished), SSE will still pick up the terminal status
+      setStopping(false);
+    }
   }
 
   // Derive year range for custom dropdowns from actual feed date_min values
@@ -265,8 +271,9 @@ export default function BootstrapModal({ onClose, onStarted }) {
           {/* ── Running / complete view ── */}
           {(uiMode === 'running' || uiMode === 'complete') && (() => {
             const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
-            const allFailed = progress.failed > 0 && progress.succeeded === 0;
-            const partial   = progress.failed > 0 && progress.succeeded > 0;
+            const wasStopped = stopping && uiMode === 'complete';
+            const allFailed = !wasStopped && progress.failed > 0 && progress.succeeded === 0;
+            const partial   = !wasStopped && progress.failed > 0 && progress.succeeded > 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Status badge + session id + stop button */}
@@ -276,8 +283,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
                       {stopping ? 'Stopping…' : 'Running'}
                     </span>
                   ) : (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
-                      {allFailed ? 'Failed' : partial ? 'Completed with errors' : 'Complete'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
+                      {wasStopped ? 'Stopped' : allFailed ? 'Failed' : partial ? 'Completed with errors' : 'Complete'}
                     </span>
                   )}
                   {sessionId && (
@@ -342,8 +349,11 @@ export default function BootstrapModal({ onClose, onStarted }) {
                 )}
 
                 {uiMode === 'complete' && (
-                  <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
-                    {progress.succeeded} succeeded · {progress.failed} failed{progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}
+                  <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
+                    {wasStopped
+                      ? `Stopped after ${progress.processed} / ${progress.total} documents — ${progress.succeeded} succeeded · ${progress.failed} failed${progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}`
+                      : `${progress.succeeded} succeeded · ${progress.failed} failed${progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}`
+                    }
                     {(allFailed || partial) && ' — check Run Log for details'}
                   </div>
                 )}
