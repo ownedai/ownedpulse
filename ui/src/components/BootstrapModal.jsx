@@ -106,7 +106,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   // Running / complete state
   const [uiMode, setUiMode]       = useState('config'); // 'config' | 'running' | 'complete'
   const [sessionId, setSessionId] = useState(null);
-  const [progress, setProgress]   = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
+  const [progress, setProgress]   = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);
   const [stopping, setStopping]   = useState(false);
 
@@ -168,7 +168,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
       const result = await postSourcesBootstrap(payload);
 
       setSessionId(result.session_id);
-      setProgress({ total: result.total_docs, processed: 0, succeeded: 0, failed: 0, status: 'running' });
+      setProgress({ total: result.total_docs, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'running' });
       setUiMode('running');
       setSubmitting(false);
       onStarted?.(result);
@@ -317,13 +317,19 @@ export default function BootstrapModal({ onClose, onStarted }) {
                   <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 4, border: '1px solid var(--doc-border)', padding: '6px 8px', background: 'var(--doc-bg)' }}>
                     {docEvents.map((d, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0' }}>
-                        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, padding: '1px 5px', borderRadius: 2, flexShrink: 0, marginTop: 1, background: d.status === 'ok' ? 'var(--ok-tint)' : 'var(--err-tint)', color: d.status === 'ok' ? 'var(--ok-text)' : 'var(--err-text)', border: `1px solid ${d.status === 'ok' ? 'var(--ok-tint-border)' : 'var(--err-tint-border)'}` }}>
-                          {d.status === 'ok' ? 'OK' : 'ERR'}
+                        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, padding: '1px 5px', borderRadius: 2, flexShrink: 0, marginTop: 1,
+                          background: d.status === 'ok' ? 'var(--ok-tint)' : d.status === 'skipped' ? 'var(--warn-tint, rgba(245,158,11,0.1))' : 'var(--err-tint)',
+                          color: d.status === 'ok' ? 'var(--ok-text)' : d.status === 'skipped' ? 'var(--warn, #f59e0b)' : 'var(--err-text)',
+                          border: `1px solid ${d.status === 'ok' ? 'var(--ok-tint-border)' : d.status === 'skipped' ? 'rgba(245,158,11,0.3)' : 'var(--err-tint-border)'}` }}>
+                          {d.status === 'ok' ? 'OK' : d.status === 'skipped' ? 'SKIP' : 'ERR'}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--doc-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.doc_id}</div>
                           {d.status === 'ok' && d.chunks != null && (
                             <div style={{ fontSize: 11, color: 'var(--doc-text-3)', fontFamily: 'var(--mono)' }}>{d.chunks} chunks</div>
+                          )}
+                          {d.status === 'skipped' && d.reason && (
+                            <div style={{ fontSize: 11, color: 'var(--warn, #f59e0b)', fontFamily: 'var(--mono)' }}>{d.reason}</div>
                           )}
                           {d.status === 'failed' && d.reason && (
                             <div style={{ fontSize: 11, color: 'var(--err-text)', fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{d.reason}</div>
@@ -336,7 +342,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
 
                 {uiMode === 'complete' && (
                   <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
-                    {progress.succeeded} succeeded · {progress.failed} failed
+                    {progress.succeeded} succeeded · {progress.failed} failed{progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}
                     {(allFailed || partial) && ' — check Run Log for details'}
                   </div>
                 )}
