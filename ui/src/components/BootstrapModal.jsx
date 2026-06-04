@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { formatDate } from '../dateFormat';
-import { getBootstrapStatus, getDateEstimate, postSourcesBootstrap } from '../api/client';
+import { getBootstrapStatus, getDateEstimate, postSourcesBootstrap, openBootstrapProgress } from '../api/client';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -103,8 +103,15 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const [submitting, setSubmitting]                 = useState(false);
   const [submitError, setSubmitError]               = useState(null);
 
+  // Running / complete state
+  const [uiMode, setUiMode]       = useState('config'); // 'config' | 'running' | 'complete'
+  const [sessionId, setSessionId] = useState(null);
+  const [progress, setProgress]   = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
+  const [docEvents, setDocEvents] = useState([]);
+
   const estimateAbortRef   = useRef(null);
   const estimateTimeoutRef = useRef(null);
+  const esRef              = useRef(null);
 
   // Load bootstrap status on mount
   useEffect(() => {
@@ -144,6 +151,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   useEffect(() => () => {
     if (estimateTimeoutRef.current) clearTimeout(estimateTimeoutRef.current);
     if (estimateAbortRef.current) estimateAbortRef.current.abort();
+    if (esRef.current) { esRef.current.close(); esRef.current = null; }
   }, []);
 
   async function handleSubmit() {
@@ -157,8 +165,35 @@ export default function BootstrapModal({ onClose, onStarted }) {
         rss_feeds: selectedFeeds.map(feed_id => ({ feed_id, date_from, date_to })),
       };
       const result = await postSourcesBootstrap(payload);
+
+      setSessionId(result.session_id);
+      setProgress({ total: result.total_docs, processed: 0, succeeded: 0, failed: 0, status: 'running' });
+      setUiMode('running');
+      setSubmitting(false);
       onStarted?.(result);
-      onClose();
+
+      // Open SSE progress stream
+      const es = openBootstrapProgress(result.session_id);
+      esRef.current = es;
+      es.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (data.type === 'doc') {
+            setDocEvents(prev => [data, ...prev].slice(0, 150));
+          } else if (data.type === 'progress') {
+            setProgress(data);
+            if (data.status !== 'pending' && data.status !== 'running') {
+              es.close();
+              esRef.current = null;
+              setUiMode('complete');
+            }
+          }
+        } catch (_) {}
+      };
+      es.onerror = () => {
+        if (esRef.current) { esRef.current.close(); esRef.current = null; }
+        setUiMode('complete');
+      };
     } catch (err) {
       setSubmitError(err.message || 'Failed to start bootstrap');
       setSubmitting(false);
@@ -217,7 +252,81 @@ export default function BootstrapModal({ onClose, onStarted }) {
             </div>
           )}
 
-          {!loading && !loadError && bootstrapStatus && (
+          {/* ── Running / complete view ── */}
+          {(uiMode === 'running' || uiMode === 'complete') && (() => {
+            const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+            const allFailed = progress.failed > 0 && progress.succeeded === 0;
+            const partial   = progress.failed > 0 && progress.succeeded > 0;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Status badge + session id */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {uiMode === 'running' ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--info-tint, #eff6ff)', color: 'var(--accent-l)', border: '1px solid var(--info-tint-border, #bfdbfe)', animation: 'pulse 1.5s ease-in-out infinite' }}>
+                      Running
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
+                      {allFailed ? 'Failed' : partial ? 'Completed with errors' : 'Complete'}
+                    </span>
+                  )}
+                  {sessionId && (
+                    <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
+                      session {sessionId.slice(0, 8)}…
+                    </span>
+                  )}
+                </div>
+
+                {/* Progress bar */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <span style={{ fontSize: 13, color: 'var(--doc-text)' }}>
+                      Processing <b>{progress.processed}</b> / {progress.total}
+                    </span>
+                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)' }}>{pct}%</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: 'var(--doc-bg)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', borderRadius: 3, background: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--accent-l)', width: `${pct}%`, transition: 'width 400ms ease' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 12, fontFamily: 'var(--mono)' }}>
+                    <span style={{ color: 'var(--ok-text)' }}>Succeeded <b>{progress.succeeded}</b></span>
+                    <span style={{ color: progress.failed > 0 ? 'var(--err-text)' : 'var(--doc-text-3)' }}>Failed <b>{progress.failed}</b></span>
+                  </div>
+                </div>
+
+                {/* Per-doc event stream */}
+                {docEvents.length > 0 && (
+                  <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 4, border: '1px solid var(--doc-border)', padding: '6px 8px', background: 'var(--doc-bg)' }}>
+                    {docEvents.map((d, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0' }}>
+                        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, padding: '1px 5px', borderRadius: 2, flexShrink: 0, marginTop: 1, background: d.status === 'ok' ? 'var(--ok-tint)' : 'var(--err-tint)', color: d.status === 'ok' ? 'var(--ok-text)' : 'var(--err-text)', border: `1px solid ${d.status === 'ok' ? 'var(--ok-tint-border)' : 'var(--err-tint-border)'}` }}>
+                          {d.status === 'ok' ? 'OK' : 'ERR'}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--doc-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.doc_id}</div>
+                          {d.status === 'ok' && d.chunks != null && (
+                            <div style={{ fontSize: 11, color: 'var(--doc-text-3)', fontFamily: 'var(--mono)' }}>{d.chunks} chunks</div>
+                          )}
+                          {d.status === 'failed' && d.reason && (
+                            <div style={{ fontSize: 11, color: 'var(--err-text)', fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{d.reason}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {uiMode === 'complete' && (
+                  <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
+                    {progress.succeeded} succeeded · {progress.failed} failed
+                    {(allFailed || partial) && ' — check Run Log for details'}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {!loading && !loadError && bootstrapStatus && uiMode === 'config' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
               {/* ── Section 1: Base Corpus ── */}
@@ -417,28 +526,44 @@ export default function BootstrapModal({ onClose, onStarted }) {
         {/* ── Footer ── */}
         <div className="mfoot" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)' }}>
-            {!loading && totalEstimate !== null
+            {uiMode === 'config' && !loading && totalEstimate !== null
               ? `~${totalEstimate.toLocaleString()} documents selected`
-              : !loading && selectedBaseCorpus.length > 0
+              : uiMode === 'config' && !loading && selectedBaseCorpus.length > 0
                 ? `${selectedBaseCorpus.length} base corpus doc${selectedBaseCorpus.length !== 1 ? 's' : ''} + RSS feeds`
-                : ''
+                : uiMode === 'running'
+                  ? 'Ingestion in progress — do not close this window'
+                  : ''
             }
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {submitError && (
+            {submitError && uiMode === 'config' && (
               <span style={{ fontSize: 12, color: 'var(--err-text)', maxWidth: 260 }}>{submitError}</span>
             )}
-            <button className="rp-mbtn ghost" onClick={!submitting ? onClose : undefined} disabled={submitting}>
-              Cancel
-            </button>
-            <button
-              className={`rp-mbtn primary ${!canSubmit ? 'disabled' : ''}`}
-              onClick={canSubmit ? handleSubmit : undefined}
-              disabled={!canSubmit}
-              style={canSubmit ? { background: 'var(--status-error, #ef4444)', borderColor: 'var(--status-error, #ef4444)' } : {}}
-            >
-              {submitting ? 'Starting…' : 'Start Initial Load'}
-            </button>
+            {uiMode === 'config' && (
+              <>
+                <button className="rp-mbtn ghost" onClick={!submitting ? onClose : undefined} disabled={submitting}>
+                  Cancel
+                </button>
+                <button
+                  className={`rp-mbtn primary ${!canSubmit ? 'disabled' : ''}`}
+                  onClick={canSubmit ? handleSubmit : undefined}
+                  disabled={!canSubmit}
+                  style={canSubmit ? { background: 'var(--status-error, #ef4444)', borderColor: 'var(--status-error, #ef4444)' } : {}}
+                >
+                  {submitting ? 'Starting…' : 'Start Initial Load'}
+                </button>
+              </>
+            )}
+            {uiMode === 'running' && (
+              <button className="rp-mbtn ghost disabled" disabled>
+                Running…
+              </button>
+            )}
+            {uiMode === 'complete' && (
+              <button className="rp-mbtn primary" onClick={onClose}>
+                Close
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,9 @@
 """Sources router — /api/sources/ bootstrap status, date estimate, and bootstrap trigger."""
 
 import os
+import uuid
+import threading
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -204,37 +207,99 @@ class BootstrapRequest(BaseModel):
     rss_feeds: List[FeedSelection] = []
 
 
+def _build_doc_list_from_scope(base_corpus: List[str], rss_feeds: List[FeedSelection]) -> list:
+    """Build the flat doc list for the bootstrap worker from new-style scope selection."""
+    docs = []
+
+    # Base corpus: specific doc_ids selected by user
+    for doc_id in base_corpus:
+        docs.append({"doc_id": doc_id, "phase": "live"})
+
+    # RSS feeds: query document_registry filtered by feed_id + optional date range
+    if rss_feeds:
+        feed_id_list = [f.feed_id for f in rss_feeds]
+        # All selected feeds share the same date window in the current UI
+        date_from = rss_feeds[0].date_from if rss_feeds else None
+        date_to   = rss_feeds[0].date_to   if rss_feeds else None
+
+        try:
+            conn = get_pg_conn()
+            try:
+                cur = conn.cursor()
+                conditions: list = ["feed_id = ANY(%s)"]
+                params: list = [feed_id_list]
+                if date_from:
+                    conditions.append("publication_date >= %s::date")
+                    params.append(date_from)
+                if date_to:
+                    conditions.append("publication_date <= %s::date")
+                    params.append(date_to)
+                where = " AND ".join(conditions)
+                cur.execute(
+                    f"SELECT document_id FROM document_registry WHERE {where} ORDER BY document_id",
+                    params,
+                )
+                for row in cur.fetchall():
+                    docs.append({"doc_id": row[0], "phase": "live"})
+                cur.close()
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+    return docs
+
+
 @router.post("/bootstrap")
 async def sources_bootstrap(body: BootstrapRequest):
     """
-    Trigger a corpus bootstrap run. Returns immediately with a run_id.
-    Monitor progress via Run Log (/ingestions).
-
-    # TODO G-T3: wire to actual ingestion pipeline.
-    # Currently creates a run_log stub entry and returns the run_id.
+    Trigger a corpus bootstrap/reload run. Returns immediately with session_id for
+    SSE progress tracking via GET /api/bootstrap/progress/{session_id}.
     """
     if body.mode not in ("wipe_and_reload", "reload_changed_only"):
-        raise HTTPException(status_code=422, detail="Invalid mode. Use 'wipe_and_reload' or 'reload_changed_only'.")
+        raise HTTPException(status_code=422, detail="Invalid mode.")
 
-    try:
-        conn = get_pg_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO run_log (trigger_source, status, triggered_by)
-                VALUES ('bootstrap_ui', 'pending', 'sources_ui')
-                RETURNING run_id
-            """)
-            run_id = str(cur.fetchone()[0])
-            conn.commit()
-            cur.close()
-        finally:
-            conn.close()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database error: {e}")
+    # Import session state and worker from bootstrap router (shared in-process dict)
+    from routers.bootstrap import _sessions, _bootstrap_worker
+
+    # Block if another session is already running
+    for sid, sess in _sessions.items():
+        if sess.get("status") in ("pending", "running"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bootstrap already running (session {sid}). Wait for it to complete.",
+            )
+
+    docs = _build_doc_list_from_scope(body.base_corpus, body.rss_feeds)
+    if not docs:
+        raise HTTPException(status_code=422, detail="No documents match the selected scope.")
+
+    # Map UI mode to redownload strategy
+    redownload = "force" if body.mode == "wipe_and_reload" else "check"
+
+    session_id = str(uuid.uuid4())
+    _sessions[session_id] = {
+        "session_id": session_id,
+        "status": "pending",
+        "total": len(docs),
+        "processed": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "docs": [],
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": None,
+    }
+
+    t = threading.Thread(
+        target=_bootstrap_worker,
+        args=(session_id, docs, redownload),
+        daemon=True,
+    )
+    t.start()
 
     return {
-        "run_id": run_id,
-        "status": "triggered",
-        "message": "Bootstrap run started. Monitor progress in Run Log.",
+        "session_id": session_id,
+        "total_docs": len(docs),
+        "status": "running",
+        "message": "Bootstrap run started.",
     }
