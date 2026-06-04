@@ -89,13 +89,15 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
             cmd, capture_output=True, text=True, timeout=timeout,
             cwd=SCRIPTS_DIR, env=env,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            return json.loads(result.stdout.strip())
-        else:
-            err = result.stderr.strip() or "Unknown error"
-            if len(err) > 500:
-                err = err[:500] + "..."
-            return {"status": "error", "doc_id": doc_id, "detail": err}
+        if result.stdout.strip():
+            try:
+                return json.loads(result.stdout.strip())
+            except json.JSONDecodeError:
+                pass
+        err = result.stderr.strip() or "Unknown error"
+        if len(err) > 500:
+            err = err[:500] + "..."
+        return {"status": "error", "doc_id": doc_id, "detail": err}
     except subprocess.TimeoutExpired:
         return {"status": "error", "doc_id": doc_id, "detail": f"Timeout ({timeout}s)"}
     except Exception as e:
