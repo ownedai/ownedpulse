@@ -242,7 +242,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
                         <StatusDot status={doc.ingestion_status} />
                         <span className="cls" style={{ flex: 1 }}>{doc.document_title}</span>
                         <AgencyBadge agency={doc.issuing_body} />
-                        <span className="cnt" style={{ width: 62, textAlign: 'right', flexShrink: 0 }}>
+                        <span className="cnt" style={{ width: 76, textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap' }}>
                           {doc.chunk_count > 0 ? `${doc.chunk_count} chunks` : '—'}
                         </span>
                         <span className="cnt" style={{ width: 80, textAlign: 'right', flexShrink: 0 }} title="Publication date">
