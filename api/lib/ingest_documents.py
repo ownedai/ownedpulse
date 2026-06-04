@@ -49,21 +49,23 @@ RUN_INGEST = f"{SCRIPTS_DIR}/ingestion/run_ingest.py"
 
 def _subprocess_env(extra: dict = None) -> dict:
     env = os.environ.copy()
-    env.setdefault("PG_DSN", os.environ.get(
-        "PG_DSN",
-        "postgresql://postgres:***REMOVED***@localhost:5432/knowledge_base"
-    ))
-    env.setdefault("POSTGRES_HOST", os.environ.get("POSTGRES_HOST", "localhost"))
-    env.setdefault("POSTGRES_PASSWORD", os.environ.get(
-        "POSTGRES_PASSWORD",
-        "***REMOVED***"
-    ))
-    env.setdefault("QDRANT_HOST", os.environ.get("QDRANT_HOST", "localhost"))
-    env.setdefault("QDRANT_PORT", os.environ.get("QDRANT_PORT", "6333"))
+    # Build PG_DSN from component vars already set correctly in the container env.
+    # Do NOT fall back to localhost — that breaks subprocesses launched from Docker.
+    pg_host = env.get("POSTGRES_HOST", "postgres")
+    pg_port = env.get("POSTGRES_PORT", "5432")
+    pg_user = env.get("POSTGRES_USER", "postgres")
+    pg_pass = env.get("POSTGRES_PASSWORD", "")
+    pg_db   = env.get("POSTGRES_DB", "knowledge_base")
+    env.setdefault("PG_DSN", f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}")
+    env.setdefault("QDRANT_HOST", env.get("QDRANT_HOST", "qdrant"))
+    env.setdefault("QDRANT_PORT", env.get("QDRANT_PORT", "6333"))
     env.setdefault("QDRANT_URL", f"http://{env['QDRANT_HOST']}:{env['QDRANT_PORT']}")
-    env.setdefault("OLLAMA_HOST", os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
-    env.setdefault("OLLAMA_URL", env["OLLAMA_HOST"])
-    env.setdefault("DOCLING_HOST", os.environ.get("DOCLING_HOST", "http://localhost:5001"))
+    olla_host = env.get("OLLAMA_HOST", "ollama")
+    if not olla_host.startswith("http"):
+        olla_host = f"http://{olla_host}:{env.get('OLLAMA_PORT', '11434')}"
+    env["OLLAMA_HOST"] = olla_host
+    env.setdefault("OLLAMA_URL", olla_host)
+    env.setdefault("DOCLING_HOST", env.get("DOCLING_HOST", "http://docling:5001"))
     if extra:
         env.update(extra)
     return env
