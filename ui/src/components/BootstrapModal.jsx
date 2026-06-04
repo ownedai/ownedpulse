@@ -242,14 +242,12 @@ export default function BootstrapModal({ onClose, onStarted }) {
                         <StatusDot status={doc.ingestion_status} />
                         <span className="cls" style={{ flex: 1 }}>{doc.document_title}</span>
                         <AgencyBadge agency={doc.issuing_body} />
-                        <span className="cnt" style={{ marginLeft: 6 }}>
+                        <span className="cnt" style={{ width: 62, textAlign: 'right', flexShrink: 0 }}>
                           {doc.chunk_count > 0 ? `${doc.chunk_count} chunks` : '—'}
                         </span>
-                        {doc.last_indexed_at && (
-                          <span className="cnt" style={{ marginLeft: 4, minWidth: 70, textAlign: 'right' }}>
-                            {formatDate(doc.last_indexed_at)}
-                          </span>
-                        )}
+                        <span className="cnt" style={{ width: 72, textAlign: 'right', flexShrink: 0 }}>
+                          {doc.last_indexed_at ? formatDate(doc.last_indexed_at) : '—'}
+                        </span>
                       </div>
                     );
                   })}
