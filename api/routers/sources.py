@@ -280,36 +280,37 @@ async def sources_bootstrap(body: BootstrapRequest):
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 
-    # Map UI mode to redownload strategy
+    # Map UI mode to redownload strategy (controls source file fetch, not the wipe)
     redownload = "force" if body.mode == "wipe_and_reload" else "check"
 
-    # Wipe existing Qdrant chunks and reset registry status for selected documents
-    if body.mode == "wipe_and_reload":
-        doc_ids = [d["doc_id"] for d in docs]
+    # Always wipe Qdrant chunks and reset registry for selected documents.
+    # This is a deliberate reload — the download mode only controls whether
+    # source files are re-fetched, not whether existing chunks are cleared.
+    doc_ids = [d["doc_id"] for d in docs]
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        client.delete(
+            collection_name=QDRANT_COLLECTION,
+            points_selector=Filter(
+                must=[FieldCondition(key="document_id", match=MatchAny(any=doc_ids))]
+            ),
+        )
+    except Exception:
+        pass  # Qdrant wipe is best-effort; ingestion will overwrite anyway
+    try:
+        conn = get_pg_conn()
         try:
-            client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-            client.delete(
-                collection_name=QDRANT_COLLECTION,
-                points_selector=Filter(
-                    must=[FieldCondition(key="document_id", match=MatchAny(any=doc_ids))]
-                ),
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE document_registry SET ingestion_status = 'pending', chunk_count = 0, last_indexed_at = NULL WHERE document_id = ANY(%s)",
+                (doc_ids,),
             )
-        except Exception:
-            pass  # Qdrant wipe is best-effort; ingestion will overwrite anyway
-        try:
-            conn = get_pg_conn()
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    "UPDATE document_registry SET ingestion_status = 'pending', chunk_count = 0, last_indexed_at = NULL WHERE document_id = ANY(%s)",
-                    (doc_ids,),
-                )
-                conn.commit()
-                cur.close()
-            finally:
-                conn.close()
-        except Exception:
-            pass  # Non-fatal — ingestion will update status on completion
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Non-fatal — ingestion will update status on completion
 
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
