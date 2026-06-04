@@ -982,7 +982,7 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   );
 }
 
-function InitialLoadCard({ onOpenModal, lastBootstrap, docCount, bootstrapDocCount }) {
+function InitialLoadCard({ onOpenModal, lastBootstrap, docCount }) {
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl" style={{ marginBottom: 0 }}>
@@ -990,9 +990,10 @@ function InitialLoadCard({ onOpenModal, lastBootstrap, docCount, bootstrapDocCou
         <span style={{ marginLeft: 12, fontSize: 11.5, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)', fontWeight: 400 }}>
           {docCount > 0 ? (
             <>
-              Corpus last populated: <span style={{ color: 'var(--doc-text)' }}>{lastBootstrap ? formatDateTime(lastBootstrap) : '—'}</span>
-              {' · '}
-              <span style={{ color: 'var(--doc-text)' }}>{(bootstrapDocCount || 0).toLocaleString()}</span> documents loaded
+              <span style={{ color: 'var(--doc-text)' }}>{docCount.toLocaleString()}</span> documents in corpus
+              {lastBootstrap && (
+                <> · last populated <span style={{ color: 'var(--doc-text)' }}>{formatDateTime(lastBootstrap)}</span></>
+              )}
             </>
           ) : (
             'Corpus is empty — run Initial Load to ingest all regulatory documents.'
@@ -1040,10 +1041,9 @@ function BootstrapToast({ result, onClose }) {
 }
 
 export default function SourcesPage() {
-  const [showModal, setShowModal] = useState(false);
   const [showBootstrapModal, setShowBootstrapModal] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState(null);
-  const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, bootstrap_doc_count: 0, last_bootstrap: null });
+  const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
 
   useEffect(() => {
     getBootstrapState()
@@ -1051,58 +1051,23 @@ export default function SourcesPage() {
       .catch(() => {});
   }, []);
 
-  function handleBootstrapStarted(result) {
-    setBootstrapResult(result);
-  }
-
   return (
     <div className="rp-sources-page">
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px 0', marginBottom: 4 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--doc-text)' }}>Sources</div>
-        <button
-          onClick={() => setShowBootstrapModal(true)}
-          style={{
-            padding: '6px 14px', borderRadius: 5, fontSize: 12.5,
-            fontFamily: 'var(--mono)', cursor: 'pointer',
-            background: 'transparent', color: 'var(--doc-text-2)',
-            border: '1px solid var(--doc-border)',
-            transition: 'border-color 150ms ease, color 150ms ease',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--doc-text-2)'; e.currentTarget.style.color = 'var(--doc-text)'; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--doc-border)'; e.currentTarget.style.color = 'var(--doc-text-2)'; }}
-        >
-          Initial Load / Reload
-        </button>
-      </div>
-
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
         <RssFeedsCard />
         <BaseCorpusCard />
         <InitialLoadCard
-          onOpenModal={() => setShowModal(true)}
+          onOpenModal={() => setShowBootstrapModal(true)}
           lastBootstrap={bootstrapState.last_bootstrap}
           docCount={bootstrapState.doc_count}
-          bootstrapDocCount={bootstrapState.bootstrap_doc_count}
         />
       </div>
-
-      {showModal && (
-        <InitialLoadModal
-          onClose={() => {
-            setShowModal(false);
-            getBootstrapState().then(setBootstrapState).catch(() => {});
-          }}
-          lastBootstrap={bootstrapState.last_bootstrap}
-          docCount={bootstrapState.doc_count}
-        />
-      )}
 
       {showBootstrapModal && (
         <BootstrapModal
           onClose={() => setShowBootstrapModal(false)}
-          onStarted={handleBootstrapStarted}
+          onStarted={(result) => setBootstrapResult(result)}
         />
       )}
 
