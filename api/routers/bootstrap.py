@@ -260,6 +260,7 @@ async def bootstrap_run(body: BootstrapRunRequest):
         "processed": 0,
         "succeeded": 0,
         "failed": 0,
+        "skipped": 0,
         "docs": [],
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": None,
@@ -342,6 +343,13 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                     "status": "ok",
                     "chunks": dr.get("chunk_count", 0),
                 })
+            elif dr.get("status") == "skipped":
+                session["skipped"] += 1
+                session["docs"].append({
+                    "doc_id": doc_id,
+                    "status": "skipped",
+                    "reason": (dr.get("detail") or "Unsupported format")[:200],
+                })
             else:
                 session["failed"] += 1
                 session["docs"].append({
@@ -366,7 +374,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
         failed = session["failed"]
         if failed == 0:
             final_status = "success"
-        elif succeeded > 0:
+        elif succeeded > 0 or session.get("skipped", 0) > 0:
             final_status = "partial"
         else:
             final_status = "failed"
@@ -398,7 +406,7 @@ async def bootstrap_progress(session_id: str):
                 sent_doc_idx = len(session["docs"])
 
                 # Overall progress event
-                yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'status': session['status']})}\n\n"
+                yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'skipped': session.get('skipped', 0), 'status': session['status']})}\n\n"
 
                 if session["status"] not in ("pending", "running"):
                     break

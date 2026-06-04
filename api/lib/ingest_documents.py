@@ -138,6 +138,15 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
                     doc_count_succeeded=1,
                     doc_count_failed=0,
                 )
+            elif status == "skipped":
+                ok = None
+                detail = r.get("detail")
+                trace.finalize(
+                    status="skipped",
+                    doc_count_attempted=1,
+                    doc_count_succeeded=0,
+                    doc_count_failed=0,
+                )
             else:
                 ok = False
                 detail = r.get("detail", "unknown error")
@@ -164,9 +173,9 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
 
         results.append({
             "doc_id": doc_id,
-            "status": "ok" if ok else "error",
+            "status": "ok" if ok is True else ("skipped" if ok is None else "error"),
             "trace_id": trace.trace_id,
-            "chunk_count": chunk_count if ok else 0,
+            "chunk_count": chunk_count if ok is True else 0,
             "detail": detail,
         })
 
