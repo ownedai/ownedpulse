@@ -693,11 +693,18 @@ const SCOPE_GROUPS = [
   },
 ];
 
+const REDOWNLOAD_OPTIONS = [
+  { value: 'none',  label: 'Use existing files',       hint: 'Skip download — ingest from disk as-is' },
+  { value: 'check', label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
+  { value: 'force', label: 'Re-download everything',   hint: 'Delete and re-fetch all source files' },
+];
+
 function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   const isInitialized = docCount > 0;
   const [mode, setMode] = useState('config'); // config | running | complete
   const [confirmed, setConfirmed] = useState(false);
   const [scope, setScope] = useState({ fda_guidance: true, fda_press: true, ema: true, ich: true });
+  const [redownload, setRedownload] = useState('none');
   const [progress, setProgress] = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);
   const [rssActivated, setRssActivated] = useState(false);
@@ -710,7 +717,7 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
 
   async function handleStart() {
     try {
-      const result = await startBootstrapRun(scope, isInitialized);
+      const result = await startBootstrapRun(scope, isInitialized, isInitialized ? redownload : 'none');
       setSessionId(result.session_id);
       setProgress({ total: result.total_docs, processed: 0, succeeded: 0, failed: 0, status: 'running' });
       setMode('running');
@@ -812,6 +819,29 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
                   </div>
                 ))}
               </div>
+
+              {isInitialized && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 10, fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--doc-text-3)', fontWeight: 600, marginBottom: 10 }}>
+                    Source files
+                  </div>
+                  {REDOWNLOAD_OPTIONS.map((opt) => (
+                    <label
+                      key={opt.value}
+                      onClick={() => setRedownload(opt.value)}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px', marginBottom: 4, borderRadius: 4, cursor: 'pointer', background: redownload === opt.value ? 'var(--panel-accent-bg, #dbeafe)' : 'transparent', border: `1px solid ${redownload === opt.value ? 'var(--panel-accent, #2563eb)' : 'var(--doc-border)'}`, transition: 'all 120ms ease' }}
+                    >
+                      <span style={{ width: 14, height: 14, borderRadius: 7, border: `2px solid ${redownload === opt.value ? 'var(--panel-accent, #2563eb)' : 'var(--doc-border)'}`, background: redownload === opt.value ? 'var(--panel-accent, #2563eb)' : 'transparent', flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {redownload === opt.value && <span style={{ width: 5, height: 5, borderRadius: 3, background: '#fff' }} />}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: 'var(--doc-text)', fontWeight: redownload === opt.value ? 500 : 400 }}>{opt.label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', marginTop: 2 }}>{opt.hint}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
 
               <div className="rp-modal-note">
                 The selected document classes will be fetched from their sources and reingested. This run will appear in Run Log with full trace provenance.

@@ -54,6 +54,7 @@ class BootstrapScope(BaseModel):
 class BootstrapRunRequest(BaseModel):
     scope: BootstrapScope
     force: bool = False
+    redownload: str = "none"  # "none" | "check" | "force"
 
 
 class ReingestDocRequest(BaseModel):
@@ -238,9 +239,11 @@ async def bootstrap_run(body: BootstrapRunRequest):
         "completed_at": None,
     }
 
+    redownload = body.redownload if body.redownload in ("none", "check", "force") else "none"
+
     t = threading.Thread(
         target=_bootstrap_worker,
-        args=(session_id, docs),
+        args=(session_id, docs, redownload),
         daemon=True,
     )
     t.start()
@@ -283,7 +286,7 @@ def _build_doc_list(scope: BootstrapScope) -> list:
         return []
 
 
-def _bootstrap_worker(session_id: str, docs: list):
+def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
     """Runs in a background thread. Updates _sessions[session_id] per doc."""
     from lib.ingest_documents import ingest_documents  # noqa: PLC0415
 
@@ -297,6 +300,7 @@ def _bootstrap_worker(session_id: str, docs: list):
                 [doc],
                 source="bootstrap_ui",
                 triggered_by="bootstrap_ui",
+                redownload=redownload,
             )
             doc_results = result.get("results", [])
             dr = doc_results[0] if doc_results else {}

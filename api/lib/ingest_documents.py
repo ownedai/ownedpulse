@@ -70,13 +70,14 @@ def _subprocess_env(extra: dict = None) -> dict:
 
 
 def _run_one(doc_id: str, trace_id: str, phase: str = "live",
-             timeout: int = 600) -> dict:
+             timeout: int = 600, redownload: str = "none") -> dict:
     """Run run_ingest.py for one document. Returns result dict."""
     cmd = [
         sys.executable, RUN_INGEST,
         "--doc-id", doc_id,
         "--run-id", trace_id,
         "--phase", phase,
+        "--redownload", redownload,
     ]
     env = _subprocess_env()
     try:
@@ -101,7 +102,8 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
 
 def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
                    workflow_id: str = None,
-                   workflow_execution_id: str = None) -> list:
+                   workflow_execution_id: str = None,
+                   redownload: str = "none") -> list:
     """Each doc gets its own run_log row. No shared run envelope."""
     results = []
     for i, doc in enumerate(docs):
@@ -118,7 +120,7 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
 
         ok, detail = None, None
         try:
-            r = _run_one(doc_id, trace.trace_id, phase)
+            r = _run_one(doc_id, trace.trace_id, phase, redownload=redownload)
             chunk_count = r.get("chunk_count", r.get("chunks", 0))
             status = r.get("status", "error")
 
@@ -169,7 +171,8 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
 
 def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
                    workflow_id: str = None,
-                   workflow_execution_id: str = None) -> dict:
+                   workflow_execution_id: str = None,
+                   redownload: str = "none") -> dict:
     """One run_log row wraps all documents in the batch."""
     trace = start_ingestion_trace(
         source=source,
@@ -188,7 +191,7 @@ def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
 
         ok, detail = None, None
         try:
-            r = _run_one(doc_id, trace.trace_id, phase)
+            r = _run_one(doc_id, trace.trace_id, phase, redownload=redownload)
             chunk_count = r.get("chunk_count", r.get("chunks", 0))
             status = r.get("status", "error")
 
@@ -235,7 +238,8 @@ def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
 def ingest_documents(docs: list, *, source: str, triggered_by: str,
                      workflow_id: str = None,
                      workflow_execution_id: str = None,
-                     bulk: bool = False) -> dict:
+                     bulk: bool = False,
+                     redownload: str = "none") -> dict:
     """Unified ingestion entry point — all paths route through here.
 
     Args:
@@ -261,6 +265,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             triggered_by=triggered_by,
             workflow_id=workflow_id,
             workflow_execution_id=workflow_execution_id,
+            redownload=redownload,
         )
         return {
             "mode": "A",
@@ -277,4 +282,5 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             triggered_by=triggered_by,
             workflow_id=workflow_id,
             workflow_execution_id=workflow_execution_id,
+            redownload=redownload,
         )

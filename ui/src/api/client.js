@@ -210,10 +210,10 @@ export function getCorpusSummary() {
   return request('/api/bootstrap/corpus-summary');
 }
 
-export function startBootstrapRun(scope, force = false) {
+export function startBootstrapRun(scope, force = false, redownload = 'none') {
   return request('/api/bootstrap/run', {
     method: 'POST',
-    body: JSON.stringify({ scope, force }),
+    body: JSON.stringify({ scope, force, redownload }),
   });
 }
 
