@@ -75,7 +75,7 @@ async def bootstrap_state():
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT count(*) FROM document_registry")
+            cur.execute("SELECT count(*) FROM document_registry WHERE ingestion_status IN ('indexed', 'success')")
             doc_count = cur.fetchone()[0]
             # Last bootstrap session: bootstrap_ui or manual_cli, grouped by UTC date
             cur.execute(

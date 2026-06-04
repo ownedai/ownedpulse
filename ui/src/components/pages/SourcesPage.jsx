@@ -1044,11 +1044,18 @@ export default function SourcesPage() {
   const [showBootstrapModal, setShowBootstrapModal] = useState(false);
   const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
 
-  useEffect(() => {
-    getBootstrapState()
-      .then(setBootstrapState)
-      .catch(() => {});
+  const refreshState = useCallback(() => {
+    getBootstrapState().then(setBootstrapState).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshState();
+  }, [refreshState]);
+
+  const handleModalClose = useCallback(() => {
+    setShowBootstrapModal(false);
+    refreshState();
+  }, [refreshState]);
 
   return (
     <div className="rp-sources-page">
@@ -1065,7 +1072,7 @@ export default function SourcesPage() {
 
       {showBootstrapModal && (
         <BootstrapModal
-          onClose={() => setShowBootstrapModal(false)}
+          onClose={handleModalClose}
         />
       )}
     </div>
