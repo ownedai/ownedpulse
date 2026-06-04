@@ -233,7 +233,7 @@ def _draw_header_cont(c: canvas.Canvas, export_id: str, page_num: int):
     wx = lx + logo_size + 7
     wy = PAGE_H - HEADER_H_CONT / 2 + 4
     _text(c, wx, wy, "regpulse", "Inter-SemiBold", 14, C_WHITE)
-    right_txt = f"Export ID {export_id}  ·  Source Evidence (cont.)"
+    right_txt = f"Export ID {export_id}  ·  Query Export (cont.)"
     _text(c, PAGE_W - MARGIN_X, PAGE_H - HEADER_H_CONT / 2 - 4, right_txt,
           "Mono", 8.5, C_SHELL_MUTED, align="right")
 
@@ -507,17 +507,23 @@ def generate_query_export_pdf(
                 source_url = chunk.get("source_url") or "—"
                 cited_c    = chunk.get("cited_by_llm", False)
 
-                max_ln     = 8
-                chunk_lines = chunk_txt.split("\n") if chunk_txt else []
-                display_txt = "\n".join(chunk_lines[:max_ln])
-                truncated   = len(chunk_lines) > max_ln or len(chunk_txt) > 900
-                if truncated and not display_txt:
-                    display_txt = chunk_txt[:600]
+                # Truncate by char count — chunk text is almost always single-paragraph
+                # prose with no newlines, so line-count splitting is unreliable.
+                # Mono 8.5pt at CONTENT_W-28 ≈ 105 chars/line; 8 lines ≈ 840 chars.
+                DISPLAY_CHARS = 700
+                max_ln        = 8
+                truncated     = len(chunk_txt) > DISPLAY_CHARS
+                display_txt   = chunk_txt[:DISPLAY_CHARS] if truncated else chunk_txt
 
-                ctxt_h = _measure_wrapped(rc, display_txt or "—", "Mono", 8.5,
-                                          CONTENT_W - 24, 13.5) if display_txt else 14
-                ctxt_h = min(ctxt_h, max_ln * 13.5)
-                card_h = 22 + 40 + ctxt_h + 30 + (14 if truncated else 0) + 24
+                # measure with the same width used for drawing
+                draw_w  = CONTENT_W - 28
+                ctxt_h  = _measure_wrapped(rc, display_txt or "—", "Mono", 8.5,
+                                           draw_w, 13.5) if display_txt else 14
+                ctxt_h  = min(ctxt_h, max_ln * 13.5)
+                trunc_row = 14 if truncated else 0
+                # card geometry: 68pt fixed top (head+meta) + chunk box + trace + bottom pad
+                ctxt_box_h_est = ctxt_h + 14 + trunc_row  # ctxt_pad*2=14
+                card_h = 68 + ctxt_box_h_est + 6 + 12 + 8  # trace + trace_h + pad
 
                 cy = chk(cy, card_h + 12, fp)
 
@@ -561,26 +567,29 @@ def generate_query_export_pdf(
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
                     _text(rc, cx3, row_y - 10, (v or "—")[:30], "Mono", 8.5, C_INK)
 
-                chunk_y = meta_y - 38
-                ctxt_pad = 7
-                ctxt_box_h = ctxt_h + ctxt_pad * 2 + (12 if truncated else 0)
+                chunk_y    = meta_y - 38
+                ctxt_pad   = 7
+                ctxt_box_h = ctxt_h + ctxt_pad * 2 + trunc_row
                 _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
                       fill=C_ROW_ALT, stroke=C_BORDER, lw=0.5)
                 _wrapped_text(rc, MARGIN_X + 14, chunk_y - ctxt_pad - 10,
                               (display_txt or "—").replace("\n", " "), "Mono", 8.5,
-                              _rgb("1E293B"), CONTENT_W - 28, 13.5)
+                              _rgb("1E293B"), draw_w, 13.5)
                 if truncated:
-                    _text(rc, MARGIN_X + 14, chunk_y - ctxt_box_h + ctxt_pad,
-                          f"▾ chunk continues — {len(chunk_txt)} chars total, "
-                          f"showing first {max_ln} lines (full text in source document)",
+                    _text(rc, MARGIN_X + 14, chunk_y - ctxt_box_h + ctxt_pad + 2,
+                          f"▾ {len(chunk_txt)} chars total — first {DISPLAY_CHARS} shown"
+                          f" (full text in source document)",
                           "Mono", 7.5, C_INK_TER)
 
-                trace_y = chunk_y - ctxt_box_h - 6
-                _text(rc, MARGIN_X + 8, trace_y,
-                      f"trace_id  {trace_id[:32]}   "
-                      f"Ingested  {chunked_at[:10]}   "
-                      f"Source  {source_url[:60]}",
-                      "Mono", 7.5, C_INK_TER)
+                trace_y   = chunk_y - ctxt_box_h - 6
+                trace_x   = MARGIN_X + 8
+                trace_max = CONTENT_W - 16  # available width inside card padding
+                # build trace string and hard-clip to fit
+                t_prefix = f"trace_id  {trace_id[:28]}   Ingested  {chunked_at[:10]}   Source  "
+                chars_left = max(0, int((trace_max - rc.stringWidth(t_prefix, "Mono", 7.5))
+                                        / rc.stringWidth("x", "Mono", 7.5)) - 2)
+                trace_str = t_prefix + source_url[:chars_left]
+                _text(rc, trace_x, trace_y, trace_str, "Mono", 7.5, C_INK_TER)
                 cy -= card_h + 8
 
             _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
