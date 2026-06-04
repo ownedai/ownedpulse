@@ -309,6 +309,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
                   <div style={{ display: 'flex', gap: 16, fontSize: 12, fontFamily: 'var(--mono)' }}>
                     <span style={{ color: 'var(--ok-text)' }}>Succeeded <b>{progress.succeeded}</b></span>
                     <span style={{ color: progress.failed > 0 ? 'var(--err-text)' : 'var(--doc-text-3)' }}>Failed <b>{progress.failed}</b></span>
+                    {progress.skipped > 0 && <span style={{ color: 'var(--warn, #f59e0b)' }}>Skipped <b>{progress.skipped}</b></span>}
                   </div>
                 </div>
 
