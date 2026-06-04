@@ -154,6 +154,19 @@ async def corpus_summary():
                 """
             )
             agency_last = {row[0]: row[1] for row in cur.fetchall()}
+            cur.execute(
+                """
+                SELECT issuing_body,
+                       min((metadata_json->>'publication_date')::text),
+                       max((metadata_json->>'publication_date')::text)
+                FROM document_registry
+                WHERE ingestion_status IN ('indexed', 'success')
+                  AND metadata_json->>'publication_date' IS NOT NULL
+                  AND metadata_json->>'publication_date' != ''
+                GROUP BY issuing_body
+                """
+            )
+            agency_pub_range = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
             cur.close()
         finally:
             conn.close()
@@ -165,7 +178,10 @@ async def corpus_summary():
     for issuing_body, doc_type, count in rows:
         agency = normalise_agency(issuing_body or "Unknown")
         if agency not in by_agency:
-            by_agency[agency] = {"agency": agency, "total": 0, "by_type": {}, "last_indexed": None}
+            by_agency[agency] = {
+                "agency": agency, "total": 0, "by_type": {},
+                "last_indexed": None, "pub_date_min": None, "pub_date_max": None,
+            }
         by_agency[agency]["total"] += count
         by_agency[agency]["by_type"][doc_type or "other"] = (
             by_agency[agency]["by_type"].get(doc_type or "other", 0) + count
@@ -179,6 +195,16 @@ async def corpus_summary():
             candidate = ts.isoformat() if ts else None
             if candidate and (existing is None or candidate > existing):
                 by_agency[normalised]["last_indexed"] = candidate
+
+    # Attach per-agency publication date range; merge EU-Commission into EMA
+    for raw_agency, (pub_min, pub_max) in agency_pub_range.items():
+        normalised = normalise_agency(raw_agency or "Unknown")
+        if normalised in by_agency:
+            ag = by_agency[normalised]
+            if pub_min and (ag["pub_date_min"] is None or pub_min < ag["pub_date_min"]):
+                ag["pub_date_min"] = pub_min
+            if pub_max and (ag["pub_date_max"] is None or pub_max > ag["pub_date_max"]):
+                ag["pub_date_max"] = pub_max
 
     all_dates = [ag["last_indexed"] for ag in by_agency.values() if ag["last_indexed"]]
     global_last = max(all_dates) if all_dates else None

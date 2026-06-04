@@ -694,9 +694,8 @@ const SCOPE_GROUPS = [
 ];
 
 const REDOWNLOAD_OPTIONS = [
-  { value: 'none',  label: 'Re-ingest from disk',      hint: 'Use already downloaded files — no network access' },
-  { value: 'check', label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
-  { value: 'force', label: 'Re-download everything',   hint: 'Delete and re-fetch all files from original sources' },
+  { value: 'check', label: 'Re-download if changed',  hint: 'Compare hash; fetch only when source differs' },
+  { value: 'force', label: 'Re-download everything',  hint: 'Delete and re-fetch all files from original sources' },
 ];
 
 function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
@@ -705,11 +704,16 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   const [confirmed, setConfirmed] = useState(false);
   const [scope, setScope] = useState({ fda_guidance: true, fda_press: true, ema: true, ich: true });
   const [redownload, setRedownload] = useState('check');
+  const [corpusSummary, setCorpusSummary] = useState(null);
   const [progress, setProgress] = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);
   const [rssActivated, setRssActivated] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const esRef = useRef(null);
+
+  useEffect(() => {
+    getCorpusSummary().then(setCorpusSummary).catch(() => {});
+  }, []);
 
   function toggleScope(key) {
     setScope((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -804,20 +808,37 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
               )}
 
               <div style={{ marginTop: isInitialized ? 12 : 0 }}>
-                {SCOPE_GROUPS.map((g) => (
-                  <div key={g.agency} className="rp-scope-group" style={{ marginTop: 10 }}>
-                    <div className="grp-name">{g.agency}</div>
-                    {g.rows.map((r) => (
-                      <div key={r.key} className="rp-check-row" onClick={() => toggleScope(r.key)}>
-                        <span className={`rp-check ${scope[r.key] ? 'on' : ''}`}>
-                          {scope[r.key] && <CheckIcon />}
-                        </span>
-                        <span className="cls">{r.label}</span>
-                        <span className="cnt" style={{ color: 'var(--doc-text-3)', fontStyle: 'italic', fontSize: 11 }}>{r.hint}</span>
+                {SCOPE_GROUPS.map((g) => {
+                  const ag = corpusSummary?.agencies?.find((a) => a.agency === g.agency);
+                  const dateMin = ag?.pub_date_min ? ag.pub_date_min.slice(0, 4) : null;
+                  const dateMax = ag?.pub_date_max ? ag.pub_date_max.slice(0, 4) : null;
+                  const dateRange = dateMin && dateMax
+                    ? dateMin === dateMax ? dateMin : `${dateMin}–${dateMax}`
+                    : null;
+                  return (
+                    <div key={g.agency} className="rp-scope-group" style={{ marginTop: 10 }}>
+                      <div className="grp-name" style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span>{g.agency}</span>
+                        {ag && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--doc-text-3)', fontWeight: 400 }}>
+                            {ag.total.toLocaleString()} docs
+                            {dateRange && ` · ${dateRange}`}
+                            {ag.last_indexed && ` · last indexed ${formatDate(ag.last_indexed)}`}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {g.rows.map((r) => (
+                        <div key={r.key} className="rp-check-row" onClick={() => toggleScope(r.key)}>
+                          <span className={`rp-check ${scope[r.key] ? 'on' : ''}`}>
+                            {scope[r.key] && <CheckIcon />}
+                          </span>
+                          <span className="cls">{r.label}</span>
+                          <span className="cnt" style={{ color: 'var(--doc-text-3)', fontStyle: 'italic', fontSize: 11 }}>{r.hint}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
 
               {isInitialized && (
