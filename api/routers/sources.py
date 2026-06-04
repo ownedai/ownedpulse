@@ -320,6 +320,7 @@ async def sources_bootstrap(body: BootstrapRequest):
         "processed": 0,
         "succeeded": 0,
         "failed": 0,
+        "skipped": 0,
         "docs": [],
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": None,
