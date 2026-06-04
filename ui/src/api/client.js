@@ -232,6 +232,10 @@ export function openBootstrapProgress(sessionId) {
   return new EventSource(`${API_BASE}/api/bootstrap/progress/${sessionId}`);
 }
 
+export function stopBootstrapSession(sessionId) {
+  return request(`/api/bootstrap/sessions/${encodeURIComponent(sessionId)}/stop`, { method: 'POST' });
+}
+
 // ── Ingestions routes ─────────────────────────────────────────────────────────
 
 export function getIngestions(params = {}) {

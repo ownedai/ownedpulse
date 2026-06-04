@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { formatDate } from '../dateFormat';
-import { getBootstrapStatus, getDateEstimate, postSourcesBootstrap, openBootstrapProgress } from '../api/client';
+import { getBootstrapStatus, getDateEstimate, postSourcesBootstrap, openBootstrapProgress, stopBootstrapSession } from '../api/client';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -108,6 +108,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const [sessionId, setSessionId] = useState(null);
   const [progress, setProgress]   = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);
+  const [stopping, setStopping]   = useState(false);
 
   const estimateAbortRef   = useRef(null);
   const estimateTimeoutRef = useRef(null);
@@ -200,6 +201,15 @@ export default function BootstrapModal({ onClose, onStarted }) {
     }
   }
 
+  async function handleStop() {
+    if (!sessionId || stopping) return;
+    setStopping(true);
+    try {
+      await stopBootstrapSession(sessionId);
+    } catch (_) {}
+    // Worker will set status to 'failed' after current doc; SSE will transition to complete
+  }
+
   // Derive year range for custom dropdowns from actual feed date_min values
   const feedDateMin = bootstrapStatus?.rss_feeds
     ?.filter(f => selectedFeeds.includes(f.feed_id) && f.date_min)
@@ -259,11 +269,11 @@ export default function BootstrapModal({ onClose, onStarted }) {
             const partial   = progress.failed > 0 && progress.succeeded > 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Status badge + session id */}
+                {/* Status badge + session id + stop button */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {uiMode === 'running' ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--info-tint, #eff6ff)', color: 'var(--accent-l)', border: '1px solid var(--info-tint-border, #bfdbfe)', animation: 'pulse 1.5s ease-in-out infinite' }}>
-                      Running
+                      {stopping ? 'Stopping…' : 'Running'}
                     </span>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
@@ -274,6 +284,14 @@ export default function BootstrapModal({ onClose, onStarted }) {
                     <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
                       session {sessionId.slice(0, 8)}…
                     </span>
+                  )}
+                  {uiMode === 'running' && !stopping && (
+                    <button
+                      onClick={handleStop}
+                      style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 4, border: '1px solid var(--err-text, #ef4444)', fontSize: 11, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--err-text, #ef4444)', transition: 'all 120ms ease' }}
+                    >
+                      Stop
+                    </button>
                   )}
                 </div>
 

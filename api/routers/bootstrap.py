@@ -320,6 +320,10 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
     session["status"] = "running"
 
     for i, doc in enumerate(docs):
+        # Check for cancellation before each document
+        if session.get("cancelled"):
+            break
+
         doc_id = doc["doc_id"]
         try:
             result = ingest_documents(
@@ -355,16 +359,19 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
 
         session["processed"] = i + 1
 
-    succeeded = session["succeeded"]
-    failed = session["failed"]
-    if failed == 0:
-        final_status = "success"
-    elif succeeded > 0:
-        final_status = "partial"
+    if session.get("cancelled"):
+        session["status"] = "failed"
     else:
-        final_status = "failed"
+        succeeded = session["succeeded"]
+        failed = session["failed"]
+        if failed == 0:
+            final_status = "success"
+        elif succeeded > 0:
+            final_status = "partial"
+        else:
+            final_status = "failed"
+        session["status"] = final_status
 
-    session["status"] = final_status
     session["completed_at"] = datetime.now(timezone.utc).isoformat()
 
 
@@ -441,6 +448,20 @@ async def reingest_doc(body: ReingestDocRequest):
     t.start()
 
     return {"session_id": session_id, "doc_id": doc_id, "state": "running"}
+
+
+# ── POST /bootstrap/sessions/{session_id}/stop ───────────────────────────────
+
+@router.post("/sessions/{session_id}/stop")
+async def stop_bootstrap_session(session_id: str):
+    """Signal a running bootstrap session to stop after the current document."""
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = _sessions[session_id]
+    if session.get("status") not in ("pending", "running"):
+        raise HTTPException(status_code=409, detail=f"Session is not running (status: {session['status']})")
+    session["cancelled"] = True
+    return {"session_id": session_id, "message": "Cancellation requested — will stop after current document."}
 
 
 # ── POST /bootstrap/activate-rss ─────────────────────────────────────────────

@@ -7,8 +7,14 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 router = APIRouter()
+
+QDRANT_HOST       = os.getenv("QDRANT_HOST", "qdrant")
+QDRANT_PORT       = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -276,6 +282,34 @@ async def sources_bootstrap(body: BootstrapRequest):
 
     # Map UI mode to redownload strategy
     redownload = "force" if body.mode == "wipe_and_reload" else "check"
+
+    # Wipe existing Qdrant chunks and reset registry status for selected documents
+    if body.mode == "wipe_and_reload":
+        doc_ids = [d["doc_id"] for d in docs]
+        try:
+            client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            client.delete(
+                collection_name=QDRANT_COLLECTION,
+                points_selector=Filter(
+                    must=[FieldCondition(key="document_id", match=MatchAny(any=doc_ids))]
+                ),
+            )
+        except Exception:
+            pass  # Qdrant wipe is best-effort; ingestion will overwrite anyway
+        try:
+            conn = get_pg_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE document_registry SET ingestion_status = 'pending', chunk_count = 0, last_indexed_at = NULL WHERE document_id = ANY(%s)",
+                    (doc_ids,),
+                )
+                conn.commit()
+                cur.close()
+            finally:
+                conn.close()
+        except Exception:
+            pass  # Non-fatal — ingestion will update status on completion
 
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {

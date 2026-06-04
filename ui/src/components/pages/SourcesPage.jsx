@@ -1042,7 +1042,6 @@ function BootstrapToast({ result, onClose }) {
 
 export default function SourcesPage() {
   const [showBootstrapModal, setShowBootstrapModal] = useState(false);
-  const [bootstrapResult, setBootstrapResult] = useState(null);
   const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
 
   useEffect(() => {
@@ -1067,14 +1066,6 @@ export default function SourcesPage() {
       {showBootstrapModal && (
         <BootstrapModal
           onClose={() => setShowBootstrapModal(false)}
-          onStarted={(result) => setBootstrapResult(result)}
-        />
-      )}
-
-      {bootstrapResult && (
-        <BootstrapToast
-          result={bootstrapResult}
-          onClose={() => setBootstrapResult(null)}
         />
       )}
     </div>
