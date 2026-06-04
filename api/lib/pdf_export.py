@@ -521,76 +521,96 @@ def generate_query_export_pdf(
                                            draw_w, 13.5) if display_txt else 14
                 ctxt_h  = min(ctxt_h, max_ln * 13.5)
                 trunc_row = 14 if truncated else 0
-                # card geometry: 68pt fixed top (head+meta) + chunk box + trace + bottom pad
-                ctxt_box_h_est = ctxt_h + 14 + trunc_row  # ctxt_pad*2=14
-                card_h = 68 + ctxt_box_h_est + 6 + 12 + 8  # trace + trace_h + pad
+                # ── card geometry (all measurements derived from layout constants) ──
+                # head area: 22pt top pad + badge/title row
+                # meta grid: 2 rows × 22pt (label 7.5pt + 12pt gap + value 8.5pt) = 44pt
+                # gap head→meta: 16pt, gap meta→chunk: 14pt
+                # chunk box: ctxt_h + ctxt_pad*2 + trunc_row
+                # trace row: 8pt gap + 10pt text + 10pt bottom pad
+                META_ROW_H  = 22   # label + value + inter-row gap
+                META_ROWS   = 2
+                HEAD_TOP    = 22   # space above badge centre
+                HEAD_META_GAP = 16
+                META_CHUNK_GAP = 14
+                ctxt_pad    = 9
+                ctxt_box_h  = ctxt_h + ctxt_pad * 2 + trunc_row
+                TRACE_BLOCK = 28   # gap + text height + bottom pad
+                card_h = (HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H
+                          + META_CHUNK_GAP + ctxt_box_h + TRACE_BLOCK)
 
-                cy = chk(cy, card_h + 12, fp)
+                cy = chk(cy, card_h + 18, fp)
 
-                bg = C_WHITE if idx % 2 == 0 else C_ROW_ALT
+                # alternating card backgrounds — chunk box inverts so it's always visible
+                card_is_alt = (idx % 2 == 1)
+                bg       = C_ROW_ALT if card_is_alt else C_WHITE
+                box_bg   = C_WHITE   if card_is_alt else _rgb("F1F5F9")
                 _rect(rc, MARGIN_X, cy - card_h, CONTENT_W, card_h, fill=bg, stroke=C_BORDER, lw=0.75)
 
-                head_y = cy - 16
+                # ── head row ──────────────────────────────────────────────────
+                head_y = cy - HEAD_TOP
                 bx = MARGIN_X + 14
                 rc.saveState()
                 rc.setFillColorRGB(*C_ACCENT)
-                rc.circle(bx, head_y, 8.0, fill=1, stroke=0)
+                rc.circle(bx, head_y, 9.0, fill=1, stroke=0)
                 rc.setFillColorRGB(*C_WHITE)
-                rc.setFont("Inter-Bold", 7.5)
-                rc.drawCentredString(bx, head_y - 2.5, str(idx + 1))
+                rc.setFont("Inter-Bold", 8.0)
+                rc.drawCentredString(bx, head_y - 2.8, str(idx + 1))
                 rc.restoreState()
 
-                _text(rc, MARGIN_X + 28, head_y - 3, title_c, "Inter-SemiBold", 10.5, C_INK)
+                _text(rc, MARGIN_X + 30, head_y - 3, title_c, "Inter-SemiBold", 10.5, C_INK)
 
                 badge_txt = "● SUPERSEDED" if superseded else "● ACTIVE"
                 badge_fg  = C_WARN_TEXT if superseded else C_STATUS_OK
                 badge_bg  = C_STATUS_AMB_BG if superseded else C_STATUS_OK_BG
-                bw, bh = 60, 13
-                bx2 = MARGIN_X + CONTENT_W - bw - 6
-                by2 = head_y - 11
+                bw, bh = 64, 14
+                bx2 = MARGIN_X + CONTENT_W - bw - 8
+                by2 = head_y - 12
                 _rect(rc, bx2, by2, bw, bh, fill=badge_bg, stroke=None, radius=3)
-                _text(rc, bx2 + bw / 2, by2 + 3, badge_txt, "Inter-SemiBold", 7, badge_fg, align="center")
+                _text(rc, bx2 + bw / 2, by2 + 3.5, badge_txt, "Inter-SemiBold", 7.5,
+                      badge_fg, align="center")
                 if not cited_c:
-                    cw2, cx2 = 70, bx2 - 74
-                    _rect(rc, cx2, by2, cw2, bh, fill=_rgb("F1F5F9"), stroke=C_BORDER_STR, lw=0.5, radius=3)
-                    _text(rc, cx2 + cw2 / 2, by2 + 3, "NOT CITED", "Inter-SemiBold", 7, C_INK_SEC, align="center")
+                    cw2, cx2 = 72, bx2 - 76
+                    _rect(rc, cx2, by2, cw2, bh, fill=_rgb("F1F5F9"), stroke=C_BORDER_STR,
+                          lw=0.5, radius=3)
+                    _text(rc, cx2 + cw2 / 2, by2 + 3.5, "NOT CITED", "Inter-SemiBold",
+                          7.5, C_INK_SEC, align="center")
 
-                meta_y = cy - 30
+                # ── metadata grid 3×2 ─────────────────────────────────────────
+                meta_y = cy - HEAD_TOP - HEAD_META_GAP
                 cells = [
-                    ("Agency", agency), ("Version", version), ("Doc type", doc_type),
-                    ("Published", pub_date), ("Clause ID", clause), ("Page", page_no),
+                    ("Agency",    agency),   ("Version",   version[:32]),  ("Doc type", doc_type),
+                    ("Published", pub_date), ("Clause ID", clause),        ("Page",     page_no),
                 ]
                 col_w3 = CONTENT_W / 3
-                for ci, (k, v) in enumerate(cells[:6]):
-                    cx3 = MARGIN_X + (ci % 3) * col_w3 + 8
-                    row_y = meta_y - (ci // 3) * 17
+                for ci, (k, v) in enumerate(cells):
+                    cx3    = MARGIN_X + (ci % 3) * col_w3 + 10
+                    row_y  = meta_y - (ci // 3) * META_ROW_H
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
-                    _text(rc, cx3, row_y - 10, (v or "—")[:30], "Mono", 8.5, C_INK)
+                    _text(rc, cx3, row_y - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
 
-                chunk_y    = meta_y - 38
-                ctxt_pad   = 7
-                ctxt_box_h = ctxt_h + ctxt_pad * 2 + trunc_row
+                # ── chunk text box ─────────────────────────────────────────────
+                chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
                 _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
-                      fill=C_ROW_ALT, stroke=C_BORDER, lw=0.5)
-                _wrapped_text(rc, MARGIN_X + 14, chunk_y - ctxt_pad - 10,
+                      fill=box_bg, stroke=C_BORDER, lw=0.75)
+                _wrapped_text(rc, MARGIN_X + 16, chunk_y - ctxt_pad - 10,
                               (display_txt or "—").replace("\n", " "), "Mono", 8.5,
-                              _rgb("1E293B"), draw_w, 13.5)
+                              _rgb("1E293B"), draw_w - 4, 13.5)
                 if truncated:
-                    _text(rc, MARGIN_X + 14, chunk_y - ctxt_box_h + ctxt_pad + 2,
-                          f"▾ {len(chunk_txt)} chars total — first {DISPLAY_CHARS} shown"
+                    _text(rc, MARGIN_X + 16, chunk_y - ctxt_box_h + ctxt_pad,
+                          f"▾ {len(chunk_txt)} chars — first {DISPLAY_CHARS} shown"
                           f" (full text in source document)",
                           "Mono", 7.5, C_INK_TER)
 
-                trace_y   = chunk_y - ctxt_box_h - 6
-                trace_x   = MARGIN_X + 8
-                trace_max = CONTENT_W - 16  # available width inside card padding
-                # build trace string and hard-clip to fit
-                t_prefix = f"trace_id  {trace_id[:28]}   Ingested  {chunked_at[:10]}   Source  "
+                # ── trace row ─────────────────────────────────────────────────
+                trace_y   = chunk_y - ctxt_box_h - 8
+                trace_x   = MARGIN_X + 10
+                trace_max = CONTENT_W - 20
+                t_prefix  = f"trace_id  {trace_id[:28]}   Ingested  {chunked_at[:10]}   Source  "
                 chars_left = max(0, int((trace_max - rc.stringWidth(t_prefix, "Mono", 7.5))
                                         / rc.stringWidth("x", "Mono", 7.5)) - 2)
-                trace_str = t_prefix + source_url[:chars_left]
-                _text(rc, trace_x, trace_y, trace_str, "Mono", 7.5, C_INK_TER)
-                cy -= card_h + 8
+                _text(rc, trace_x, trace_y, t_prefix + source_url[:chars_left],
+                      "Mono", 7.5, C_INK_TER)
+                cy -= card_h + 18
 
             _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
 
