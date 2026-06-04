@@ -245,8 +245,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
                         <span className="cnt" style={{ width: 62, textAlign: 'right', flexShrink: 0 }}>
                           {doc.chunk_count > 0 ? `${doc.chunk_count} chunks` : '—'}
                         </span>
-                        <span className="cnt" style={{ width: 72, textAlign: 'right', flexShrink: 0 }}>
-                          {doc.last_indexed_at ? formatDate(doc.last_indexed_at) : '—'}
+                        <span className="cnt" style={{ width: 80, textAlign: 'right', flexShrink: 0 }} title="Publication date">
+                          {doc.publication_date ? formatDate(doc.publication_date) : '—'}
                         </span>
                       </div>
                     );

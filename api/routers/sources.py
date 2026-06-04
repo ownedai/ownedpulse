@@ -55,7 +55,8 @@ async def bootstrap_status():
                     ingestion_status,
                     COALESCE(chunk_count, 0) AS chunk_count,
                     last_indexed_at,
-                    metadata_json->>'document_title' AS document_title
+                    metadata_json->>'document_title' AS document_title,
+                    publication_date
                 FROM document_registry
                 WHERE corpus_doc = TRUE
                 ORDER BY issuing_body, document_id
@@ -95,7 +96,7 @@ async def bootstrap_status():
 
     base_corpus = []
     for row in base_rows:
-        doc_id, issuing_body, doc_type, ingestion_status, chunk_count, last_indexed_at, document_title = row
+        doc_id, issuing_body, doc_type, ingestion_status, chunk_count, last_indexed_at, document_title, publication_date = row
         agency = "EMA" if issuing_body == "EU-Commission" else (issuing_body or "Unknown")
         base_corpus.append({
             "document_id": doc_id,
@@ -105,6 +106,7 @@ async def bootstrap_status():
             "ingestion_status": ingestion_status,
             "chunk_count": chunk_count,
             "last_indexed_at": last_indexed_at.isoformat() if last_indexed_at else None,
+            "publication_date": publication_date.isoformat() if publication_date else None,
         })
 
     rss_feeds = []
