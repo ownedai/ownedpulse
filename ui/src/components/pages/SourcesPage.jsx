@@ -694,9 +694,8 @@ const SCOPE_GROUPS = [
 ];
 
 const REDOWNLOAD_OPTIONS = [
-  { value: 'none',  label: 'Use existing files',       hint: 'Skip download — ingest from disk as-is' },
-  { value: 'check', label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
-  { value: 'force', label: 'Re-download everything',   hint: 'Delete and re-fetch all source files' },
+  { value: 'check', label: 'Re-download if changed',  hint: 'Compare hash; fetch only when source differs' },
+  { value: 'force', label: 'Re-download everything',  hint: 'Delete and re-fetch all source files' },
 ];
 
 function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
@@ -704,7 +703,7 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   const [mode, setMode] = useState('config'); // config | running | complete
   const [confirmed, setConfirmed] = useState(false);
   const [scope, setScope] = useState({ fda_guidance: true, fda_press: true, ema: true, ich: true });
-  const [redownload, setRedownload] = useState('none');
+  const [redownload, setRedownload] = useState('check');
   const [progress, setProgress] = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);
   const [rssActivated, setRssActivated] = useState(false);
@@ -829,10 +828,22 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
                     <label
                       key={opt.value}
                       onClick={() => setRedownload(opt.value)}
-                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px', marginBottom: 4, borderRadius: 4, cursor: 'pointer', background: redownload === opt.value ? 'var(--panel-accent-bg, #dbeafe)' : 'transparent', border: `1px solid ${redownload === opt.value ? 'var(--panel-accent, #2563eb)' : 'var(--doc-border)'}`, transition: 'all 120ms ease' }}
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 10,
+                        padding: '8px 10px', marginBottom: 4, borderRadius: 4, cursor: 'pointer',
+                        background: redownload === opt.value ? 'rgba(96,165,250,0.10)' : 'transparent',
+                        border: '1px solid var(--doc-border)',
+                        borderLeft: redownload === opt.value ? '3px solid var(--accent-l, #60a5fa)' : '1px solid var(--doc-border)',
+                        transition: 'all 120ms ease',
+                      }}
                     >
-                      <span style={{ width: 14, height: 14, borderRadius: 7, border: `2px solid ${redownload === opt.value ? 'var(--panel-accent, #2563eb)' : 'var(--doc-border)'}`, background: redownload === opt.value ? 'var(--panel-accent, #2563eb)' : 'transparent', flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {redownload === opt.value && <span style={{ width: 5, height: 5, borderRadius: 3, background: '#fff' }} />}
+                      <span style={{
+                        width: 14, height: 14, borderRadius: 7, flexShrink: 0, marginTop: 1,
+                        border: `2px solid ${redownload === opt.value ? 'var(--accent-l, #60a5fa)' : 'var(--doc-border)'}`,
+                        background: 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {redownload === opt.value && <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--accent-l, #60a5fa)' }} />}
                       </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, color: 'var(--doc-text)', fontWeight: redownload === opt.value ? 500 : 400 }}>{opt.label}</div>
