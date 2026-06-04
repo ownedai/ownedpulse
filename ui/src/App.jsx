@@ -16,7 +16,6 @@ import CorpusPage from './components/pages/CorpusPage';
 import DocumentDetailPage from './components/pages/DocumentDetailPage';
 import RunLogPage from './components/pages/RunLogPage';
 import IngestionsPage from './components/pages/IngestionsPage';
-import AdminPage from './components/pages/AdminPage';
 import QueryPage from './components/pages/QueryPage';
 import SourcesPage from './components/pages/SourcesPage';
 import useQuery from './hooks/useQuery';
@@ -292,7 +291,6 @@ export default function App() {
             <Route path="/corpus/runs" element={<Navigate to="/ingestions" replace />} />
             <Route path="/ingestions" element={<IngestionsPage />} />
             <Route path="/sources" element={<SourcesPage />} />
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
