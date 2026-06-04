@@ -694,8 +694,9 @@ const SCOPE_GROUPS = [
 ];
 
 const REDOWNLOAD_OPTIONS = [
-  { value: 'check', label: 'Re-download if changed',  hint: 'Compare hash; fetch only when source differs' },
-  { value: 'force', label: 'Re-download everything',  hint: 'Delete and re-fetch all source files' },
+  { value: 'none',  label: 'Re-ingest from disk',      hint: 'Use already downloaded files — no network access' },
+  { value: 'check', label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
+  { value: 'force', label: 'Re-download everything',   hint: 'Delete and re-fetch all files from original sources' },
 ];
 
 function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
