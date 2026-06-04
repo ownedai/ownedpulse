@@ -295,12 +295,14 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
         <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
+        <span className="g3-cell"><span className="lbl">Feed</span><span className="g3-feed">—</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={status} /></span>
-        <span className="g3-cell mono"><span className="lbl">Documents</span>{(item.doc_count ?? 0).toLocaleString()}</span>
-        <span className="g3-cell num"><span className="lbl">Succeeded</span>{(item.doc_count_succeeded ?? 0).toLocaleString()}</span>
-        <span className={`g3-cell num failnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
-          <span className="lbl">Failed</span>{item.doc_count_failed ?? 0}
+        <span className="g3-cell num"><span className="lbl">New</span>{(item.doc_count_succeeded ?? 0).toLocaleString()}</span>
+        <span className="g3-cell num"><span className="lbl">Skipped</span>—</span>
+        <span className={`g3-cell num errnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
+          <span className="lbl">Errors</span>{item.doc_count_failed ?? 0}
         </span>
+        <span className="g3-cell num dim"><span className="lbl">Duration</span>—</span>
       </div>
       {isOpen && (
         <div className="g3-sub">
@@ -344,7 +346,7 @@ function RssRunRow({ item, isOpen, onToggle }) {
     <div className="g3-row rss" data-testid={`ingestion-run-row-${item.run_id}`}>
       <div className="g3-row-head" onClick={onToggle} data-testid={`ingestion-run-expand-${item.run_id}`}>
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
-        <span className="g3-cell mono"><span className="lbl">Triggered At</span>{formatDateTime(item.triggered_at)}</span>
+        <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
         <span className="g3-cell"><span className="lbl">Feed</span><span className="g3-feed">{item.feed_name || '—'}</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={item.status} /></span>
