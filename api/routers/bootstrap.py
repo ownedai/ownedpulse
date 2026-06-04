@@ -368,7 +368,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
         session["processed"] = i + 1
 
     if session.get("cancelled"):
-        session["status"] = "failed"
+        pass  # status already set to "failed" by stop endpoint
     else:
         succeeded = session["succeeded"]
         failed = session["failed"]
@@ -380,7 +380,8 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
             final_status = "failed"
         session["status"] = final_status
 
-    session["completed_at"] = datetime.now(timezone.utc).isoformat()
+    if not session.get("completed_at"):
+        session["completed_at"] = datetime.now(timezone.utc).isoformat()
 
 
 # ── GET /bootstrap/progress/{session_id} (SSE) ───────────────────────────────
@@ -469,7 +470,9 @@ async def stop_bootstrap_session(session_id: str):
     if session.get("status") not in ("pending", "running"):
         raise HTTPException(status_code=409, detail=f"Session is not running (status: {session['status']})")
     session["cancelled"] = True
-    return {"session_id": session_id, "message": "Cancellation requested — will stop after current document."}
+    session["status"] = "failed"
+    session["completed_at"] = datetime.now(timezone.utc).isoformat()
+    return {"session_id": session_id, "message": "Stopped."}
 
 
 # ── POST /bootstrap/activate-rss ─────────────────────────────────────────────
