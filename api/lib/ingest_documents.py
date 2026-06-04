@@ -66,7 +66,8 @@ def _subprocess_env(extra: dict = None) -> dict:
     env["OLLAMA_HOST"] = olla_host
     env.setdefault("OLLAMA_URL", olla_host)
     env.setdefault("DOCLING_HOST", env.get("DOCLING_HOST", "http://docling:5001"))
-    env.setdefault("ARCHIVE_ROOT", env.get("ARCHIVE_ROOT", "/archive"))
+    if not env.get("ARCHIVE_ROOT"):
+        env["ARCHIVE_ROOT"] = "/archive"
     if extra:
         env.update(extra)
     return env
