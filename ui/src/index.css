@@ -3538,8 +3538,8 @@ a.ag-row:hover .n {
 .g3-row { border: 1px solid var(--doc-border); border-radius: 6px; margin-top: 8px; background: var(--doc-surface); overflow: hidden; }
 .g3-row-head { display: grid; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
 .g3-row-head:hover { background: var(--doc-hover); }
-.g3-row.rss .g3-row-head { grid-template-columns: 16px 148px 90px 1fr 80px 60px 60px 64px 70px; }
-.g3-row.session .g3-row-head { grid-template-columns: 16px 148px 90px 80px 1fr 80px 70px; }
+.g3-row.rss .g3-row-head,
+.g3-row.session .g3-row-head { grid-template-columns: 16px 148px 90px 1fr 80px 60px 60px 64px 70px; }
 .g3-chev { color: var(--doc-text-3); display: inline-flex; transition: transform 150ms ease; }
 .g3-chev.open { transform: rotate(90deg); }
 .g3-chev svg { width: 12px; height: 12px; }
