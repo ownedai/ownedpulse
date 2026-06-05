@@ -78,26 +78,30 @@ async def bootstrap_state():
             cur = conn.cursor()
             cur.execute("SELECT count(*) FROM document_registry WHERE ingestion_status IN ('indexed', 'success')")
             doc_count = cur.fetchone()[0]
-            # Last bootstrap session: bootstrap_ui or manual_cli, grouped by UTC date
+            # Bootstrap doc count: documents currently in registry that were
+            # ingested via bootstrap_ui (not RSS scheduler or manual CLI runs).
+            # Last bootstrap timestamp = most recent triggered_at for bootstrap_ui.
             cur.execute(
                 """
-                SELECT last_at, session_doc_count FROM (
-                    SELECT
-                        MAX(triggered_at) AS last_at,
-                        COUNT(*) AS session_doc_count,
-                        (triggered_at AT TIME ZONE 'UTC')::date AS grp_date
-                    FROM run_log
-                    WHERE trigger_source IN ('bootstrap_ui', 'manual_cli')
-                    GROUP BY (triggered_at AT TIME ZONE 'UTC')::date
-                    ORDER BY grp_date DESC
-                    LIMIT 1
-                ) t
+                SELECT COUNT(d.document_id), MAX(r.triggered_at)
+                FROM document_registry d
+                JOIN run_log r ON d.run_id = r.run_id
+                WHERE r.trigger_source = 'bootstrap_ui'
+                  AND d.ingestion_status IN ('indexed', 'success')
                 """
             )
             row = cur.fetchone()
-            if row and row[0]:
-                last_bootstrap = row[0].isoformat()
-                bootstrap_doc_count = int(row[1])
+            if row and row[1]:
+                bootstrap_doc_count = int(row[0])
+                last_bootstrap = row[1].isoformat()
+            elif not last_bootstrap:
+                # Fallback: most recent bootstrap_ui run regardless of outcome
+                cur.execute(
+                    "SELECT triggered_at FROM run_log WHERE trigger_source = 'bootstrap_ui' ORDER BY triggered_at DESC LIMIT 1"
+                )
+                fb = cur.fetchone()
+                if fb:
+                    last_bootstrap = fb[0].isoformat()
             cur.close()
         finally:
             conn.close()

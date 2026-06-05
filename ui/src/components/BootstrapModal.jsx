@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { formatDate } from '../dateFormat';
-import { getBootstrapStatus, getDateEstimate, postSourcesBootstrap, openBootstrapProgress, stopBootstrapSession } from '../api/client';
+import { getBootstrapStatus, getBootstrapState, getDateEstimate, postSourcesBootstrap, openBootstrapProgress, stopBootstrapSession } from '../api/client';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -104,17 +104,45 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const [submitError, setSubmitError]               = useState(null);
 
   // Running / complete state
-  const [uiMode, setUiMode]       = useState('config'); // 'config' | 'running' | 'complete'
-  const [sessionId, setSessionId] = useState(null);
-  const [progress, setProgress]   = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending' });
-  const [docEvents, setDocEvents] = useState([]);
-  const [stopping, setStopping]   = useState(false);
+  const [uiMode, setUiMode]         = useState('config'); // 'config' | 'running' | 'complete'
+  const [sessionId, setSessionId]   = useState(null);
+  const [progress, setProgress]     = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending' });
+  const [docEvents, setDocEvents]   = useState([]);
+  const [stopping, setStopping]     = useState(false);
+  const [connectionLost, setConnectionLost] = useState(false);
 
   const estimateAbortRef   = useRef(null);
   const estimateTimeoutRef = useRef(null);
   const esRef              = useRef(null);
 
-  // Load bootstrap status on mount
+  // Shared SSE subscription — used by both handleSubmit and auto-reconnect
+  const subscribeToSession = useCallback((sid) => {
+    if (esRef.current) { esRef.current.close(); esRef.current = null; }
+    const es = openBootstrapProgress(sid);
+    esRef.current = es;
+    es.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === 'doc') {
+          setDocEvents(prev => [data, ...prev].slice(0, 150));
+        } else if (data.type === 'progress') {
+          setProgress(data);
+          if (data.status !== 'pending' && data.status !== 'running') {
+            es.close();
+            esRef.current = null;
+            setUiMode('complete');
+          }
+        }
+      } catch (_) {}
+    };
+    es.onerror = () => {
+      if (esRef.current) { esRef.current.close(); esRef.current = null; }
+      setConnectionLost(true);
+      setUiMode('complete');
+    };
+  }, []);
+
+  // Load bootstrap status on mount; auto-reconnect to any active session
   useEffect(() => {
     getBootstrapStatus()
       .then(data => {
@@ -124,7 +152,18 @@ export default function BootstrapModal({ onClose, onStarted }) {
       })
       .catch(err => setLoadError(err.message || 'Failed to load corpus status'))
       .finally(() => setLoading(false));
-  }, []);
+
+    // Check for an active session and reconnect to it
+    getBootstrapState()
+      .then(state => {
+        if (state.active_session) {
+          setSessionId(state.active_session);
+          setUiMode('running');
+          subscribeToSession(state.active_session);
+        }
+      })
+      .catch(() => {});
+  }, [subscribeToSession]);
 
   // Refresh estimate whenever selection or date window changes
   const refreshEstimate = useCallback(() => {
@@ -172,29 +211,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
       setUiMode('running');
       setSubmitting(false);
       onStarted?.(result);
-
-      // Open SSE progress stream
-      const es = openBootstrapProgress(result.session_id);
-      esRef.current = es;
-      es.onmessage = (evt) => {
-        try {
-          const data = JSON.parse(evt.data);
-          if (data.type === 'doc') {
-            setDocEvents(prev => [data, ...prev].slice(0, 150));
-          } else if (data.type === 'progress') {
-            setProgress(data);
-            if (data.status !== 'pending' && data.status !== 'running') {
-              es.close();
-              esRef.current = null;
-              setUiMode('complete');
-            }
-          }
-        } catch (_) {}
-      };
-      es.onerror = () => {
-        if (esRef.current) { esRef.current.close(); esRef.current = null; }
-        setUiMode('complete');
-      };
+      subscribeToSession(result.session_id);
     } catch (err) {
       setSubmitError(err.message || 'Failed to start bootstrap');
       setSubmitting(false);
@@ -235,7 +252,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   };
 
   return createPortal(
-    <div className="rp-modal-backdrop" onClick={!submitting ? onClose : undefined}>
+    <div className="rp-modal-backdrop" onClick={(!submitting && uiMode !== 'running') ? onClose : undefined}>
       <div
         className="rp-modal"
         style={{ width: 680, maxWidth: '95vw' }}
@@ -249,7 +266,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
               Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
             </div>
           </div>
-          <button className={`close ${submitting ? 'disabled' : ''}`} onClick={!submitting ? onClose : undefined}>
+          <button className={`close ${(submitting || uiMode === 'running') ? 'disabled' : ''}`} onClick={(!submitting && uiMode !== 'running') ? onClose : undefined}>
             <CloseIcon />
           </button>
         </div>
@@ -272,8 +289,10 @@ export default function BootstrapModal({ onClose, onStarted }) {
           {(uiMode === 'running' || uiMode === 'complete') && (() => {
             const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
             const wasStopped = stopping && uiMode === 'complete';
-            const allFailed = !wasStopped && progress.failed > 0 && progress.succeeded === 0;
-            const partial   = !wasStopped && progress.failed > 0 && progress.succeeded > 0;
+            const wasDisconnected = connectionLost && !wasStopped;
+            const isFinished = !wasDisconnected && uiMode === 'complete';
+            const allFailed = isFinished && progress.failed > 0 && progress.succeeded === 0;
+            const partial   = isFinished && progress.failed > 0 && progress.succeeded > 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Status badge + session id + stop button */}
@@ -281,6 +300,10 @@ export default function BootstrapModal({ onClose, onStarted }) {
                   {uiMode === 'running' ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--info-tint, #eff6ff)', color: 'var(--accent-l)', border: '1px solid var(--info-tint-border, #bfdbfe)', animation: 'pulse 1.5s ease-in-out infinite' }}>
                       {stopping ? 'Stopping…' : 'Running'}
+                    </span>
+                  ) : wasDisconnected ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--warn-tint)', color: 'var(--warn-text)', border: '1px solid var(--warn-tint-border)' }}>
+                      Connection lost
                     </span>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
@@ -349,12 +372,14 @@ export default function BootstrapModal({ onClose, onStarted }) {
                 )}
 
                 {uiMode === 'complete' && (
-                  <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
-                    {wasStopped
+                  <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: wasDisconnected ? 'var(--warn-tint)' : wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasDisconnected ? 'var(--warn-text)' : wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasDisconnected ? 'var(--warn-tint-border)' : wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
+                    {wasDisconnected
+                      ? `Connection to the server was lost at ${progress.processed} / ${progress.total} — the background job is still running. Close this dialog and re-open to resume tracking, or check Run Log.`
+                      : wasStopped
                       ? `Stopped after ${progress.processed} / ${progress.total} documents — ${progress.succeeded} succeeded · ${progress.failed} failed${progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}`
                       : `${progress.succeeded} succeeded · ${progress.failed} failed${progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}`
                     }
-                    {(allFailed || partial) && ' — check Run Log for details'}
+                    {!wasDisconnected && (allFailed || partial) && ' — check Run Log for details'}
                   </div>
                 )}
               </div>

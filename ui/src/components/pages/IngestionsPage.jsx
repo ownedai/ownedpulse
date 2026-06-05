@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans } from '../../api/client';
+import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reingestDoc, openBootstrapProgress } from '../../api/client';
 import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 
@@ -77,7 +77,145 @@ function RetryTimeline({ docId, data, loading, error }) {
   );
 }
 
+function RetryProgressModal({ docId, sessionId, onClose }) {
+  const [phase, setPhase] = useState('running');
+  const [events, setEvents] = useState([]);
+  const esRef = useRef(null);
+
+  useEffect(() => {
+    const es = openBootstrapProgress(sessionId);
+    esRef.current = es;
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'doc') {
+          setEvents((prev) => [...prev, msg]);
+          if (msg.status === 'ok') setPhase('done');
+          else if (msg.status === 'skipped') setPhase('skipped');
+          else setPhase('failed');
+          es.close();
+        } else if (msg.type === 'progress') {
+          if (msg.status !== 'pending' && msg.status !== 'running') {
+            if (phase === 'running') setPhase(msg.status === 'success' ? 'done' : 'failed');
+            es.close();
+          }
+        }
+      } catch (_) {}
+    };
+    es.onerror = () => { setPhase('disconnected'); es.close(); };
+    return () => { if (esRef.current) { esRef.current.close(); esRef.current = null; } };
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canClose = phase !== 'running';
+  const phaseStyle = {
+    running:      { bg: 'rgba(59,130,246,0.1)', color: 'var(--accent-l)', border: 'rgba(59,130,246,0.3)', label: 'Running…' },
+    done:         { bg: 'var(--ok-tint)', color: 'var(--ok-text)', border: 'var(--ok-tint-border)', label: 'Indexed ✓' },
+    skipped:      { bg: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Skipped' },
+    failed:       { bg: 'var(--err-tint)', color: 'var(--err-text)', border: 'var(--err-tint-border)', label: 'Failed ✗' },
+    disconnected: { bg: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Connection lost' },
+  }[phase] || {};
+
+  return createPortal(
+    <div className="rp-modal-backdrop" onClick={canClose ? onClose : undefined}>
+      <div className="rp-modal" style={{ width: 540, maxWidth: '92vw' }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <div>
+            <h3>Retrying ingestion</h3>
+            <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 440 }}>
+              {docId}
+            </div>
+          </div>
+          <button className={`close ${!canClose ? 'disabled' : ''}`} onClick={canClose ? onClose : undefined}>
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>
+          </button>
+        </div>
+        <div className="mbody" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontSize: 10.5, fontFamily: 'var(--mono)', fontWeight: 600, letterSpacing: '0.06em',
+              textTransform: 'uppercase', padding: '2px 8px', borderRadius: 3,
+              background: phaseStyle.bg, color: phaseStyle.color, border: `1px solid ${phaseStyle.border}`,
+              animation: phase === 'running' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+            }}>
+              {phaseStyle.label}
+            </span>
+            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
+              session {sessionId.slice(0, 8)}…
+            </span>
+          </div>
+
+          <div style={{ background: 'var(--doc-bg)', border: '1px solid var(--doc-border)', borderRadius: 4, padding: '8px 10px', minHeight: 60, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {events.length === 0 && phase === 'running' && (
+              <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
+                Waiting for ingestion worker… (this can take 1–3 minutes for large documents)
+              </span>
+            )}
+            {events.map((ev, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{
+                  fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, padding: '1px 5px', borderRadius: 2, flexShrink: 0, marginTop: 1,
+                  background: ev.status === 'ok' ? 'var(--ok-tint)' : ev.status === 'skipped' ? 'rgba(245,158,11,0.1)' : 'var(--err-tint)',
+                  color: ev.status === 'ok' ? 'var(--ok-text)' : ev.status === 'skipped' ? '#f59e0b' : 'var(--err-text)',
+                  border: `1px solid ${ev.status === 'ok' ? 'var(--ok-tint-border)' : ev.status === 'skipped' ? 'rgba(245,158,11,0.3)' : 'var(--err-tint-border)'}`,
+                }}>
+                  {ev.status === 'ok' ? 'OK' : ev.status === 'skipped' ? 'SKIP' : 'ERR'}
+                </span>
+                <div style={{ flex: 1 }}>
+                  {ev.status === 'ok' && (
+                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--ok-text)' }}>
+                      Indexed successfully{ev.chunks != null ? ` — ${ev.chunks} chunks` : ''}
+                    </span>
+                  )}
+                  {ev.reason && (
+                    <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: ev.status === 'ok' ? 'var(--doc-text-3)' : 'var(--err-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5, marginTop: ev.status === 'ok' ? 2 : 0 }}>
+                      {ev.reason}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {phase === 'disconnected' && (
+              <div style={{ fontSize: 12, fontFamily: 'var(--mono)', color: '#f59e0b', lineHeight: 1.5 }}>
+                Connection to the server was lost — the background job may still be running.
+                Close this window and re-open the Ingestions row in a few minutes to check the updated status.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="mfoot" style={{ justifyContent: 'flex-end' }}>
+          <button
+            className={`rp-mbtn ${canClose ? 'primary' : 'ghost disabled'}`}
+            disabled={!canClose}
+            onClick={canClose ? onClose : undefined}
+          >
+            {phase === 'running' ? 'Running…' : 'Close'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetry, retryDataMap, onToggleRetry }) {
+  const [docSort, setDocSort] = useState('errors_first');
+  const [reingestStates, setReingestStates] = useState({});
+  const [retryModal, setRetryModal] = useState(null);
+
+  const handleReingest = useCallback((e, docId) => {
+    e.stopPropagation();
+    setReingestStates((s) => ({ ...s, [docId]: 'starting' }));
+    reingestDoc(docId)
+      .then(({ session_id }) => {
+        setReingestStates((s) => ({ ...s, [docId]: 'idle' }));
+        setRetryModal({ docId, sessionId: session_id });
+      })
+      .catch((err) => {
+        setReingestStates((s) => ({ ...s, [docId]: 'start_failed' }));
+        setTimeout(() => setReingestStates((s) => ({ ...s, [docId]: 'idle' })), 5000);
+      });
+  }, []);
+
   if (loadingDocs) {
     return (
       <table className="g3-subtable">
@@ -89,11 +227,12 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
             <th style={{ width: 130 }}>Ingestion Status</th>
             <th className="num" style={{ width: 70 }}>Chunks</th>
             <th>Failure Reason</th>
+            <th style={{ width: 90 }} />
           </tr>
         </thead>
         <tbody>
           {[1, 2, 3].map((i) => (
-            <tr key={i}><td colSpan={6} style={{ padding: '10px 12px' }}>
+            <tr key={i}><td colSpan={7} style={{ padding: '10px 12px' }}>
               <div style={{ height: 12, background: 'var(--doc-hover)', borderRadius: 3, width: `${60 + i * 10}%` }} />
             </td></tr>
           ))}
@@ -102,95 +241,160 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
     );
   }
 
+  const isErrorStatus = (s) => s === 'error' || s === 'failed';
+  const errorCount = docs.filter((d) => isErrorStatus(d.ingestion_status)).length;
+  const sorted = docSort === 'errors_first' && errorCount > 0
+    ? [...docs].sort((a, b) => {
+        const aErr = isErrorStatus(a.ingestion_status) ? 0 : 1;
+        const bErr = isErrorStatus(b.ingestion_status) ? 0 : 1;
+        return aErr - bErr;
+      })
+    : docs;
+
   return (
-    <table className="g3-subtable">
-      <thead>
-        <tr>
-          <th>Document Title</th>
-          <th style={{ width: 70 }}>Agency</th>
-          <th style={{ width: 110 }}>Doc Type</th>
-          <th style={{ width: 130 }}>Ingestion Status</th>
-          <th className="num" style={{ width: 70 }}>Chunks</th>
-          <th>Failure Reason</th>
-        </tr>
-      </thead>
-      <tbody>
-        {docs.map((d) => {
-          const retryState = retryDataMap[d.doc_id] || {};
-          const retryOpen = expandedRetry === d.doc_id;
-          return (
-            <>
-              <tr
-                key={d.doc_id}
-                className="docrow"
-                data-testid={`ingestion-doc-row-${d.doc_id}`}
-                onClick={() => onToggleDoc(d.doc_id)}
-              >
-                <td>
-                  <span className={`g3-docchev ${expandedDoc === d.doc_id ? 'open' : ''}`}><ChevronIcon /></span>
-                  <span className="truncate">{d.document_title || d.doc_id}</span>
-                  {d.has_retries && (
-                    <button
-                      className={`g3-retry-badge${retryOpen ? ' open' : ''}`}
-                      data-testid={`ingestion-doc-retry-${d.doc_id}`}
-                      title="Show attempt history"
-                      onClick={(e) => { e.stopPropagation(); onToggleRetry(d.doc_id); }}
-                    >
-                      {d.retry_count} attempts
-                    </button>
-                  )}
-                </td>
-                <td><span className="agency-mini">{d.agency || '—'}</span></td>
-                <td className="dim">{DOCTYPE_LABEL[d.doc_type] || d.doc_type || '—'}</td>
-                <td><G3Status status={d.ingestion_status} /></td>
-                <td className="num mono">{d.chunk_count > 0 ? d.chunk_count : '—'}</td>
-                <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45, paddingTop: 6, paddingBottom: 6 }}>
-                  {d.failure_reason ? <span className="reason">{d.failure_reason}</span> : <span className="dim">—</span>}
-                </td>
-              </tr>
-              {retryOpen && (
-                <tr className="g3-retry-expand-row" key={`${d.doc_id}-retry`} data-testid={`ingestion-doc-retry-expand-${d.doc_id}`}>
-                  <td colSpan={6}>
-                    <RetryTimeline
-                      docId={d.doc_id}
-                      data={retryState.items}
-                      loading={retryState.loading}
-                      error={retryState.error}
-                    />
+    <>
+      {errorCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 4px', borderBottom: '1px solid var(--doc-border)' }}>
+          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--err)', fontWeight: 600 }}>
+            {errorCount} error{errorCount !== 1 ? 's' : ''}
+          </span>
+          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
+            of {docs.length} documents
+          </span>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => setDocSort((s) => s === 'errors_first' ? 'default' : 'errors_first')}
+            style={{
+              fontSize: 11, padding: '2px 8px', borderRadius: 3, cursor: 'pointer',
+              fontFamily: 'var(--mono)',
+              background: docSort === 'errors_first' ? 'var(--err-tint)' : 'transparent',
+              color: docSort === 'errors_first' ? 'var(--err-text)' : 'var(--doc-text-2)',
+              border: `1px solid ${docSort === 'errors_first' ? 'var(--err-tint-border)' : 'var(--doc-border)'}`,
+            }}
+          >
+            {docSort === 'errors_first' ? '↑ Errors first' : 'Default order'}
+          </button>
+        </div>
+      )}
+      <table className="g3-subtable">
+        <thead>
+          <tr>
+            <th>Document Title</th>
+            <th style={{ width: 70 }}>Agency</th>
+            <th style={{ width: 110 }}>Doc Type</th>
+            <th style={{ width: 130 }}>Ingestion Status</th>
+            <th className="num" style={{ width: 70 }}>Chunks</th>
+            <th>Failure Reason</th>
+            <th style={{ width: 90 }} />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((d) => {
+            const retryState = retryDataMap[d.doc_id] || {};
+            const retryOpen = expandedRetry === d.doc_id;
+            const rs = reingestStates[d.doc_id] || 'idle';
+            const isError = isErrorStatus(d.ingestion_status);
+            const colSpan = 7;
+            return (
+              <>
+                <tr
+                  key={d.doc_id}
+                  className="docrow"
+                  data-testid={`ingestion-doc-row-${d.doc_id}`}
+                  onClick={() => onToggleDoc(d.doc_id)}
+                >
+                  <td>
+                    <span className={`g3-docchev ${expandedDoc === d.doc_id ? 'open' : ''}`}><ChevronIcon /></span>
+                    <span className="truncate">{d.document_title || d.doc_id}</span>
+                    {d.has_retries && (
+                      <button
+                        className={`g3-retry-badge${retryOpen ? ' open' : ''}`}
+                        data-testid={`ingestion-doc-retry-${d.doc_id}`}
+                        title="Show attempt history"
+                        onClick={(e) => { e.stopPropagation(); onToggleRetry(d.doc_id); }}
+                      >
+                        {d.retry_count} attempts
+                      </button>
+                    )}
+                  </td>
+                  <td><span className="agency-mini">{d.agency || '—'}</span></td>
+                  <td className="dim">{DOCTYPE_LABEL[d.doc_type] || d.doc_type || '—'}</td>
+                  <td><G3Status status={d.ingestion_status} /></td>
+                  <td className="num mono">{d.chunk_count > 0 ? d.chunk_count : '—'}</td>
+                  <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45, paddingTop: 6, paddingBottom: 6 }}>
+                    {d.failure_reason ? <span className="reason">{d.failure_reason}</span> : <span className="dim">—</span>}
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()} style={{ paddingRight: 10, textAlign: 'right' }}>
+                    {isError && (
+                      <button
+                        disabled={rs === 'starting'}
+                        onClick={(e) => handleReingest(e, d.doc_id)}
+                        style={{
+                          fontSize: 11, padding: '2px 7px', borderRadius: 3,
+                          cursor: rs === 'starting' ? 'default' : 'pointer',
+                          fontFamily: 'var(--mono)', fontWeight: 600, whiteSpace: 'nowrap',
+                          background: rs === 'start_failed' ? 'var(--err-tint)' : 'transparent',
+                          color: rs === 'start_failed' ? 'var(--err-text)' : 'var(--doc-text-2)',
+                          border: `1px solid ${rs === 'start_failed' ? 'var(--err-tint-border)' : 'var(--doc-border)'}`,
+                          opacity: rs === 'starting' ? 0.6 : 1,
+                        }}
+                      >
+                        {rs === 'starting' ? '…' : rs === 'start_failed' ? '✗ Failed to start' : '↺ Retry'}
+                      </button>
+                    )}
                   </td>
                 </tr>
-              )}
-              {expandedDoc === d.doc_id && (
-                <tr className="g3-doc-detail" key={`${d.doc_id}-detail`} data-testid={`ingestion-doc-expand-${d.doc_id}`}>
-                  <td colSpan={6}>
-                    <div className="inner">
-                      <span className="k">Trace ID</span>
-                      <span className="v">
-                        {d.trace_id
-                          ? <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id}</span>
-                          : <span className="dim">—</span>}
-                      </span>
-                      <span className="k">Source URL</span>
-                      <span className="v">
-                        {d.source_url ? <a href={d.source_url} target="_blank" rel="noreferrer">{d.source_url}</a> : '—'}
-                      </span>
-                      <span className="k">Fetched at</span>
-                      <span className="v">{formatDateTime(d.fetched_at) || '—'}</span>
-                      <span className="k">Parsed at</span>
-                      <span className="v">{formatDateTime(d.parsed_at) || '—'}</span>
-                      <span className="k">Embedding</span>
-                      <span className="v">{d.embedding_model || '—'}</span>
-                      <span className="k">Chunks</span>
-                      <span className="v">{d.chunk_count || 0}</span>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </>
-          );
-        })}
-      </tbody>
-    </table>
+                {retryOpen && (
+                  <tr className="g3-retry-expand-row" key={`${d.doc_id}-retry`} data-testid={`ingestion-doc-retry-expand-${d.doc_id}`}>
+                    <td colSpan={colSpan}>
+                      <RetryTimeline
+                        docId={d.doc_id}
+                        data={retryState.items}
+                        loading={retryState.loading}
+                        error={retryState.error}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {expandedDoc === d.doc_id && (
+                  <tr className="g3-doc-detail" key={`${d.doc_id}-detail`} data-testid={`ingestion-doc-expand-${d.doc_id}`}>
+                    <td colSpan={colSpan}>
+                      <div className="inner">
+                        <span className="k">Trace ID</span>
+                        <span className="v">
+                          {d.trace_id
+                            ? <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.trace_id}</span>
+                            : <span className="dim">—</span>}
+                        </span>
+                        <span className="k">Source URL</span>
+                        <span className="v">
+                          {d.source_url ? <a href={d.source_url} target="_blank" rel="noreferrer">{d.source_url}</a> : '—'}
+                        </span>
+                        <span className="k">Fetched at</span>
+                        <span className="v">{formatDateTime(d.fetched_at) || '—'}</span>
+                        <span className="k">Parsed at</span>
+                        <span className="v">{formatDateTime(d.parsed_at) || '—'}</span>
+                        <span className="k">Embedding</span>
+                        <span className="v">{d.embedding_model || '—'}</span>
+                        <span className="k">Chunks</span>
+                        <span className="v">{d.chunk_count || 0}</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            );
+          })}
+        </tbody>
+      </table>
+      {retryModal && (
+        <RetryProgressModal
+          docId={retryModal.docId}
+          sessionId={retryModal.sessionId}
+          onClose={() => setRetryModal(null)}
+        />
+      )}
+    </>
   );
 }
 

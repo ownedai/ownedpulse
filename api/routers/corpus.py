@@ -510,39 +510,36 @@ async def feed_run_detail(run_id: str):
         }
 
         # Find documents ingested in this run.
-        # Primary: match by run_id (set when run_ingest.py writes it back).
-        # Fallback: if no rows, match by feed_id + created_at window — archive.py
-        # registers docs after fetch_feed.py completes, so created_at > triggered_at.
-        cur.execute(
-            """SELECT document_id,
+        # Primary: exact run_id match (set when run_ingest.py writes it back).
+        _DOC_SELECT = """SELECT document_id,
                       metadata_json->>'document_title' as title,
                       metadata_json->>'document_type' as doc_type,
                       metadata_json->>'publication_date' as pub_date,
-                      chunk_count, ingestion_status, archive_path, source_url
-               FROM document_registry WHERE run_id = %s
-               ORDER BY created_at ASC""",
+                      chunk_count, ingestion_status, archive_path, source_url"""
+        cur.execute(
+            f"{_DOC_SELECT} FROM document_registry WHERE run_id = %s ORDER BY created_at ASC",
             (run_id,)
         )
-        doc_rows = cur.fetchall()
+        doc_rows = list(cur.fetchall())
+        primary_ids = {r[0] for r in doc_rows}
 
-        if not doc_rows and run.get("feed_source") and run.get("triggered_at"):
-            # Fallback: find docs registered during this run's time window
+        # Supplement: docs registered during the run window that have no run_id yet
+        # (archive writes document_registry rows after fetch_feed.py updates run_log,
+        # so some rows are created after completed_at with run_id still NULL).
+        if run.get("feed_source") and run.get("triggered_at"):
+            end_ts = run.get("completed_at") or run["triggered_at"]
             cur.execute(
-                """SELECT document_id,
-                          metadata_json->>'document_title' as title,
-                          metadata_json->>'document_type' as doc_type,
-                          metadata_json->>'publication_date' as pub_date,
-                          chunk_count, ingestion_status, archive_path, source_url
+                f"""{_DOC_SELECT}
                    FROM document_registry
                    WHERE feed_id = %s
                      AND created_at >= %s
-                     AND created_at <= %s::timestamptz + INTERVAL '1 hour'
+                     AND created_at <= %s::timestamptz + INTERVAL '30 minutes'
                      AND run_id IS NULL
                    ORDER BY created_at ASC""",
-                (run["feed_source"], run["triggered_at"],
-                 run.get("completed_at") or run["triggered_at"])
+                (run["feed_source"], run["triggered_at"], end_ts)
             )
-            doc_rows = cur.fetchall()
+            extra = [r for r in cur.fetchall() if r[0] not in primary_ids]
+            doc_rows.extend(extra)
         cur.close()
 
         feed_doc_types = get_feed_default_doc_types()

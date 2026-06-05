@@ -536,11 +536,15 @@ function RssFeedsCard() {
   async function handleRunNow() {
     if (runState === 'running' || enabledFeeds.length === 0) return;
     setRunState('running');
-    try {
-      await Promise.all(enabledFeeds.map((f) => triggerFeedRun(f.feed_id)));
-      setRunState('ok');
+    const results = await Promise.allSettled(enabledFeeds.map((f) => triggerFeedRun(f.feed_id)));
+    const anyOk = results.some((r) => r.status === 'fulfilled');
+    const allConflict = results.every(
+      (r) => r.status === 'rejected' && r.reason?.message?.includes('already running')
+    );
+    if (anyOk || allConflict) {
+      setRunState(allConflict ? 'conflict' : 'ok');
       setTimeout(() => { setRunState(null); fetchData(); }, 3000);
-    } catch (_) {
+    } else {
       setRunState('error');
       setTimeout(() => setRunState(null), 4000);
     }
@@ -563,6 +567,7 @@ function RssFeedsCard() {
 
   const runBtnLabel = runState === 'running' ? 'Running…'
     : runState === 'ok' ? '✓ Triggered'
+    : runState === 'conflict' ? '↻ Already running'
     : runState === 'error' ? '✕ Failed'
     : 'Run now';
 
@@ -597,9 +602,9 @@ function RssFeedsCard() {
               padding: '4px 12px', borderRadius: 4, border: '1px solid',
               fontSize: 12, fontFamily: 'var(--mono)',
               cursor: runState === 'running' ? 'default' : 'pointer',
-              borderColor: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
-              background: runState === 'error' ? 'var(--err-tint)' : runState === 'ok' ? 'var(--ok-tint)' : 'transparent',
-              color: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : 'var(--accent-l)',
+              borderColor: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : runState === 'conflict' ? 'var(--warn-text)' : 'var(--accent-l)',
+              background: runState === 'error' ? 'var(--err-tint)' : runState === 'ok' ? 'var(--ok-tint)' : runState === 'conflict' ? 'var(--warn-tint)' : 'transparent',
+              color: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : runState === 'conflict' ? 'var(--warn-text)' : 'var(--accent-l)',
               transition: 'all 150ms ease',
             }}
           >
@@ -1066,7 +1071,7 @@ export default function SourcesPage() {
         <InitialLoadCard
           onOpenModal={() => setShowBootstrapModal(true)}
           lastBootstrap={bootstrapState.last_bootstrap}
-          docCount={bootstrapState.doc_count}
+          docCount={bootstrapState.bootstrap_doc_count}
         />
       </div>
 
