@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useContext } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { ModelStatusContext } from '../../context/ModelStatusContext';
 import FilterBar from '../layout/FilterBar';
 import QueryInput from '../query/QueryInput';
 import QueryExpansion from '../query/QueryExpansion';
@@ -401,6 +402,9 @@ function ChunkCard({ chunk, highlighted, onViewSource, dimText = false }) {
         <span><span className="k">page</span> <span className="v">{chunk.page_no != null ? chunk.page_no + 1 : '—'}</span></span>
         <span><span className="k">type</span> <span className="v">{DOCTYPE_LABEL[chunk.doc_type] || chunk.doc_type || '—'}</span></span>
         <span><span className="k">published</span> <span className="v">{formatDate(chunk.publication_date) || '—'}</span></span>
+        {chunk.score != null && (
+          <span><span className="k">score</span> <span className="v">{chunk.score.toFixed(4)}</span></span>
+        )}
       </div>
       <div className="ch-text" style={dimText ? { color: 'var(--doc-text-2)' } : undefined}>
         {isLong && !showMore ? text.slice(0, 300) + '… ' : text}
@@ -675,6 +679,7 @@ function PdfModal({ chunk, onClose }) {
 export default function QueryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { result, loading, error, queryText, execute, loadCached, clear } = useQuery();
+  const { loaded: modelLoaded, checked: modelChecked } = useContext(ModelStatusContext);
 
   const [filters, setFilters] = useState({});
   const [retrieval, setRetrieval] = useState({ depth: 'standard', topK: 10, scoreThreshold: 0.60 });
@@ -792,6 +797,12 @@ export default function QueryPage() {
                 <QueryInput value={queryText} onSubmit={handleSubmit} disabled={false} />
               </div>
               <FilterBar filters={filters} onChange={setFilters} retrieval={retrieval} onRetrievalChange={setRetrieval} />
+              {modelChecked && !modelLoaded && (
+                <div style={{ marginTop: 8, padding: '7px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M8 2L1.5 13.5h13z"/><path d="M8 6.5v3.5"/><circle cx="8" cy="11.6" r="0.5" fill="currentColor" stroke="none"/></svg>
+                  LLM model is loading — first query may take longer than usual
+                </div>
+              )}
             </div>
             <EmptyState onSubmit={handleSubmit} disabled={false} />
           </div>
@@ -815,8 +826,14 @@ export default function QueryPage() {
             </div>
 
             {/* Filter bar below query */}
-            <div style={{ marginTop: 6, marginBottom: 32 }}>
+            <div style={{ marginTop: 6, marginBottom: modelChecked && !modelLoaded ? 12 : 32 }}>
               <FilterBar filters={filters} onChange={setFilters} retrieval={retrieval} onRetrievalChange={setRetrieval} />
+              {modelChecked && !modelLoaded && (
+                <div style={{ marginTop: 8, marginBottom: 20, padding: '7px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M8 2L1.5 13.5h13z"/><path d="M8 6.5v3.5"/><circle cx="8" cy="11.6" r="0.5" fill="currentColor" stroke="none"/></svg>
+                  LLM model is loading — first query may take longer than usual
+                </div>
+              )}
             </div>
 
             {/* Answer body */}

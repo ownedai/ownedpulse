@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.17"
+APP_VERSION = "0.8.18"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -456,7 +456,7 @@ async def expand_query(query: str, depth: int) -> list[str]:
 # ── Qdrant query ──────────────────────────────────────────────────────────────
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, IsEmptyCondition, PayloadField, MatchValue, MatchAny, Range
+from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny, Range
 from qdrant_client.http.models import DatetimeRange
 
 
@@ -468,10 +468,11 @@ def build_qdrant_filter(filters: QueryFilters | None) -> Optional[Filter]:
     - document_type (hyphenated, for document type)
     - publication_date (ISO string comparison for date range)
 
-    Always excludes RSS-ingested chunks (those with feed_id set).
+    Always restricts to seed corpus (corpus_doc=True payload field, indexed bool).
     """
-    # Default: exclude RSS/HTML noise — chunks with feed_id payload set
-    conditions = [IsEmptyCondition(is_empty=PayloadField(key="feed_id"))]
+    # Seed corpus only: corpus_doc=True is set on all 9 seed documents (446 chunks).
+    # RSS-ingested chunks have no corpus_doc field — they are excluded.
+    conditions = [FieldCondition(key="corpus_doc", match=MatchValue(value=True))]
 
     if filters:
         if filters.agency:
@@ -494,7 +495,15 @@ def build_qdrant_filter(filters: QueryFilters | None) -> Optional[Filter]:
         # don't work on keyword fields. Date filtering is applied post-retrieval
         # (CONTENT path) and via PostgreSQL (METADATA path).
 
-    return Filter(must=conditions)
+    # Exclude training materials and concept papers from standard content queries.
+    # These remain retrievable when the user applies an explicit document_type filter.
+    must_not: list = []
+    if not (filters and filters.document_type in ("training_material", "concept_paper")):
+        must_not = [
+            FieldCondition(key="document_type", match=MatchAny(any=["training_material", "concept_paper"])),
+        ]
+
+    return Filter(must=conditions, must_not=must_not or None)
 
 
 async def retrieve_chunks(

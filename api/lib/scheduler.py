@@ -6,9 +6,12 @@ import logging
 import subprocess
 import uuid
 import psycopg2
+from datetime import datetime, timezone, timedelta
+from lib import ingestion_lock
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -83,49 +86,68 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
     Calls fetch_feed.py as a subprocess per feed — same execution path as
     the n8n Execute Command node used previously.
     """
+    detail = feed_id or "all-feeds"
+    if not ingestion_lock.acquire("rss", detail):
+        run_date = datetime.now(timezone.utc) + timedelta(minutes=30)
+        scheduler.add_job(
+            run_rss_ingestion_job,
+            trigger=DateTrigger(run_date=run_date),
+            id="rss_deferred_run",
+            replace_existing=True,
+            kwargs={"feed_id": feed_id, "triggered_by": "deferred"},
+        )
+        logger.info(
+            f"RSS ingestion deferred to {run_date.strftime('%H:%M UTC')} "
+            f"({ingestion_lock.conflict_detail()})"
+        )
+        return
+
     try:
         feeds = [feed_id] if feed_id else _get_enabled_feeds()
     except Exception as e:
         logger.error(f"RSS ingestion: failed to load feed list: {e}")
+        ingestion_lock.release()
         return
 
     logger.info(f"RSS ingestion starting: {len(feeds)} feed(s), triggered_by={triggered_by}")
 
-    for fid in feeds:
-        run_id = str(uuid.uuid4())
-        trigger_source = "scheduled" if triggered_by == "scheduler" else "manual"
-        cmd = [
-            "python", PIPELINE_SCRIPT,
-            "--feed-id", fid,
-            "--trigger-source", trigger_source,
-            "--triggered-by", triggered_by,
-            "--run-id", run_id,
-        ]
-        logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
-        error_detail = None
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1800)
-            if proc.returncode == 0:
-                logger.info(f"RSS ingestion: feed={fid} run_id={run_id} complete")
-                continue
-            else:
-                error_detail = f"Process exited rc={proc.returncode}: {stderr.decode()[:400]}"
-                logger.error(f"RSS ingestion: feed={fid} run_id={run_id} failed: {error_detail}")
-        except asyncio.TimeoutError:
-            error_detail = "Timed out after 30 minutes"
-            logger.error(f"RSS ingestion: feed={fid} run_id={run_id} timed out")
-        except Exception as e:
-            error_detail = str(e)
-            logger.error(f"RSS ingestion: feed={fid} run_id={run_id} exception: {e}")
+    try:
+        for fid in feeds:
+            run_id = str(uuid.uuid4())
+            trigger_source = "scheduled" if triggered_by == "scheduler" else "manual"
+            cmd = [
+                "python", PIPELINE_SCRIPT,
+                "--feed-id", fid,
+                "--trigger-source", trigger_source,
+                "--triggered-by", triggered_by,
+                "--run-id", run_id,
+            ]
+            logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
+            error_detail = None
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1800)
+                if proc.returncode == 0:
+                    logger.info(f"RSS ingestion: feed={fid} run_id={run_id} complete")
+                    continue
+                else:
+                    error_detail = f"Process exited rc={proc.returncode}: {stderr.decode()[:400]}"
+                    logger.error(f"RSS ingestion: feed={fid} run_id={run_id} failed: {error_detail}")
+            except asyncio.TimeoutError:
+                error_detail = "Timed out after 30 minutes"
+                logger.error(f"RSS ingestion: feed={fid} run_id={run_id} timed out")
+            except Exception as e:
+                error_detail = str(e)
+                logger.error(f"RSS ingestion: feed={fid} run_id={run_id} exception: {e}")
 
-        if error_detail:
-            # If fetch_feed.py created the row, update it; otherwise insert a new error row
-            _write_run_log_error_or_insert(run_id, trigger_source, triggered_by, fid, error_detail)
+            if error_detail:
+                _write_run_log_error_or_insert(run_id, trigger_source, triggered_by, fid, error_detail)
+    finally:
+        ingestion_lock.release()
 
 
 def reschedule_rss_job(hour: int, minute: int, timezone: str):

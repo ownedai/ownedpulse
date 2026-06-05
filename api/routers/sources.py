@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
+from lib import ingestion_lock
 
 router = APIRouter()
 
@@ -268,7 +269,10 @@ async def sources_bootstrap(body: BootstrapRequest):
     # Import session state and worker from bootstrap router (shared in-process dict)
     from routers.bootstrap import _sessions, _bootstrap_worker
 
-    # Block if another session is already running
+    # Block if any ingestion is already running (bootstrap or RSS)
+    lock_st = ingestion_lock.state()
+    if lock_st["active"]:
+        raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
     for sid, sess in _sessions.items():
         if sess.get("status") in ("pending", "running"):
             raise HTTPException(

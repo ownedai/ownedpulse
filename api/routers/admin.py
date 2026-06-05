@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
+from lib import ingestion_lock
 
 router = APIRouter()
 
@@ -189,6 +190,10 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
 @router.post("/feeds/{feed_id}/trigger")
 async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks):
     """Trigger a single feed run via APScheduler background task."""
+    lock_st = ingestion_lock.state()
+    if lock_st["active"]:
+        raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
+
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
@@ -213,6 +218,10 @@ async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks):
 @router.post("/trigger-run")
 async def admin_trigger_run(background_tasks: BackgroundTasks):
     """Trigger a full RSS ingestion run via APScheduler background task."""
+    lock_st = ingestion_lock.state()
+    if lock_st["active"]:
+        raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
+
     from lib.scheduler import run_rss_ingestion_job
     background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
     return {"status": "triggered"}

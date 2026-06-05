@@ -241,7 +241,7 @@ async def session_documents(
                 WHERE id.trace_id::text = ANY(%s)
                 ORDER BY id.doc_id, id.created_at DESC
             ) sub
-            ORDER BY ingested_at DESC
+            ORDER BY CASE WHEN ingestion_status IN ('error', 'failed') THEN 0 ELSE 1 END ASC, ingested_at DESC
             LIMIT %s OFFSET %s
             """,
             (run_ids, page_size, (page - 1) * page_size)
@@ -369,7 +369,7 @@ async def run_documents(
                 WHERE id.trace_id::text = %s
                 ORDER BY id.doc_id, id.created_at DESC
             ) sub
-            ORDER BY ingested_at DESC
+            ORDER BY CASE WHEN ingestion_status IN ('error', 'failed') THEN 0 ELSE 1 END ASC, ingested_at DESC
             LIMIT %s OFFSET %s
             """,
             (run_id, page_size, (page - 1) * page_size)

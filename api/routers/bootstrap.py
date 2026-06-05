@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from lib import ingestion_lock
 
 router = APIRouter()
 
@@ -219,7 +220,10 @@ async def corpus_summary():
 
 @router.post("/run")
 async def bootstrap_run(body: BootstrapRunRequest):
-    # Block if another session is already running
+    # Block if any ingestion is already running (bootstrap or RSS)
+    lock_st = ingestion_lock.state()
+    if lock_st["active"]:
+        raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
     for sid, sess in _sessions.items():
         if sess.get("status") in ("pending", "running"):
             raise HTTPException(
@@ -318,70 +322,82 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
     from lib.ingest_documents import ingest_documents  # noqa: PLC0415
 
     session = _sessions[session_id]
+
+    if not ingestion_lock.acquire("bootstrap", session_id):
+        session["status"] = "failed"
+        session["completed_at"] = datetime.now(timezone.utc).isoformat()
+        session["docs"].append({
+            "doc_id": "__lock__",
+            "status": "failed",
+            "reason": ingestion_lock.conflict_detail(),
+        })
+        return
+
     session["status"] = "running"
+    try:
+        for i, doc in enumerate(docs):
+            if session.get("cancelled"):
+                break
 
-    for i, doc in enumerate(docs):
-        # Check for cancellation before each document
-        if session.get("cancelled"):
-            break
+            doc_id = doc["doc_id"]
+            try:
+                result = ingest_documents(
+                    [doc],
+                    source="bootstrap_ui",
+                    triggered_by="bootstrap_ui",
+                    redownload=redownload,
+                )
+                doc_results = result.get("results", [])
+                dr = doc_results[0] if doc_results else {}
 
-        doc_id = doc["doc_id"]
-        try:
-            result = ingest_documents(
-                [doc],
-                source="bootstrap_ui",
-                triggered_by="bootstrap_ui",
-                redownload=redownload,
-            )
-            doc_results = result.get("results", [])
-            dr = doc_results[0] if doc_results else {}
-
-            if dr.get("status") == "ok":
-                session["succeeded"] += 1
-                session["docs"].append({
-                    "doc_id": doc_id,
-                    "status": "ok",
-                    "chunks": dr.get("chunk_count", 0),
-                })
-            elif dr.get("status") == "skipped":
-                session["skipped"] += 1
-                session["docs"].append({
-                    "doc_id": doc_id,
-                    "status": "skipped",
-                    "reason": (dr.get("detail") or "Unsupported format")[:200],
-                })
-            else:
+                if dr.get("status") == "ok":
+                    session["succeeded"] += 1
+                    session["docs"].append({
+                        "doc_id": doc_id,
+                        "status": "ok",
+                        "chunks": dr.get("chunk_count", 0),
+                    })
+                elif dr.get("status") == "skipped":
+                    session["skipped"] += 1
+                    session["docs"].append({
+                        "doc_id": doc_id,
+                        "status": "skipped",
+                        "reason": (dr.get("detail") or "Unsupported format")[:200],
+                    })
+                else:
+                    session["failed"] += 1
+                    session["docs"].append({
+                        "doc_id": doc_id,
+                        "status": "failed",
+                        "reason": (dr.get("detail") or "Unknown error")[:200],
+                    })
+            except Exception as e:
                 session["failed"] += 1
                 session["docs"].append({
                     "doc_id": doc_id,
                     "status": "failed",
-                    "reason": (dr.get("detail") or "Unknown error")[:200],
+                    "reason": str(e)[:200],
                 })
-        except Exception as e:
-            session["failed"] += 1
-            session["docs"].append({
-                "doc_id": doc_id,
-                "status": "failed",
-                "reason": str(e)[:200],
-            })
 
-        session["processed"] = i + 1
+            session["processed"] = i + 1
 
-    if session.get("cancelled"):
-        pass  # status already set to "failed" by stop endpoint
-    else:
-        succeeded = session["succeeded"]
-        failed = session["failed"]
-        if failed == 0:
-            final_status = "success"
-        elif succeeded > 0 or session.get("skipped", 0) > 0:
-            final_status = "partial"
+        if session.get("cancelled"):
+            pass  # status already set to "failed" by stop endpoint
         else:
-            final_status = "failed"
-        session["status"] = final_status
+            succeeded = session["succeeded"]
+            failed = session["failed"]
+            if failed == 0:
+                final_status = "success"
+            elif succeeded > 0 or session.get("skipped", 0) > 0:
+                final_status = "partial"
+            else:
+                final_status = "failed"
+            session["status"] = final_status
 
-    if not session.get("completed_at"):
-        session["completed_at"] = datetime.now(timezone.utc).isoformat()
+        if not session.get("completed_at"):
+            session["completed_at"] = datetime.now(timezone.utc).isoformat()
+    finally:
+        ingestion_lock.release()
 
 
 # ── GET /bootstrap/progress/{session_id} (SSE) ───────────────────────────────

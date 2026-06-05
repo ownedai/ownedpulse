@@ -317,9 +317,7 @@ def generate_query_export_pdf(
     langfuse_id   = query_response.get("langfuse_trace_id") or "—"
     timestamp_iso = query_response.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    cited_chunks   = [c for c in citations if c.get("cited_by_llm")]
-    uncited_chunks = [c for c in citations if not c.get("cited_by_llm")]
-    all_chunks     = cited_chunks + uncited_chunks
+    cited_chunks = [c for c in citations if c.get("cited_by_llm")]
 
     routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
 
@@ -450,7 +448,7 @@ def generate_query_export_pdf(
             ("Embedding model",  embedding_model),
             ("Inference",        "Ollama (local)"),
             ("Query expansion",  "Enabled" if sub_queries else "Disabled"),
-            ("Langfuse trace",   langfuse_id[:24] if langfuse_id != "—" else "—"),
+            ("Langfuse trace",   langfuse_id),
         ]
         box_h = max(len(left_rows), len(right_rows)) * 14 + 36
         cy = chk(cy, box_h + 20, fp)
@@ -475,23 +473,23 @@ def generate_query_export_pdf(
             rcy -= 13
         cy = cy - box_h - 16
 
-        if all_chunks:
+        if cited_chunks:
             new_page(is_first=False)
             cy = BODY_TOP_CONT
             cy = _section_header(rc, MARGIN_X, cy,
-                                 f"Source Evidence — {len(all_chunks)} Sources",
-                                 f"{len(cited_chunks)} cited · {len(uncited_chunks)} retrieved only")
+                                 f"Source Evidence — {len(cited_chunks)} Cited Source{'s' if len(cited_chunks) != 1 else ''}",
+                                 "")
             cy -= 4
             intro = (
                 f"This export contains {len(cited_chunks)} source{'s' if len(cited_chunks) != 1 else ''} "
-                f"cited by the AI and {len(uncited_chunks)} retrieved but not cited. "
+                f"cited by the AI in its answer. "
                 f"Provenance metadata is reproduced exactly as recorded at ingestion; "
                 f"verify currency against the live corpus before relying on any source."
             )
             cy = _wrapped_text(rc, MARGIN_X, cy, intro, "Inter", 9.5, C_INK_SEC, CONTENT_W, 14.5)
             cy -= 14
 
-            for idx, chunk in enumerate(all_chunks):
+            for idx, chunk in enumerate(cited_chunks):
                 superseded = chunk.get("superseded", False)
                 title_c    = (chunk.get("document_title") or "—")[:80]
                 agency     = chunk.get("issuing_body") or "—"
@@ -505,8 +503,6 @@ def generate_query_export_pdf(
                 trace_id   = chunk.get("trace_id") or chunk.get("chunk_id") or "—"
                 chunked_at = chunk.get("chunked_at") or "—"
                 source_url = chunk.get("source_url") or "—"
-                cited_c    = chunk.get("cited_by_llm", False)
-
                 # Truncate by char count — chunk text is almost always single-paragraph
                 # prose with no newlines, so line-count splitting is unreliable.
                 # Mono 8.5pt at CONTENT_W-28 ≈ 105 chars/line; 8 lines ≈ 840 chars.
@@ -568,13 +564,6 @@ def generate_query_export_pdf(
                 _rect(rc, bx2, by2, bw, bh, fill=badge_bg, stroke=None, radius=3)
                 _text(rc, bx2 + bw / 2, by2 + 3.5, badge_txt, "Inter-SemiBold", 7.5,
                       badge_fg, align="center")
-                if not cited_c:
-                    cw2, cx2 = 72, bx2 - 76
-                    _rect(rc, cx2, by2, cw2, bh, fill=_rgb("F1F5F9"), stroke=C_BORDER_STR,
-                          lw=0.5, radius=3)
-                    _text(rc, cx2 + cw2 / 2, by2 + 3.5, "NOT CITED", "Inter-SemiBold",
-                          7.5, C_INK_SEC, align="center")
-
                 # ── metadata grid 3×2 ─────────────────────────────────────────
                 meta_y = cy - HEAD_TOP - HEAD_META_GAP
                 cells = [

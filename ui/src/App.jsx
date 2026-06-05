@@ -21,8 +21,9 @@ import SourcesPage from './components/pages/SourcesPage';
 import useQuery from './hooks/useQuery';
 import useModelStatus from './hooks/useModelStatus';
 import { ModelStatusContext } from './context/ModelStatusContext';
-import { exportQuery } from './api/client';
+import { exportQuery, getBootstrapState } from './api/client';
 import CorpusStatsBar from './components/query/CorpusStatsBar';
+import BootstrapModal from './components/BootstrapModal';
 
 function MainPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -270,6 +271,13 @@ export default function App() {
   const [resetKey, setResetKey] = useState(0);
   const navigate = useNavigate();
   const modelStatus = useModelStatus();
+  const [showBootstrapModal, setShowBootstrapModal] = useState(false);
+
+  useEffect(() => {
+    getBootstrapState().then((s) => {
+      if (s.doc_count === 0) setShowBootstrapModal(true);
+    }).catch(() => {});
+  }, []);
 
   const handleNewQuery = useCallback(() => {
     navigate('/', { replace: true });
@@ -297,6 +305,12 @@ export default function App() {
         <CorpusStatsBar />
       </div>
     </div>
+    {showBootstrapModal && (
+      <BootstrapModal
+        onClose={() => setShowBootstrapModal(false)}
+        onStarted={() => {}}
+      />
+    )}
     </ModelStatusContext.Provider>
   );
 }
