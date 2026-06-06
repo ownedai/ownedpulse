@@ -28,6 +28,7 @@ const STATUS_OPTS = [
   { label: 'Superseded', value: 'superseded' },
   { label: 'Failed', value: 'failed' },
   { label: 'Deferred', value: 'deferred' },
+  { label: 'Not viable', value: 'not_viable' },
   { label: 'Processing', value: 'pending' },
 ];
 const DOC_TYPE_LABELS = {

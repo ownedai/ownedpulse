@@ -37,6 +37,8 @@ def get_pending_docs() -> list:
                 SELECT document_id, archive_path
                 FROM document_registry
                 WHERE ingestion_status = 'pending'
+                -- not_viable is intentionally excluded: requires manual reset to retry
+                -- To retry a not_viable doc: SET ingestion_status = 'pending' in registry
                 ORDER BY document_id
             """)
             return c.fetchall()

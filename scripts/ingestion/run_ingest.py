@@ -588,10 +588,15 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
         text = clean_html_content(raw_text)
         viability = assess_cleaned_content(text)
         if not viability["viable"]:
-            raise ValueError(
-                f"Document not viable after HTML cleaning: {viability['reason']} "
-                f"(raw={len(raw_text)} chars, cleaned={len(text)} chars)"
-            )
+            # not_viable documents are NOT retried automatically.
+            # To retry: manually set ingestion_status = 'pending' after source changes.
+            from ingestion.registry import mark_document_not_viable
+            mark_document_not_viable(doc_id, viability["reason"])
+            return {
+                "status": "not_viable",
+                "doc_id": doc_id,
+                "detail": f"Not viable: {viability['reason']} (raw={len(raw_text)} chars, cleaned={len(text)} chars)",
+            }
         now       = datetime.now(timezone.utc).isoformat()
         authority = meta.get("issuing_body","")
         chunks    = chunk_html_text(text)
