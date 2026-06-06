@@ -441,9 +441,11 @@ def update_registry_phase_f(doc_id: str, cls: dict, run_id: str = None):
                 )
 
 def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) -> dict:
-    ct   = metadata.get("content_type","pdf")
+    # Support both old key names (bulk reingestion) and new key names (fetch_feed.py incremental)
+    ct   = metadata.get("source_file_format") or metadata.get("content_type","pdf")
     ext  = ".pdf" if ct == "pdf" else ".html"
-    auth = metadata.get("authority","")
+    auth = metadata.get("issuing_body","") or metadata.get("authority","")
+    feed_id = metadata.get("feed_source","") or metadata.get("feed_id","")
     pub_date = metadata.get("publication_date","") or metadata.get("pub_date","")
     if not pub_date:
         _d = _date_from_url(metadata.get("source_url",""))
@@ -451,7 +453,7 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
             pub_date = _d.isoformat()
     return {
         "document_id":        doc_id,
-        "document_title":     metadata.get("title",""),
+        "document_title":     metadata.get("document_title","") or metadata.get("title",""),
         "document_class":     "regulatory",
         "document_type":      get_document_type(cls["doc_type"]),
         "document_status":    metadata.get("chunk_status","active") == "superseded" and "superseded" or "final",
@@ -462,17 +464,17 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
         "source_local_path":  metadata.get("source_local_path") or str(archive_dir / f"source{ext}"),
         "source_hash":        (archive_dir / "source.sha256").read_text(encoding="utf-8").strip()
                               if (archive_dir / "source.sha256").exists()
-                              else metadata.get("sha256",""),
-        "source_file_format": metadata.get("source_file_format") or ct,
+                              else metadata.get("source_hash","") or metadata.get("sha256",""),
+        "source_file_format": ct,
         "publication_date":   pub_date,
         "effective_date": "", "adoption_date": "",
         "issuing_body":       auth,
         "jurisdiction":       JURISDICTION_MAP.get(auth.upper(),""),
-        "regulatory_domain":  get_regulatory_domain(metadata.get("feed_id",""), cls["doc_type"]),
+        "regulatory_domain":  get_regulatory_domain(feed_id, cls["doc_type"]),
         "clause_id_prefix":   "",
         "source_url":         metadata.get("pdf_url") or metadata.get("source_url",""),
-        "source_fetched_at":  metadata.get("archived_at",""),
-        "feed_source":        metadata.get("feed_id",""),
+        "source_fetched_at":  metadata.get("source_fetched_at","") or metadata.get("archived_at",""),
+        "feed_source":        feed_id,
         "feed_item_guid":     metadata.get("feed_item_guid",""),
         "company_id":         None,
         "archive_path":       str(archive_dir),
@@ -574,18 +576,17 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
             source_url=meta.get("source_url", ""),
         )
     try:
+        from html_cleaner import clean_html_content, assess_cleaned_content
         source = _resolve_source_path(archive_dir, meta)
-        text = source.read_text(encoding="utf-8").strip()
-        if not text:
+        raw_text = source.read_text(encoding="utf-8").strip()
+        if not raw_text:
             raise ValueError(f"source.html is empty: {source}")
-        # Guard against JS-rendered pages that archived only a bare page title.
-        # Minimum 200 chars of actual text content required for a useful corpus entry.
-        MIN_BODY_CHARS = 200
-        if len(text) < MIN_BODY_CHARS:
+        text = clean_html_content(raw_text)
+        viability = assess_cleaned_content(text)
+        if not viability["viable"]:
             raise ValueError(
-                f"Document body too short to ingest: {len(text)} chars "
-                f"(minimum {MIN_BODY_CHARS}). Likely a JavaScript-rendered "
-                f"navigation page with no static text content."
+                f"Document not viable after HTML cleaning: {viability['reason']} "
+                f"(raw={len(raw_text)} chars, cleaned={len(text)} chars)"
             )
         now       = datetime.now(timezone.utc).isoformat()
         authority = meta.get("issuing_body","")
