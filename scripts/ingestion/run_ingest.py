@@ -576,6 +576,10 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
             source_url=meta.get("source_url", ""),
         )
     try:
+        import sys as _sys
+        _ingestion_dir = str(Path(__file__).parent)
+        if _ingestion_dir not in _sys.path:
+            _sys.path.insert(0, _ingestion_dir)
         from html_cleaner import clean_html_content, assess_cleaned_content
         source = _resolve_source_path(archive_dir, meta)
         raw_text = source.read_text(encoding="utf-8").strip()
