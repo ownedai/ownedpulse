@@ -317,7 +317,8 @@ def generate_query_export_pdf(
     langfuse_id   = query_response.get("langfuse_trace_id") or "—"
     timestamp_iso = query_response.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    cited_chunks = [c for c in citations if c.get("cited_by_llm")]
+    cited_chunks   = [c for c in citations if     c.get("cited_by_llm")]
+    uncited_chunks = [c for c in citations if not c.get("cited_by_llm")]
 
     routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
 
@@ -416,9 +417,16 @@ def generate_query_export_pdf(
         cy -= 20
 
         if sub_queries:
-            cy = chk(cy, 30, fp)
-            _text(rc, MARGIN_X, cy, "Query Expansion", "Inter-SemiBold", 8.5, C_INK_SEC)
+            _SQ_HEADING = "Query Expansion — AI-generated sub-queries (not user input)"
+            _SQ_NOTE    = ("These sub-queries were generated automatically by the system "
+                           "to broaden retrieval. They were not entered by the user.")
+            _sq_note_h  = _measure_wrapped(rc, _SQ_NOTE, "Inter", 8, CONTENT_W, 12)
+            cy = chk(cy, 30 + _sq_note_h + 4, fp)
+            _text(rc, MARGIN_X, cy, _SQ_HEADING, "Inter-SemiBold", 8.5, C_INK_SEC)
             cy -= 12
+            cy = _wrapped_text(rc, MARGIN_X, cy, _SQ_NOTE, "Inter", 8, C_INK_TER,
+                               CONTENT_W, 12)
+            cy -= 8
             for sq in sub_queries:
                 h = _measure_wrapped(rc, f"· {sq}", "Mono", 8, CONTENT_W - 10, 12.5)
                 cy = chk(cy, h + 4, fp)
@@ -474,8 +482,7 @@ def generate_query_export_pdf(
         cy = cy - box_h - 16
 
         if cited_chunks:
-            new_page(is_first=False)
-            cy = BODY_TOP_CONT
+            cy = chk(cy, 80, fp)
             cy = _section_header(rc, MARGIN_X, cy,
                                  f"Source Evidence — {len(cited_chunks)} Cited Source{'s' if len(cited_chunks) != 1 else ''}",
                                  "")
@@ -497,9 +504,10 @@ def generate_query_export_pdf(
                 clause     = chunk.get("clause_id") or "Not available"
                 pub_date   = chunk.get("publication_date") or "Not available"
                 page_no    = str(chunk.get("page_no") or "—")
-                doc_type   = chunk.get("doc_type") or chunk.get("document_type") or "—"
+                doc_type   = chunk.get("doc_type") or chunk.get("document_type") or "Not classified"
                 chunk_txt  = chunk.get("chunk_text") or ""
                 score      = chunk.get("score")
+                score_str  = f"{score:.3f}" if score is not None else "—"
                 trace_id   = chunk.get("trace_id") or chunk.get("chunk_id") or "—"
                 chunked_at = chunk.get("chunked_at") or "—"
                 source_url = chunk.get("source_url") or "—"
@@ -524,7 +532,7 @@ def generate_query_export_pdf(
                 # chunk box: ctxt_h + ctxt_pad*2 + trunc_row
                 # trace row: 8pt gap + 10pt text + 10pt bottom pad
                 META_ROW_H  = 22   # label + value + inter-row gap
-                META_ROWS   = 2
+                META_ROWS   = 3    # Agency/Version/DocType · Published/Clause/Page · Similarity
                 HEAD_TOP    = 22   # space above badge centre
                 HEAD_META_GAP = 16
                 META_CHUNK_GAP = 14
@@ -567,11 +575,14 @@ def generate_query_export_pdf(
                 # ── metadata grid 3×2 ─────────────────────────────────────────
                 meta_y = cy - HEAD_TOP - HEAD_META_GAP
                 cells = [
-                    ("Agency",    agency),   ("Version",   version[:32]),  ("Doc type", doc_type),
-                    ("Published", pub_date), ("Clause ID", clause),        ("Page",     page_no),
+                    ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
+                    ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
+                    ("Similarity",  score_str),  ("",          ""),            ("",          ""),
                 ]
                 col_w3 = CONTENT_W / 3
                 for ci, (k, v) in enumerate(cells):
+                    if not k:
+                        continue
                     cx3    = MARGIN_X + (ci % 3) * col_w3 + 10
                     row_y  = meta_y - (ci // 3) * META_ROW_H
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
@@ -581,14 +592,16 @@ def generate_query_export_pdf(
                 chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
                 _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
                       fill=box_bg, stroke=C_BORDER, lw=0.75)
-                _wrapped_text(rc, MARGIN_X + 16, chunk_y - ctxt_pad - 10,
+                txt_draw_y = chunk_y - ctxt_pad - 10
+                if truncated:
+                    _text(rc, MARGIN_X + 16, txt_draw_y,
+                          f"[Truncated — first {DISPLAY_CHARS} of {len(chunk_txt)} chars shown."
+                          f" Full text in source document.]",
+                          "Mono", 7.5, C_INK_TER)
+                    txt_draw_y -= 14
+                _wrapped_text(rc, MARGIN_X + 16, txt_draw_y,
                               (display_txt or "—").replace("\n", " "), "Mono", 8.5,
                               _rgb("1E293B"), draw_w - 4, 13.5)
-                if truncated:
-                    _text(rc, MARGIN_X + 16, chunk_y - ctxt_box_h + ctxt_pad,
-                          f"▾ {len(chunk_txt)} chars — first {DISPLAY_CHARS} shown"
-                          f" (full text in source document)",
-                          "Mono", 7.5, C_INK_TER)
 
                 # ── trace row ─────────────────────────────────────────────────
                 trace_y   = chunk_y - ctxt_box_h - 8
@@ -600,6 +613,91 @@ def generate_query_export_pdf(
                 _text(rc, trace_x, trace_y, t_prefix + source_url[:chars_left],
                       "Mono", 7.5, C_INK_TER)
                 cy -= card_h + 18
+
+            _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
+
+        if uncited_chunks:
+            cy -= 20
+            cy = chk(cy, 80, fp)
+            n_unc = len(uncited_chunks)
+            cy = _section_header(
+                rc, MARGIN_X, cy,
+                f"Retrieved but Not Cited — {n_unc} chunk{'s' if n_unc != 1 else ''}",
+            )
+            cy -= 4
+            unc_note = (
+                "These chunks were retrieved by the system but were not used by the model "
+                "to generate the answer. Included for audit completeness."
+            )
+            cy = _wrapped_text(rc, MARGIN_X, cy, unc_note, "Inter", 9.5, C_INK_SEC,
+                               CONTENT_W, 14.5)
+            cy -= 10
+
+            _UNC_META_ROW_H  = 22
+            _UNC_META_ROWS   = 3
+            _UNC_HEAD_TOP    = 22
+            _UNC_HEAD_META_GAP = 16
+            _UNC_TRACE_BLOCK = 28
+            unc_card_h = (_UNC_HEAD_TOP + _UNC_HEAD_META_GAP
+                          + _UNC_META_ROWS * _UNC_META_ROW_H + _UNC_TRACE_BLOCK)
+
+            for idx, chunk in enumerate(uncited_chunks):
+                uc_title    = (chunk.get("document_title") or "—")[:80]
+                uc_agency   = chunk.get("issuing_body") or "—"
+                uc_version  = chunk.get("document_version") or "—"
+                uc_pub_date = chunk.get("publication_date") or "Not available"
+                uc_clause   = chunk.get("clause_id") or "Not available"
+                uc_page_no  = str(chunk.get("page_no") or "—")
+                uc_doc_type = chunk.get("doc_type") or chunk.get("document_type") or "Not classified"
+                uc_score    = chunk.get("score")
+                uc_score_str = f"{uc_score:.3f}" if uc_score is not None else "—"
+                uc_trace_id  = chunk.get("trace_id") or chunk.get("chunk_id") or "—"
+                uc_chunked   = chunk.get("chunked_at") or "—"
+                uc_url       = chunk.get("source_url") or "—"
+
+                cy = chk(cy, unc_card_h + 18, fp)
+
+                uc_alt = (idx % 2 == 1)
+                uc_bg  = C_ROW_ALT if uc_alt else C_WHITE
+                _rect(rc, MARGIN_X, cy - unc_card_h, CONTENT_W, unc_card_h,
+                      fill=uc_bg, stroke=C_BORDER, lw=0.75)
+
+                # head row — muted badge to distinguish from cited
+                uc_head_y = cy - _UNC_HEAD_TOP
+                rc.saveState()
+                rc.setFillColorRGB(*C_INK_TER)
+                rc.circle(MARGIN_X + 14, uc_head_y, 9.0, fill=1, stroke=0)
+                rc.setFillColorRGB(*C_WHITE)
+                rc.setFont("Inter-Bold", 8.0)
+                rc.drawCentredString(MARGIN_X + 14, uc_head_y - 2.8, str(idx + 1))
+                rc.restoreState()
+                _text(rc, MARGIN_X + 30, uc_head_y - 3, uc_title, "Inter-SemiBold", 10.5, C_INK_SEC)
+
+                # metadata grid (same 3-row layout as cited, no chunk text)
+                uc_meta_y = cy - _UNC_HEAD_TOP - _UNC_HEAD_META_GAP
+                uc_cells = [
+                    ("Agency",     uc_agency),    ("Version",   uc_version[:32]),  ("Doc type",  uc_doc_type),
+                    ("Published",  uc_pub_date),  ("Clause ID", uc_clause),        ("Page",      uc_page_no),
+                    ("Similarity", uc_score_str), ("",          ""),               ("",          ""),
+                ]
+                uc_col_w3 = CONTENT_W / 3
+                for ci, (k, v) in enumerate(uc_cells):
+                    if not k:
+                        continue
+                    uc_cx = MARGIN_X + (ci % 3) * uc_col_w3 + 10
+                    uc_ry = uc_meta_y - (ci // 3) * _UNC_META_ROW_H
+                    _text(rc, uc_cx, uc_ry, k, "Mono", 7.5, C_INK_TER)
+                    _text(rc, uc_cx, uc_ry - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
+
+                # trace row
+                uc_trace_y = uc_meta_y - _UNC_META_ROWS * _UNC_META_ROW_H - 8
+                t_prefix   = f"trace_id  {uc_trace_id[:28]}   Ingested  {uc_chunked[:10]}   Source  "
+                chars_left = max(0, int((CONTENT_W - 20 - rc.stringWidth(t_prefix, "Mono", 7.5))
+                                        / rc.stringWidth("x", "Mono", 7.5)) - 2)
+                _text(rc, MARGIN_X + 10, uc_trace_y,
+                      t_prefix + uc_url[:chars_left], "Mono", 7.5, C_INK_TER)
+
+                cy -= unc_card_h + 18
 
             _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
 
