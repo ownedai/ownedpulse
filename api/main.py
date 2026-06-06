@@ -255,11 +255,11 @@ async def shutdown():
 from lib.observability import get_langfuse
 
 
-# ── System prompt V6 ──────────────────────────────────────────────────────────
+# ── System prompt V7 ──────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT_VERSION = "v6"
+SYSTEM_PROMPT_VERSION = "v7"
 
-SYSTEM_PROMPT_V6 = (
+SYSTEM_PROMPT_V7 = (
     "You are a regulatory intelligence assistant for the pharmaceutical and "
     "life sciences industry. You answer questions based exclusively on the "
     "provided regulatory source documents (FDA, EMA, ICH guidance).\n\n"
@@ -278,13 +278,32 @@ SYSTEM_PROMPT_V6 = (
     "Rules:\n"
     "- Answer only from the provided context chunks. Do not use prior knowledge.\n"
     "- If the context does not contain enough information, say so explicitly.\n"
+    "- If the retrieved context contains documents that are related to the query "
+    "topic but do not contain substantive answers (for example: a concept paper "
+    "proposing to create a guideline, a consultation document, a draft with no "
+    "final requirements, or a document that references the topic without addressing "
+    "it), do NOT say you have no information. Instead: (1) State what was found — "
+    "identify the document by title and reference number if available. (2) Explain "
+    "why it does not fully answer the question, e.g. 'This is a concept paper "
+    "proposing the development of the guideline, not the guideline itself.' "
+    "(3) State the current regulatory status if discernible from the context, e.g. "
+    "'The guideline was under consultation as of March 2023. The final guideline "
+    "had not been published at the time of corpus ingestion.' (4) Do not speculate "
+    "beyond what the context contains. Do not invent requirements that are not "
+    "present. This distinction is important: 'the corpus contains a related document "
+    "that does not answer the question' is different from 'the corpus contains no "
+    "relevant information.' Be precise about which situation applies.\n"
     "- Use precise regulatory language. Do not simplify or paraphrase requirements.\n"
     "- If a cited document is marked as SUPERSEDED, note this in your answer.\n"
     "- Format your answer as clean prose paragraphs separated by blank lines.\n"
     "- Do NOT use markdown bold headings. Do NOT use numbered lists unless the "
     "user explicitly asked for a list.\n"
     "- Do not give legal advice. State that queries requiring legal interpretation "
-    "should be referred to a qualified regulatory professional."
+    "should be referred to a qualified regulatory professional.\n"
+    "- Do not end responses with conversational closers such as 'feel free to ask', "
+    "'let me know if you have questions', 'I hope this helps', or similar phrases. "
+    "Responses are exported as formal regulatory intelligence documents. End with "
+    "the substantive content only."
 )
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -467,12 +486,8 @@ def build_qdrant_filter(filters: QueryFilters | None) -> Optional[Filter]:
     - issuing_body (for agency)
     - document_type (hyphenated, for document type)
     - publication_date (ISO string comparison for date range)
-
-    Always restricts to seed corpus (corpus_doc=True payload field, indexed bool).
     """
-    # Seed corpus only: corpus_doc=True is set on all 9 seed documents (446 chunks).
-    # RSS-ingested chunks have no corpus_doc field — they are excluded.
-    conditions = [FieldCondition(key="corpus_doc", match=MatchValue(value=True))]
+    conditions: list = []
 
     if filters:
         if filters.agency:
@@ -1066,7 +1081,7 @@ async def _run_content_query(
         framing = build_supersede_framing(supersede_context)
         prompt = f"{framing}Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
         t_llm = _time.monotonic()
-        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V6, return_usage=True)
+        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V7, return_usage=True)
         t_llm2 = _time.monotonic()
         llm_latency_ms = round((t_llm2 - t_llm) * 1000)
 
@@ -1074,7 +1089,7 @@ async def _run_content_query(
             lf_trace.generation(
                 name="llm_answer",
                 model=get_active_model(),
-                input={"prompt": prompt, "system": SYSTEM_PROMPT_V6},
+                input={"prompt": prompt, "system": SYSTEM_PROMPT_V7},
                 output={"answer": answer},
                 usage=llm_usage,
                 metadata={"latency_ms": llm_latency_ms, "system_prompt_version": SYSTEM_PROMPT_VERSION},
@@ -2107,7 +2122,7 @@ async def get_system_prompt():
     """Return the active system prompt text and version for the UI prompt viewer."""
     return {
         "version": SYSTEM_PROMPT_VERSION,
-        "text": SYSTEM_PROMPT_V6,
+        "text": SYSTEM_PROMPT_V7,
     }
 
 
