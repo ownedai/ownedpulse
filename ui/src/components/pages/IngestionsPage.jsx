@@ -591,6 +591,85 @@ function RssRunRow({ item, isOpen, onToggle }) {
   );
 }
 
+function DateRangeFilter({ dateFrom, dateTo, onApply }) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(dateFrom);
+  const [to, setTo] = useState(dateTo);
+  const ref = useRef(null);
+  const active = !!(dateFrom || dateTo);
+
+  useEffect(() => {
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Keep local state in sync if parent clears filters
+  useEffect(() => { setFrom(dateFrom); setTo(dateTo); }, [dateFrom, dateTo]);
+
+  function handleApply() {
+    onApply(from, to);
+    setOpen(false);
+  }
+
+  function handleClear() {
+    setFrom(''); setTo('');
+    onApply('', '');
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Filter by date range"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          height: 34, padding: '0 11px',
+          background: active ? 'var(--accent-tint)' : 'var(--doc-surface)',
+          border: `1px solid ${active ? 'var(--accent-l)' : 'var(--doc-border)'}`,
+          borderRadius: 5, cursor: 'pointer',
+          color: active ? 'var(--accent-l)' : 'var(--doc-text-2)',
+          fontSize: 12,
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        {active ? `${dateFrom || '…'} → ${dateTo || '…'}` : 'Date range'}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+          background: 'var(--doc-surface)', border: '1px solid var(--doc-border)',
+          borderRadius: 6, zIndex: 100, padding: '14px 16px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)', minWidth: 230,
+        }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--doc-text-3)', fontWeight: 600, marginBottom: 12 }}>Date range</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
+              From
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+                style={{ background: 'var(--doc-bg)', border: '1px solid var(--doc-border)', borderRadius: 4, padding: '5px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--doc-text)', outline: 'none' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
+              To
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+                style={{ background: 'var(--doc-bg)', border: '1px solid var(--doc-border)', borderRadius: 4, padding: '5px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--doc-text)', outline: 'none' }} />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button onClick={handleApply} style={{ flex: 1, height: 30, background: 'var(--accent-l)', border: 'none', borderRadius: 4, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Apply</button>
+            {(from || to) && (
+              <button onClick={handleClear} style={{ height: 30, padding: '0 10px', background: 'transparent', border: '1px solid var(--doc-border)', borderRadius: 4, color: 'var(--doc-text-2)', fontSize: 12, cursor: 'pointer' }}>Clear</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FilterDropdown({ label, value, options, onChange, testId }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -707,22 +786,11 @@ export default function IngestionsPage() {
           onChange={setSourceFilter}
           testId="ingestions-filter-source"
         />
-        <div className="date-input">
-          <span className="k">from</span>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-        </div>
-        <div className="date-input">
-          <span className="k">to</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-        </div>
+        <DateRangeFilter
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onApply={(from, to) => { setDateFrom(from); setDateTo(to); }}
+        />
         <span className="count-right">
           <span className="v">{total.toLocaleString()}</span> entries
         </span>
