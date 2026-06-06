@@ -46,6 +46,40 @@ from .trace_emitter import (
 SCRIPTS_DIR = "/opt/scripts"
 RUN_INGEST = f"{SCRIPTS_DIR}/ingestion/run_ingest.py"
 
+# Intermediate statuses that should never persist after a run ends
+_INTERMEDIATE_DOC_STATUSES = ('parsing', 'chunking', 'embedding', 'uploading', 'running')
+
+
+def _resolve_stale_spans(doc_id: str, trace_id: str, reason: str):
+    """After a subprocess error, mark any lingering pending/intermediate rows as failed.
+
+    run_ingest.py sets ingestion_doc.status='pending' and document_registry.ingestion_status
+    to intermediate values at start. If the subprocess crashes or times out, those rows
+    are never finalised. This cleans them up so the document shows a terminal state.
+    """
+    import psycopg2
+    from .trace_emitter import _pg_conn
+    short_reason = reason[:500] if reason else "Subprocess did not complete"
+    try:
+        conn = _pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE ingestion_doc SET status = 'failed', failure_reason = %s
+               WHERE doc_id = %s AND trace_id::text = %s AND status = 'pending'""",
+            (short_reason, doc_id, trace_id),
+        )
+        cur.execute(
+            """UPDATE document_registry
+               SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW()
+               WHERE document_id = %s AND ingestion_status = ANY(%s)""",
+            (short_reason, doc_id, list(_INTERMEDIATE_DOC_STATUSES)),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass  # best-effort — don't mask the original error
+
 
 def _subprocess_env(extra: dict = None) -> dict:
     env = os.environ.copy()
@@ -91,16 +125,23 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
         )
         if result.stdout.strip():
             try:
-                return json.loads(result.stdout.strip())
+                parsed = json.loads(result.stdout.strip())
+                if parsed.get("status") not in ("ok", "skipped"):
+                    _resolve_stale_spans(doc_id, trace_id, parsed.get("detail", ""))
+                return parsed
             except json.JSONDecodeError:
                 pass
         err = result.stderr.strip() or "Unknown error"
         if len(err) > 500:
             err = err[:500] + "..."
+        _resolve_stale_spans(doc_id, trace_id, err)
         return {"status": "error", "doc_id": doc_id, "detail": err}
     except subprocess.TimeoutExpired:
-        return {"status": "error", "doc_id": doc_id, "detail": f"Timeout ({timeout}s)"}
+        detail = f"Timeout ({timeout}s)"
+        _resolve_stale_spans(doc_id, trace_id, detail)
+        return {"status": "error", "doc_id": doc_id, "detail": detail}
     except Exception as e:
+        _resolve_stale_spans(doc_id, trace_id, str(e))
         return {"status": "error", "doc_id": doc_id, "detail": str(e)}
 
 
