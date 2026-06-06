@@ -780,16 +780,17 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
     meta      = build_rss_meta(doc_id, archive_dir, metadata, cls)
     write_meta_json(doc_id, meta)
 
-    # Clean stale extract/chunk dirs from previous runs (may be root-owned from Docker)
-    for subdir in ("extracted", "chunks"):
-        d = archive_dir / subdir
-        if d.exists():
-            try:
-                shutil.rmtree(d)
-            except PermissionError:
-                print(f"  WARNING: Cannot remove stale {subdir}/ (root-owned). "
-                      f"Run: docker exec regpulse-api rm -rf /archive/.../"
-                      f"{archive_dir.name}/{subdir}", file=sys.stderr)
+    # Clean stale chunk dir from previous runs (may be root-owned from Docker).
+    # Do NOT delete extracted/ — it contains the Docling cache (docling_output.json,
+    # extracted_text.txt) which avoids re-submitting large PDFs to Docling on retry.
+    chunks_dir = archive_dir / "chunks"
+    if chunks_dir.exists():
+        try:
+            shutil.rmtree(chunks_dir)
+        except PermissionError:
+            print(f"  WARNING: Cannot remove stale chunks/ (root-owned). "
+                  f"Run: docker exec regpulse-api rm -rf /archive/.../"
+                  f"{archive_dir.name}/chunks", file=sys.stderr)
 
     # Determine ingestion path: simple HTML chunking vs Docling parsing.
     # Structured XML/HTML (eCFR, ICH) needs Docling for heading extraction and
