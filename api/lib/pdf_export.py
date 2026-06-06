@@ -400,7 +400,7 @@ def generate_query_export_pdf(
     corpus_snapshot = "—"
     generation_model = retrieval.get("model") or "phi4:14b-q8_0"
     embedding_model  = "mxbai-embed-large"
-    prompt_version   = "V6"
+    prompt_version   = "V8"
     try:
         import psycopg2
         pg_dsn = os.environ.get("POSTGRES_DSN") or (
@@ -417,7 +417,7 @@ def generate_query_export_pdf(
             corpus_snapshot = datetime.strptime(_snap_raw, "%Y-%m-%d").strftime("%d.%m.%Y")
         except Exception:
             corpus_snapshot = _snap_raw
-        prompt_version   = cfg.get("prompt_version", "V6")
+        prompt_version   = cfg.get("prompt_version", "V8")
         _conn.close()
     except Exception:
         pass

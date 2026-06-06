@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.24"
+APP_VERSION = "0.8.25"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -255,11 +255,11 @@ async def shutdown():
 from lib.observability import get_langfuse
 
 
-# ── System prompt V7 ──────────────────────────────────────────────────────────
+# ── System prompt V8 ──────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT_VERSION = "v7"
+SYSTEM_PROMPT_VERSION = "v8"
 
-SYSTEM_PROMPT_V7 = (
+SYSTEM_PROMPT_V8 = (
     "You are a regulatory intelligence assistant for the pharmaceutical and "
     "life sciences industry. You answer questions based exclusively on the "
     "provided regulatory source documents (FDA, EMA, ICH guidance).\n\n"
@@ -278,6 +278,39 @@ SYSTEM_PROMPT_V7 = (
     "Rules:\n"
     "- Answer only from the provided context chunks. Do not use prior knowledge.\n"
     "- If the context does not contain enough information, say so explicitly.\n"
+    "\n"
+    "DOCUMENT STATUS CHECK — apply before generating any answer:\n"
+    "Before summarising content from any retrieved document, identify its regulatory "
+    "status from the text itself. Look for indicators such as:\n"
+    "- \"concept paper\" — a proposal to develop a guideline; no requirements exist yet\n"
+    "- \"reflection paper\" — exploratory thinking; not binding, not final requirements\n"
+    "- \"consultation\" / \"public consultation\" — draft stage; requirements not finalised\n"
+    "- \"proposed guideline\" / \"draft guideline\" — not yet adopted\n"
+    "- \"under development\" / \"work in progress\" — not yet published\n"
+    "\n"
+    "If the primary retrieved document is a concept paper, reflection paper, or "
+    "consultation document:\n"
+    "1. State its status FIRST, before any content summary:\n"
+    "   \"The corpus contains [document title] ([reference number if available]), "
+    "which is a [concept paper/reflection paper/consultation document]. "
+    "This is not a final guideline — no binding requirements exist yet.\"\n"
+    "2. Then briefly summarise what the document says the future guideline WILL address.\n"
+    "3. Do NOT describe proposals or future intentions as current requirements.\n"
+    "4. Do NOT use present tense (\"requires\", \"must\", \"shall\") for content from "
+    "preparatory documents. Use future or conditional tense (\"will require\", "
+    "\"is expected to\", \"proposes that\").\n"
+    "\n"
+    "Example of WRONG behaviour:\n"
+    "\"Manufacturers must control elemental impurities using a risk management approach [1].\" "
+    "(This treats a concept paper proposal as a current requirement.)\n"
+    "\n"
+    "Example of CORRECT behaviour:\n"
+    "\"The corpus contains a concept paper (EMA/CVMP/637041/2022) proposing to develop "
+    "a guideline on this topic. This is not a final guideline. The concept paper "
+    "proposes that a future guideline will require manufacturers to apply a risk "
+    "management approach to elemental impurities in veterinary medicinal products. "
+    "The consultation closed March 2023; the final guideline has not yet been published.\"\n"
+    "\n"
     "- If the retrieved context contains documents that are related to the query "
     "topic but do not contain substantive answers (for example: a concept paper "
     "proposing to create a guideline, a consultation document, a draft with no "
@@ -566,6 +599,66 @@ def deduplicate_chunks(chunks: list[dict], top_n: int = 8) -> list[dict]:
     return deduped[:top_n]
 
 
+# ── Force-include explicitly mentioned documents ────────────────────────────────
+
+# Known document name patterns mapped to document_ids (case-insensitive).
+# Prefixing "ich q9" (single match) before "ich q9(r1)" (specific) is intentional.
+DOCUMENT_NAME_MAP = {
+    "eu gmp annex 11": "EU-GMP-Annex11",
+    "annex 11": "EU-GMP-Annex11",
+    "eu gmp annex 15": "EU-GMP-Annex15",
+    "annex 15": "EU-GMP-Annex15",
+    "eu gmp annex 22": "EU-GMP-Annex22",
+    "annex 22": "EU-GMP-Annex22",
+    "21 cfr part 11": "21-CFR-Part-11",
+    "21 cfr 11": "21-CFR-Part-11",
+    "ich q9(r1)": "ICH-Q9-R1",
+    "ich q9": "ICH-Q9-R1",  # point to current version
+    "ich q9 (r1)": "ICH-Q9-R1",
+    "ich q10": "ICH-Q10",
+}
+
+
+def extract_mentioned_documents(query_text: str) -> list[str]:
+    """Return document_ids explicitly mentioned in the query."""
+    query_lower = query_text.lower()
+    mentioned = []
+    for pattern, doc_id in DOCUMENT_NAME_MAP.items():
+        if pattern in query_lower:
+            mentioned.append(doc_id)
+    return list(set(mentioned))  # dedup — two patterns may map to same doc_id
+
+
+async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) -> list[dict]:
+    """Fetch top chunks from a specific document via semantic search.
+
+    Embedding is done fresh for the query — deterministic at temperature 0.
+    """
+    from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue
+
+    vector = await ollama_embed(query_text)
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    results = client.query_points(
+        collection_name=QDRANT_COLLECTION,
+        query=vector,
+        query_filter=QFilter(
+            must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+        ),
+        limit=limit,
+        with_payload=True,
+    )
+
+    chunks = []
+    for point in results.points:
+        payload = point.payload or {}
+        chunks.append({
+            "chunk_id": str(point.id),
+            "score": point.score if point.score is not None else 0.0,
+            **payload,
+        })
+    return chunks
+
+
 # ── Supersede-pair detection ──────────────────────────────────────────────────
 
 def detect_supersede_pair(chunks: list[dict], pg_conn) -> dict | None:
@@ -688,8 +781,11 @@ def build_context(chunks: list[dict]) -> str:
         version = chunk.get("document_version")
         date = chunk.get("publication_date")
         superseded = chunk.get("superseded", False)
+        doc_type = chunk.get("document_type", "")  # hyphenated: guidance, other, reflection_paper, etc.
 
         header = f"[{i}] {title} — {agency}"
+        if doc_type:
+            header += f", {doc_type}"
         if version:
             header += f", {version}"
         if clause:
@@ -1016,6 +1112,27 @@ async def _run_content_query(
         # Step 4: Deduplicate — best score per document_id, top 8
         deduped_chunks = deduplicate_chunks(all_chunks, top_n=8)
 
+        # Step 4a: Force-include chunks from explicitly mentioned documents.
+        # When a query names a specific document (e.g. "Annex 11", "21 CFR Part 11"),
+        # fetch chunks from that document regardless of semantic ranking. This ensures
+        # GxP queries that name regulatory documents always get content from them.
+        mentioned_docs = extract_mentioned_documents(request.query)
+        if mentioned_docs:
+            for doc_id in mentioned_docs:
+                already_present = any(
+                    c.get("document_id") == doc_id for c in deduped_chunks
+                )
+                if not already_present:
+                    forced = await fetch_document_chunks(doc_id, request.query, limit=3)
+                    if forced:
+                        logger.info(
+                            "Force-included %d chunks from %s (explicitly mentioned in query)",
+                            len(forced), doc_id,
+                        )
+                        deduped_chunks = deduped_chunks + forced
+            # Re-sort after merging
+            deduped_chunks = sorted(deduped_chunks, key=lambda c: c["score"], reverse=True)
+
         # Step 4b: Supersede-pair detection — zero overhead when no family present
         supersede_context = None
         try:
@@ -1081,7 +1198,7 @@ async def _run_content_query(
         framing = build_supersede_framing(supersede_context)
         prompt = f"{framing}Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
         t_llm = _time.monotonic()
-        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V7, return_usage=True)
+        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V8, return_usage=True)
         t_llm2 = _time.monotonic()
         llm_latency_ms = round((t_llm2 - t_llm) * 1000)
 
@@ -1089,7 +1206,7 @@ async def _run_content_query(
             lf_trace.generation(
                 name="llm_answer",
                 model=get_active_model(),
-                input={"prompt": prompt, "system": SYSTEM_PROMPT_V7},
+                input={"prompt": prompt, "system": SYSTEM_PROMPT_V8},
                 output={"answer": answer},
                 usage=llm_usage,
                 metadata={"latency_ms": llm_latency_ms, "system_prompt_version": SYSTEM_PROMPT_VERSION},
@@ -2122,7 +2239,7 @@ async def get_system_prompt():
     """Return the active system prompt text and version for the UI prompt viewer."""
     return {
         "version": SYSTEM_PROMPT_VERSION,
-        "text": SYSTEM_PROMPT_V7,
+        "text": SYSTEM_PROMPT_V8,
     }
 
 
