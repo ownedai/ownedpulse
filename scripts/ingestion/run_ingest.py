@@ -470,7 +470,7 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
         "jurisdiction":       JURISDICTION_MAP.get(auth.upper(),""),
         "regulatory_domain":  get_regulatory_domain(metadata.get("feed_id",""), cls["doc_type"]),
         "clause_id_prefix":   "",
-        "source_url":         metadata.get("source_url",""),
+        "source_url":         metadata.get("pdf_url") or metadata.get("source_url",""),
         "source_fetched_at":  metadata.get("archived_at",""),
         "feed_source":        metadata.get("feed_id",""),
         "feed_item_guid":     metadata.get("feed_item_guid",""),

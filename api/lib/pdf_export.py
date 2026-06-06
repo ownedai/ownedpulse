@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime, timezone
+import logging
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -265,8 +266,6 @@ def _draw_footer(c: canvas.Canvas, export_id: str, exported: str,
         f"Exported: {exported}"
     )
     _text(c, PAGE_W / 2, cy + 2, centre, "Mono", 8, C_INK_TER, align="center")
-    _text(c, PAGE_W - MARGIN_X, cy + 2, "Confidential — Internal Use",
-          "Inter", 8.5, C_INK_SEC, align="right")
 
 
 # ── section header helper ──────────────────────────────────────────────────────
@@ -281,10 +280,73 @@ def _section_header(c: canvas.Canvas, x, y, label: str, index_label: str = "") -
     return y - 10
 
 
-# ── citation marker inline rendering (plain-text fallback) ────────────────────
+# ── answer text renderer with blue [N] citation markers ──────────────────────
 
-def _strip_citation_markers(text: str) -> str:
-    return re.sub(r"\[(\d+)\]", r"[\1]", text)
+_MARKER_RE   = re.compile(r'(\[\d+\])')
+_C_MARKER    = _rgb("2563EB")
+_ATTACH_LEFT = frozenset('.,;:!?)}]')  # punctuation that attaches to the preceding token
+
+
+def _wrapped_text_marked(c: canvas.Canvas, x, y, text, font, size, color,
+                         max_w, line_height=None) -> float:
+    """Render wrapped text; [N] citation markers are drawn in blue Inter-SemiBold.
+
+    Punctuation tokens that start with an attach-left character (.,;:) are placed
+    directly after the preceding token with no inter-word space, so '[1].' renders
+    without a gap between the marker and the period.
+    """
+    if line_height is None:
+        line_height = size * 1.55
+    space_w = c.stringWidth(" ", font, size)
+
+    # Tokenise: split on marker boundaries, then on spaces within prose segments
+    tokens = []  # (word, is_marker)
+    for seg in _MARKER_RE.split(text):
+        if _MARKER_RE.fullmatch(seg):
+            tokens.append((seg, True))
+        else:
+            for w in seg.split():
+                tokens.append((w, False))
+
+    line_items: list[tuple[str, bool]] = []
+    line_w = 0.0
+    cy = y
+
+    def _render_line(items):
+        dx = x
+        for i, (w, is_m) in enumerate(items):
+            f = "Inter-SemiBold" if is_m else font
+            col = _C_MARKER if is_m else color
+            c.saveState()
+            c.setFont(f, size)
+            c.setFillColorRGB(*col)
+            c.drawString(dx, cy, w)
+            c.restoreState()
+            dx += c.stringWidth(w, f, size)
+            if i < len(items) - 1:
+                next_w = items[i + 1][0]
+                if not (next_w and next_w[0] in _ATTACH_LEFT):
+                    dx += space_w
+
+    for word, is_m in tokens:
+        f = "Inter-SemiBold" if is_m else font
+        ww = c.stringWidth(word, f, size)
+        # No leading space for attach-left punctuation (e.g. '.' after '[1]')
+        gap = (space_w if line_items else 0.0) if not (word and word[0] in _ATTACH_LEFT) else 0.0
+        if line_items and line_w + gap + ww > max_w:
+            _render_line(line_items)
+            cy -= line_height
+            line_items = [(word, is_m)]
+            line_w = ww
+        else:
+            line_items.append((word, is_m))
+            line_w += gap + ww
+
+    if line_items:
+        _render_line(line_items)
+        cy -= line_height
+
+    return cy
 
 
 # ── main PDF builder ───────────────────────────────────────────────────────────
@@ -324,9 +386,15 @@ def generate_query_export_pdf(
 
     # ── export metadata ────────────────────────────────────────────────────────
     now_utc  = datetime.now(timezone.utc)
-    short_id = query_id[:8] if len(query_id) >= 8 else query_id
+    try:
+        from zoneinfo import ZoneInfo
+        _now_local = datetime.now(ZoneInfo("Europe/Brussels"))
+    except Exception:
+        from datetime import timedelta as _td
+        _now_local = now_utc + _td(hours=1)
+    short_id  = query_id[:8] if len(query_id) >= 8 else query_id
     export_id = f"QRY-{now_utc.strftime('%Y-%m-%d')}-{short_id}"
-    exported  = now_utc.strftime("%d/%m/%Y %H:%M UTC")
+    exported  = _now_local.strftime("%d.%m.%Y %H:%M") + " CET"
 
     # Try to get system info from DB; fall back gracefully
     corpus_snapshot = "—"
@@ -343,14 +411,22 @@ def generate_query_export_pdf(
         _cur = _conn.cursor()
         _cur.execute("SELECT key, value FROM system_config")
         cfg = dict(_cur.fetchall())
-        generation_model  = cfg.get("active_llm_model", generation_model)
-        corpus_snapshot   = cfg.get("corpus_snapshot_date", "2026-06-01")
-        prompt_version    = cfg.get("prompt_version", "V6")
+        generation_model = cfg.get("active_llm_model", generation_model)
+        _snap_raw        = cfg.get("corpus_snapshot_date", "2026-06-01")
+        try:
+            corpus_snapshot = datetime.strptime(_snap_raw, "%Y-%m-%d").strftime("%d.%m.%Y")
+        except Exception:
+            corpus_snapshot = _snap_raw
+        prompt_version   = cfg.get("prompt_version", "V6")
         _conn.close()
     except Exception:
         pass
 
-    system_str = f"regpulse v1.0 · {embedding_model} · {generation_model}"
+    try:
+        from main import APP_VERSION as _APP_VERSION
+    except Exception:
+        _APP_VERSION = "dev"
+    system_str = f"regpulse v{_APP_VERSION} · {embedding_model} · {generation_model}"
 
     # ── two-pass render: pass 1 counts pages; pass 2 renders with correct total ─
     def _render(total_pages_known: int) -> tuple["canvas.Canvas", BytesIO, int]:
@@ -401,35 +477,40 @@ def generate_query_export_pdf(
         cy = _section_header(rc, MARGIN_X, cy, "Generated Answer")
         cy -= 6
 
-        clean_answer = _strip_citation_markers(answer)
-        for para in [p.strip() for p in clean_answer.split("\n\n") if p.strip()]:
+        for para in [p.strip() for p in answer.split("\n\n") if p.strip()]:
             h = _measure_wrapped(rc, para, "Inter", 10.5, CONTENT_W, 17.5)
             cy = chk(cy, h + 8, fp)
-            cy = _wrapped_text(rc, MARGIN_X, cy, para, "Inter", 10.5, C_INK, CONTENT_W, 17.5)
+            cy = _wrapped_text_marked(rc, MARGIN_X, cy, para, "Inter", 10.5, C_INK,
+                                      CONTENT_W, 17.5)
             cy -= 8
 
         cy -= 4
+        n_above = len(cited_chunks) + len(uncited_chunks)
+        n_cited = len(cited_chunks)
         meta = (
             f"{query_id[:8]}  ·  {routing_label}  ·  "
-            f"retrieved {len(citations)} chunks  ·  cited {len(cited_chunks)} chunks  ·  {generation_model}"
+            f"{n_above} chunks above threshold  ·  {n_cited} cited  ·  {generation_model}"
         )
         _text(rc, MARGIN_X, cy, meta, "Mono", 8, C_INK_TER)
-        cy -= 20
+        cy -= 28
 
         if sub_queries:
-            _SQ_HEADING = "Query Expansion — AI-generated sub-queries (not user input)"
-            _SQ_NOTE    = ("These sub-queries were generated automatically by the system "
-                           "to broaden retrieval. They were not entered by the user.")
-            _sq_note_h  = _measure_wrapped(rc, _SQ_NOTE, "Inter", 8, CONTENT_W, 12)
-            cy = chk(cy, 30 + _sq_note_h + 4, fp)
-            _text(rc, MARGIN_X, cy, _SQ_HEADING, "Inter-SemiBold", 8.5, C_INK_SEC)
-            cy -= 12
-            cy = _wrapped_text(rc, MARGIN_X, cy, _SQ_NOTE, "Inter", 8, C_INK_TER,
-                               CONTENT_W, 12)
-            cy -= 8
+            _SQ_NOTE = ("These sub-queries were generated automatically by the system "
+                        "to broaden retrieval. They were not entered by the user.")
+            _sq_note_h    = _measure_wrapped(rc, _SQ_NOTE, "Inter", 9.5, CONTENT_W, 14.5)
+            _sq_bullets_h = sum(
+                _measure_wrapped(rc, f"· {sq}", "Mono", 8, CONTENT_W - 10, 12.5) + 4
+                for sq in sub_queries
+            )
+            _sq_total_h = 30 + 4 + _sq_note_h + 10 + _sq_bullets_h + 8
+            cy = chk(cy, _sq_total_h, fp)
+            cy = _section_header(rc, MARGIN_X, cy, "Query Expansion",
+                                 f"{len(sub_queries)} sub-queries generated")
+            cy -= 4
+            cy = _wrapped_text(rc, MARGIN_X, cy, _SQ_NOTE, "Inter", 9.5, C_INK_SEC,
+                               CONTENT_W, 14.5)
+            cy -= 10
             for sq in sub_queries:
-                h = _measure_wrapped(rc, f"· {sq}", "Mono", 8, CONTENT_W - 10, 12.5)
-                cy = chk(cy, h + 4, fp)
                 cy = _wrapped_text(rc, MARGIN_X + 8, cy, f"· {sq}", "Mono", 8,
                                    C_INK_SEC, CONTENT_W - 10, 12.5)
                 cy -= 4
@@ -456,9 +537,9 @@ def generate_query_export_pdf(
             ("Embedding model",  embedding_model),
             ("Inference",        "Ollama (local)"),
             ("Query expansion",  "Enabled" if sub_queries else "Disabled"),
-            ("Langfuse trace",   langfuse_id),
+            ("Trace ID",         langfuse_id),
         ]
-        box_h = max(len(left_rows), len(right_rows)) * 14 + 36
+        box_h = max(len(left_rows), len(right_rows)) * 13 + 30
         cy = chk(cy, box_h + 20, fp)
         _rect(rc, MARGIN_X, cy - box_h, CONTENT_W, box_h, fill=C_WHITE, stroke=C_BORDER, lw=0.75)
         _line(rc, MARGIN_X + col_w, cy - box_h, MARGIN_X + col_w, cy, C_BORDER, lw=0.75)
@@ -479,7 +560,7 @@ def generate_query_export_pdf(
             _text(rc, rx0, rcy, key, "Mono", 8.5, C_INK_TER)
             _text(rc, MARGIN_X + CONTENT_W - 10, rcy, val, "Mono", 8.5, C_INK, align="right")
             rcy -= 13
-        cy = cy - box_h - 16
+        cy = cy - box_h - 28
 
         if cited_chunks:
             cy = chk(cy, 80, fp)
@@ -510,44 +591,38 @@ def generate_query_export_pdf(
                 score_str  = f"{score:.3f}" if score is not None else "—"
                 trace_id   = chunk.get("trace_id") or chunk.get("chunk_id") or "—"
                 chunked_at = chunk.get("chunked_at") or "—"
-                source_url = chunk.get("source_url") or "—"
-                # Truncate by char count — chunk text is almost always single-paragraph
-                # prose with no newlines, so line-count splitting is unreliable.
-                # Mono 8.5pt at CONTENT_W-28 ≈ 105 chars/line; 8 lines ≈ 840 chars.
+                source_url   = chunk.get("source_url") or "—"
+                source_local = chunk.get("source_local_path") or ""
                 DISPLAY_CHARS = 700
                 max_ln        = 8
                 truncated     = len(chunk_txt) > DISPLAY_CHARS
                 display_txt   = chunk_txt[:DISPLAY_CHARS] if truncated else chunk_txt
 
-                # measure with the same width used for drawing
                 draw_w  = CONTENT_W - 28
                 ctxt_h  = _measure_wrapped(rc, display_txt or "—", "Mono", 8.5,
                                            draw_w, 13.5) if display_txt else 14
                 ctxt_h  = min(ctxt_h, max_ln * 13.5)
-                trunc_row = 14 if truncated else 0
-                # ── card geometry (all measurements derived from layout constants) ──
-                # head area: 22pt top pad + badge/title row
-                # meta grid: 2 rows × 22pt (label 7.5pt + 12pt gap + value 8.5pt) = 44pt
-                # gap head→meta: 16pt, gap meta→chunk: 14pt
-                # chunk box: ctxt_h + ctxt_pad*2 + trunc_row
-                # trace row: 8pt gap + 10pt text + 10pt bottom pad
-                META_ROW_H  = 22   # label + value + inter-row gap
-                META_ROWS   = 3    # Agency/Version/DocType · Published/Clause/Page · Similarity
-                HEAD_TOP    = 22   # space above badge centre
-                HEAD_META_GAP = 16
-                META_CHUNK_GAP = 14
-                ctxt_pad    = 9
-                ctxt_box_h  = ctxt_h + ctxt_pad * 2 + trunc_row
-                TRACE_BLOCK = 28   # gap + text height + bottom pad
+                trunc_row     = 14 if truncated else 0
+                META_ROW_H    = 22
+                META_ROWS     = 3
+                HEAD_TOP      = 22
+                HEAD_META_GAP = 24
+                META_CHUNK_GAP = 8
+                ctxt_pad      = 9
+                ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row
+                trace_max_w   = CONTENT_W - 20
+                src2_h = _measure_wrapped(rc, f"Source  {source_url}", "Mono", 7.5, trace_max_w, 11)
+                src3_h = (_measure_wrapped(rc, f"File  {source_local}", "Mono", 7.5, trace_max_w, 11)
+                          if source_local else 0)
+                TRACE_BLOCK = 8 + 10 + 11 + src2_h + (11 + src3_h if source_local else 0) + 10
                 card_h = (HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H
                           + META_CHUNK_GAP + ctxt_box_h + TRACE_BLOCK)
 
                 cy = chk(cy, card_h + 18, fp)
 
-                # alternating card backgrounds — chunk box inverts so it's always visible
                 card_is_alt = (idx % 2 == 1)
-                bg       = C_ROW_ALT if card_is_alt else C_WHITE
-                box_bg   = C_WHITE   if card_is_alt else _rgb("F1F5F9")
+                bg     = C_ROW_ALT if card_is_alt else C_WHITE
+                box_bg = _rgb("E8EEF4")
                 _rect(rc, MARGIN_X, cy - card_h, CONTENT_W, card_h, fill=bg, stroke=C_BORDER, lw=0.75)
 
                 # ── head row ──────────────────────────────────────────────────
@@ -572,7 +647,8 @@ def generate_query_export_pdf(
                 _rect(rc, bx2, by2, bw, bh, fill=badge_bg, stroke=None, radius=3)
                 _text(rc, bx2 + bw / 2, by2 + 3.5, badge_txt, "Inter-SemiBold", 7.5,
                       badge_fg, align="center")
-                # ── metadata grid 3×2 ─────────────────────────────────────────
+
+                # ── metadata grid 3×3 ─────────────────────────────────────────
                 meta_y = cy - HEAD_TOP - HEAD_META_GAP
                 cells = [
                     ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
@@ -583,12 +659,12 @@ def generate_query_export_pdf(
                 for ci, (k, v) in enumerate(cells):
                     if not k:
                         continue
-                    cx3    = MARGIN_X + (ci % 3) * col_w3 + 10
-                    row_y  = meta_y - (ci // 3) * META_ROW_H
+                    cx3   = MARGIN_X + (ci % 3) * col_w3 + 10
+                    row_y = meta_y - (ci // 3) * META_ROW_H
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
                     _text(rc, cx3, row_y - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
 
-                # ── chunk text box ─────────────────────────────────────────────
+                # ── chunk text box ────────────────────────────────────────────
                 chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
                 _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
                       fill=box_bg, stroke=C_BORDER, lw=0.75)
@@ -603,15 +679,18 @@ def generate_query_export_pdf(
                               (display_txt or "—").replace("\n", " "), "Mono", 8.5,
                               _rgb("1E293B"), draw_w - 4, 13.5)
 
-                # ── trace row ─────────────────────────────────────────────────
-                trace_y   = chunk_y - ctxt_box_h - 8
-                trace_x   = MARGIN_X + 10
-                trace_max = CONTENT_W - 20
-                t_prefix  = f"trace_id  {trace_id[:28]}   Ingested  {chunked_at[:10]}   Source  "
-                chars_left = max(0, int((trace_max - rc.stringWidth(t_prefix, "Mono", 7.5))
-                                        / rc.stringWidth("x", "Mono", 7.5)) - 2)
-                _text(rc, trace_x, trace_y, t_prefix + source_url[:chars_left],
+                # ── trace lines (tight below text box) ────────────────────────
+                tl1_y = chunk_y - ctxt_box_h - 8
+                _text(rc, MARGIN_X + 10, tl1_y,
+                      f"Ingested  {chunked_at[:10]}   Trace ID  {trace_id}",
                       "Mono", 7.5, C_INK_TER)
+                _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11,
+                              f"Source  {source_url}",
+                              "Mono", 7.5, C_INK_TER, trace_max_w, 11)
+                if source_local:
+                    _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11 - src2_h,
+                                  f"File  {source_local}",
+                                  "Mono", 7.5, C_INK_TER, trace_max_w, 11)
                 cy -= card_h + 18
 
             _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
@@ -633,13 +712,10 @@ def generate_query_export_pdf(
                                CONTENT_W, 14.5)
             cy -= 10
 
-            _UNC_META_ROW_H  = 22
-            _UNC_META_ROWS   = 3
-            _UNC_HEAD_TOP    = 22
-            _UNC_HEAD_META_GAP = 16
-            _UNC_TRACE_BLOCK = 28
-            unc_card_h = (_UNC_HEAD_TOP + _UNC_HEAD_META_GAP
-                          + _UNC_META_ROWS * _UNC_META_ROW_H + _UNC_TRACE_BLOCK)
+            _UNC_META_ROW_H    = 22
+            _UNC_META_ROWS     = 3
+            _UNC_HEAD_TOP      = 22
+            _UNC_HEAD_META_GAP = 24
 
             for idx, chunk in enumerate(uncited_chunks):
                 uc_title    = (chunk.get("document_title") or "—")[:80]
@@ -654,6 +730,15 @@ def generate_query_export_pdf(
                 uc_trace_id  = chunk.get("trace_id") or chunk.get("chunk_id") or "—"
                 uc_chunked   = chunk.get("chunked_at") or "—"
                 uc_url       = chunk.get("source_url") or "—"
+                uc_local     = chunk.get("source_local_path") or ""
+
+                uc_trace_max_w = CONTENT_W - 20
+                uc_src2_h   = _measure_wrapped(rc, f"Source  {uc_url}", "Mono", 7.5, uc_trace_max_w, 11)
+                uc_src3_h   = (_measure_wrapped(rc, f"File  {uc_local}", "Mono", 7.5, uc_trace_max_w, 11)
+                               if uc_local else 0)
+                _UNC_TRACE_BLOCK = 8 + 10 + 11 + uc_src2_h + (11 + uc_src3_h if uc_local else 0) + 10
+                unc_card_h = (_UNC_HEAD_TOP + _UNC_HEAD_META_GAP
+                              + _UNC_META_ROWS * _UNC_META_ROW_H + _UNC_TRACE_BLOCK)
 
                 cy = chk(cy, unc_card_h + 18, fp)
 
@@ -673,7 +758,7 @@ def generate_query_export_pdf(
                 rc.restoreState()
                 _text(rc, MARGIN_X + 30, uc_head_y - 3, uc_title, "Inter-SemiBold", 10.5, C_INK_SEC)
 
-                # metadata grid (same 3-row layout as cited, no chunk text)
+                # metadata grid 3×3
                 uc_meta_y = cy - _UNC_HEAD_TOP - _UNC_HEAD_META_GAP
                 uc_cells = [
                     ("Agency",     uc_agency),    ("Version",   uc_version[:32]),  ("Doc type",  uc_doc_type),
@@ -689,13 +774,18 @@ def generate_query_export_pdf(
                     _text(rc, uc_cx, uc_ry, k, "Mono", 7.5, C_INK_TER)
                     _text(rc, uc_cx, uc_ry - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
 
-                # trace row
-                uc_trace_y = uc_meta_y - _UNC_META_ROWS * _UNC_META_ROW_H - 8
-                t_prefix   = f"trace_id  {uc_trace_id[:28]}   Ingested  {uc_chunked[:10]}   Source  "
-                chars_left = max(0, int((CONTENT_W - 20 - rc.stringWidth(t_prefix, "Mono", 7.5))
-                                        / rc.stringWidth("x", "Mono", 7.5)) - 2)
-                _text(rc, MARGIN_X + 10, uc_trace_y,
-                      t_prefix + uc_url[:chars_left], "Mono", 7.5, C_INK_TER)
+                # trace lines (tight below metadata grid)
+                uc_tl1_y = uc_meta_y - _UNC_META_ROWS * _UNC_META_ROW_H - 8
+                _text(rc, MARGIN_X + 10, uc_tl1_y,
+                      f"Ingested  {uc_chunked[:10]}   Trace ID  {uc_trace_id}",
+                      "Mono", 7.5, C_INK_TER)
+                _wrapped_text(rc, MARGIN_X + 10, uc_tl1_y - 11,
+                              f"Source  {uc_url}",
+                              "Mono", 7.5, C_INK_TER, uc_trace_max_w, 11)
+                if uc_local:
+                    _wrapped_text(rc, MARGIN_X + 10, uc_tl1_y - 11 - uc_src2_h,
+                                  f"File  {uc_local}",
+                                  "Mono", 7.5, C_INK_TER, uc_trace_max_w, 11)
 
                 cy -= unc_card_h + 18
 
