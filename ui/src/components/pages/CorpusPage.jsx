@@ -66,7 +66,15 @@ function FilterDropdown({ options, value, onChange }) {
 
   return (
     <>
-      <button ref={btnRef} className={`rp-dropdown-btn${open ? ' open' : ''}`} onClick={handleOpen} style={{ fontSize: 12.5 }}>
+      <button ref={btnRef} onClick={handleOpen} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        height: 30, padding: '0 10px',
+        background: value != null ? 'var(--accent-tint)' : 'var(--doc-surface)',
+        border: `1px solid ${open || value != null ? 'var(--accent-l)' : 'var(--doc-border)'}`,
+        borderRadius: 3, cursor: 'pointer',
+        color: value != null ? 'var(--accent-l)' : 'var(--doc-text-2)',
+        fontSize: 12, fontFamily: 'var(--sans)',
+      }}>
         <span>{current.label}</span>
         <svg width="9" height="9" viewBox="0 0 10 6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
       </button>
@@ -300,7 +308,7 @@ export default function CorpusPage() {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             style={{
-              height: 30, padding: '0 10px', fontSize: 12.5,
+              height: 30, padding: '0 10px', fontSize: 12,
               fontFamily: 'var(--sans)', background: 'var(--doc-surface)',
               border: '1px solid var(--doc-border)', borderRadius: 3,
               color: 'var(--doc-text)', outline: 'none', width: 200,
@@ -318,8 +326,9 @@ export default function CorpusPage() {
             <button
               onClick={resetFilters}
               style={{
-                height: 30, padding: '0 12px', fontSize: 12,
-                fontFamily: 'var(--sans)', background: 'transparent',
+                display: 'inline-flex', alignItems: 'center',
+                height: 30, padding: '0 10px', fontSize: 12,
+                fontFamily: 'var(--sans)', background: 'var(--doc-surface)',
                 border: '1px solid var(--doc-border)', borderRadius: 3,
                 color: 'var(--doc-text-2)', cursor: 'pointer',
               }}
