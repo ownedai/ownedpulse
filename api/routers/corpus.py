@@ -523,18 +523,19 @@ async def feed_run_detail(run_id: str):
         doc_rows = list(cur.fetchall())
         primary_ids = {r[0] for r in doc_rows}
 
-        # Supplement: docs registered during the run window that have no run_id yet
-        # (archive writes document_registry rows after fetch_feed.py updates run_log,
-        # so some rows are created after completed_at with run_id still NULL).
+        # Supplement: docs for this feed created around the run window.
+        # Extend 24h backward because fetch_feed.py may count pending docs from
+        # an earlier run as "new" (ingestion_status != success), so those rows
+        # predate triggered_at but are still the docs this run is processing.
+        # No run_id IS NULL filter — deduplication handled by primary_ids set.
         if run.get("feed_source") and run.get("triggered_at"):
             end_ts = run.get("completed_at") or run["triggered_at"]
             cur.execute(
                 f"""{_DOC_SELECT}
                    FROM document_registry
                    WHERE feed_id = %s
-                     AND created_at >= %s
+                     AND created_at >= %s::timestamptz - INTERVAL '24 hours'
                      AND created_at <= %s::timestamptz + INTERVAL '30 minutes'
-                     AND run_id IS NULL
                    ORDER BY created_at ASC""",
                 (run["feed_source"], run["triggered_at"], end_ts)
             )

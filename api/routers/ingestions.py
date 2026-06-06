@@ -343,7 +343,7 @@ async def run_documents(
             "SELECT COUNT(DISTINCT doc_id) FROM ingestion_doc WHERE trace_id::text = %s",
             (run_id,)
         )
-        total = cur.fetchone()[0]
+        traced_count = cur.fetchone()[0]
 
         cur.execute(
             """
@@ -375,11 +375,13 @@ async def run_documents(
             (run_id, page_size, (page - 1) * page_size)
         )
         items = []
+        traced_doc_ids = set()
         for row in cur.fetchall():
             (doc_id, document_title, agency, doc_type, ingestion_status,
              chunk_count, failure_reason, trace_id, source_url,
              fetched_at, parsed_at, ingested_at, embedding_model,
              retry_count, first_attempt_status) = row
+            traced_doc_ids.add(doc_id)
             items.append({
                 "doc_id": doc_id,
                 "document_title": document_title or doc_id,
@@ -399,6 +401,61 @@ async def run_documents(
                 "first_attempt_status": first_attempt_status,
             })
 
+        # Fallback: supplement with document_registry when ingestion_doc has no entries
+        # or fewer than expected. RSS runs created by fetch_feed.py don't write to
+        # ingestion_doc — those entries only exist after run_ingest.py traces them.
+        # Look up the run's feed_source and time window to find the relevant docs.
+        cur.execute(
+            """SELECT feed_source, triggered_at, completed_at, items_new
+               FROM run_log WHERE run_id = %s::uuid""",
+            (run_id,)
+        )
+        run_row = cur.fetchone()
+        if run_row:
+            feed_source, triggered_at, completed_at, items_new = run_row
+            items_new = items_new or 0
+            if feed_source and triggered_at and traced_count < items_new:
+                end_ts = completed_at or triggered_at
+                cur.execute(
+                    """SELECT document_id,
+                              COALESCE(metadata_json->>'document_title', metadata_json->>'title', document_id) AS title,
+                              issuing_body,
+                              COALESCE(doc_type, '') AS doc_type,
+                              ingestion_status,
+                              chunk_count,
+                              ingestion_error,
+                              source_url,
+                              created_at
+                       FROM document_registry
+                       WHERE feed_id = %s
+                         AND created_at >= %s::timestamptz - INTERVAL '24 hours'
+                         AND created_at <= %s::timestamptz + INTERVAL '24 hours'
+                       ORDER BY created_at DESC""",
+                    (feed_source, triggered_at, end_ts)
+                )
+                for row in cur.fetchall():
+                    doc_id, title, agency, doc_type, status, chunks, err, url, created_at = row
+                    if doc_id not in traced_doc_ids:
+                        items.append({
+                            "doc_id": doc_id,
+                            "document_title": title or doc_id,
+                            "agency": agency or "",
+                            "doc_type": doc_type or "",
+                            "ingestion_status": status,
+                            "chunk_count": chunks or 0,
+                            "failure_reason": err,
+                            "trace_id": None,
+                            "source_url": url,
+                            "fetched_at": None,
+                            "parsed_at": None,
+                            "ingested_at": _fmt_dt(created_at),
+                            "embedding_model": None,
+                            "retry_count": 1,
+                            "has_retries": False,
+                            "first_attempt_status": None,
+                        })
+
+        total = len(items)
         cur.close()
         conn.close()
         return {"run_id": run_id, "items": items, "total": total, "page": page, "page_size": page_size}
