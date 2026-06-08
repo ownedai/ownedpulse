@@ -152,6 +152,48 @@ def update_run_log(run_id: str, items_new: int, error_count: int):
         logger.warning(f"Could not update run_log counts: {e}")
 
 
+def _make_doc_id(feed_id: str, url: str) -> str:
+    import hashlib, re
+    from urllib.parse import urlparse
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+    path = urlparse(url).path.rstrip("/").split("/")[-1]
+    path = re.sub(r"[^a-z0-9\-]", "-", path.lower())[:40].strip("-")
+    return f"{feed_id}-{path}-{url_hash}" if path else f"{feed_id}-{url_hash}"
+
+
+def _register_unsupported(item: dict, resolved: dict, doc_id: str):
+    """Register an unsupported document so it is not re-fetched."""
+    from datetime import datetime, timezone
+    conn = pg_conn()
+    conn.autocommit = True
+    with conn.cursor() as c:
+        c.execute(
+            """INSERT INTO document_registry
+               (document_id, source_url, feed_id, issuing_body,
+                document_class, document_type, document_status,
+                metadata_json, ingestion_status, ingestion_error,
+                created_at, updated_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+               ON CONFLICT (document_id) DO UPDATE SET
+               ingestion_status = EXCLUDED.ingestion_status,
+               ingestion_error = EXCLUDED.ingestion_error,
+               updated_at = NOW()
+               WHERE document_registry.ingestion_status NOT IN ('indexed','success')""",
+            (doc_id,
+             item.get("url", ""),
+             item.get("feed_id", ""),
+             item.get("authority", ""),
+             "regulatory",
+             item.get("default_doc_type", "other"),
+             "final",
+             json.dumps({"doc_id": doc_id, "feed_id": item.get("feed_id", "")}),
+             "unsupported",
+             resolved.get("reason", "Unsupported file format"),
+             ),
+        )
+    conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--feed-id", required=True)
@@ -186,6 +228,13 @@ def main():
         try:
             # Step 2: Resolve (download)
             resolved = resolve_item(item)
+
+            if resolved.get("status") == "unsupported":
+                doc_id = resolved.get("doc_id") or _make_doc_id(item.get("feed_id", ""), url)
+                _register_unsupported(item, resolved, doc_id)
+                logger.info(f"Skipped (unsupported): doc_id={doc_id} reason={resolved.get('reason')}")
+                continue
+
             doc_id = resolved.get("doc_id") or item.get("doc_id")
             logger.info(f"Resolved: doc_id={doc_id} url={url[:80]}")
 

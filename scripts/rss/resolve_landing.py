@@ -112,7 +112,9 @@ def resolve(url: str, feed_id: str, title: str = "", authority: str = "") -> dic
                 "sha256":sha256,"extracted_metadata":{"title":title,
                 "pub_date":pub_date,"version":""}}
     if is_binary_url(url):
-        raise ValueError("Unsupported file format")
+        ext = "." + url.lower().split("?")[0].rsplit(".", 1)[-1]
+        return {"status": "unsupported", "doc_id": doc_id,
+                "reason": f"Binary file format: {ext}"}
     r, soup = fetch_html(url)
     metadata = extract_metadata(soup, fallback_title=title)
     pdf_url  = find_pdf_link(soup, url, authority)
