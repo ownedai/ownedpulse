@@ -69,105 +69,30 @@ function FilterDropdown({ options, value, onChange }) {
   );
 }
 
-// dd.mm.yyyy ↔ yyyy-mm-dd helpers
-function displayToISO(s) {
-  if (!s || s.length !== 10) return '';
-  const [d, m, y] = s.split('.');
-  if (!d || !m || !y) return '';
-  return `${y}-${m}-${d}`;
-}
-function isoToDisplay(s) {
-  if (!s || s.length !== 10) return '';
-  const [y, m, d] = s.split('-');
-  if (!d || !m || !y) return '';
-  return `${d}.${m}.${y}`;
-}
-function isValidDisplay(s) {
-  return /^\d{2}\.\d{2}\.\d{4}$/.test(s);
-}
-
-
-function DateInput({ value, onChange, inputStyle }) {
-  const dateRef = useRef(null);
-
-  useEffect(() => {
-    const input = dateRef.current;
-    if (!input) return;
-    const onchange = (e) => { if (e.target.value) onChange(e.target.value); };
-    const onblur = () => { if (input.value) onChange(input.value); };
-    input.addEventListener('change', onchange);
-    input.addEventListener('blur', onblur);
-    return () => {
-      input.removeEventListener('change', onchange);
-      input.removeEventListener('blur', onblur);
-    };
-  }, [onChange]);
-
-  function openPicker() {
-    try { dateRef.current?.showPicker(); } catch (_) { dateRef.current?.focus(); }
-  }
-
-  return (
-    <div style={{ display: 'flex' }}>
-      <input
-        type="text"
-        value={value ? isoToDisplay(value) : ''}
-        onChange={(e) => {
-          const t = e.target.value;
-          if (isValidDisplay(t)) onChange(displayToISO(t));
-          else if (t === '') onChange('');
-        }}
-        placeholder="dd.mm.yyyy"
-        maxLength={10}
-        style={{ ...inputStyle, flex: 1, borderRadius: '4px 0 0 4px', borderRight: 'none' }}
-      />
-      <div style={{ position: 'relative' }}>
-        <button
-          type="button"
-          onClick={openPicker}
-          style={{
-            background: 'var(--doc-bg)', border: '1px solid var(--doc-border)',
-            borderRadius: '0 4px 4px 0', padding: '0 7px', cursor: 'pointer',
-            color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center', height: '100%',
-          }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-        </button>
-        <input
-          ref={dateRef}
-          type="date"
-          style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', bottom: 0, right: 0 }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function DateRangeFilter({ dateFrom, dateTo, onApply }) {
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState(dateFrom);
   const [to, setTo] = useState(dateTo);
+  const ref = useRef(null);
   const active = !!(dateFrom || dateTo);
 
+  useClickOutside(ref, () => setOpen(false));
   useEffect(() => { setFrom(dateFrom); setTo(dateTo); }, [dateFrom, dateTo]);
 
   function handleApply() { onApply(from, to); setOpen(false); }
   function handleClear() { setFrom(''); setTo(''); onApply('', ''); setOpen(false); }
 
   const inputStyle = {
-
     background: 'var(--doc-bg)', border: '1px solid var(--doc-border)',
     borderRadius: 4, padding: '5px 8px', fontFamily: 'var(--mono)',
-    fontSize: 12, color: 'var(--doc-text)', outline: 'none', width: '100%',
+    fontSize: 12, color: 'var(--doc-text)', outline: 'none',
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen((o) => !o)}
+        title="Filter by query date"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 5,
           height: 30, padding: '0 10px',
@@ -181,26 +106,24 @@ function DateRangeFilter({ dateFrom, dateTo, onApply }) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
-        {active
-          ? `${isoToDisplay(dateFrom) || '…'} → ${isoToDisplay(dateTo) || '…'}`
-          : 'Date range'}
+        {active ? `${dateFrom || '…'} → ${dateTo || '…'}` : 'Date range'}
       </button>
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0,
           background: 'var(--doc-surface)', border: '1px solid var(--doc-border)',
           borderRadius: 6, zIndex: 100, padding: '14px 16px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.18)', minWidth: 200,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)', minWidth: 230,
         }}>
           <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--doc-text-3)', fontWeight: 600, marginBottom: 12 }}>Query date</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
               From
-              <DateInput value={from} onChange={setFrom} inputStyle={inputStyle} />
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={inputStyle} />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
               To
-              <DateInput value={to} onChange={setTo} inputStyle={inputStyle} />
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={inputStyle} />
             </label>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>

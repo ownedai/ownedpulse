@@ -2424,7 +2424,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 .rp-table tbody td .query-id {
@@ -2432,6 +2432,9 @@ body {
   font-size: 10.5px;
   color: var(--doc-text-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
 }
 
 .rp-table tbody td .action {
