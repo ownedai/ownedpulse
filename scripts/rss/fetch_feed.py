@@ -77,7 +77,7 @@ def is_ingested(url: str) -> bool:
         c.execute(
             "SELECT 1 FROM document_registry "
             "WHERE source_url = %s "
-            "AND (ingestion_status IN ('success','indexed','unsupported') "
+            "AND (ingestion_status IN ('success','indexed','unsupported','not_viable') "
             "     OR (ingestion_status = 'pending' "
             "         AND updated_at > NOW() - INTERVAL '10 minutes'))",
             (url,)

@@ -829,6 +829,8 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
     if not use_docling:
         result      = ingest_html_document(doc_id, archive_dir, meta, cls, feed_id, phase,
                                            trace_id=run_id or "")
+        if result.get("status") == "not_viable":
+            return result
         chunk_count = result["chunks"]
         family_id = meta.get("document_family_id", "")
         if family_id:

@@ -113,7 +113,7 @@ def resolve(url: str, feed_id: str, title: str = "", authority: str = "") -> dic
                 "pub_date":pub_date,"version":""}}
     if is_binary_url(url):
         raise ValueError("Unsupported file format")
-    _, soup = fetch_html(url)
+    r, soup = fetch_html(url)
     metadata = extract_metadata(soup, fallback_title=title)
     pdf_url  = find_pdf_link(soup, url, authority)
     if pdf_url:
@@ -121,20 +121,22 @@ def resolve(url: str, feed_id: str, title: str = "", authority: str = "") -> dic
         sha256 = download_pdf(pdf_url, dest)
         return {"doc_id":doc_id,"file_path":str(dest),"content_type":"pdf",
                 "sha256":sha256,"extracted_metadata":metadata,"pdf_url":pdf_url}
-    body   = soup.get_text(" ", strip=True)
     # Reject pages that yielded no substantive content — typically JS-rendered
     # pages where requests.get() only retrieved a bare HTML shell (e.g. ICH
     # navigation pages that produce only their <title> text, ~27 chars).
     MIN_BODY_CHARS = 200
-    if len(body) < MIN_BODY_CHARS:
+    body_text = soup.get_text(" ", strip=True)
+    if len(body_text) < MIN_BODY_CHARS:
         raise ValueError(
-            f"Extracted body too short ({len(body)} chars, minimum {MIN_BODY_CHARS}): "
+            f"Extracted body too short ({len(body_text)} chars, minimum {MIN_BODY_CHARS}): "
             f"likely a JavaScript-rendered page with no static content. "
             f"URL: {url}"
         )
+    # Write raw HTML so downstream ingestion can re-parse it with newlines
+    # preserved — extracting to text here loses structure needed for chunking.
     dest   = item_dir / "source.html"
-    dest.write_text(body, encoding="utf-8")
-    sha256 = hashlib.sha256(body.encode()).hexdigest()
+    dest.write_text(r.text, encoding="utf-8")
+    sha256 = hashlib.sha256(r.text.encode()).hexdigest()
     return {"doc_id":doc_id,"file_path":str(dest),"content_type":"html",
             "sha256":sha256,"extracted_metadata":metadata}
 
