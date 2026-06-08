@@ -995,12 +995,8 @@ def generate_audit_log_pdf(
             f"{_esc(routing_label)}  ·  {_esc(prompt_ver)}"
         )
 
-        # Answer — truncate at 500 chars
-        answer = q.get("answer") or ""
-        answer_display = answer[:500]
-        if len(answer) > 500:
-            answer_display += "... [full answer in system]"
-        answer_display = _esc(answer_display)
+        # Answer — full text since each query has its own page
+        answer_display = _esc(q.get("answer") or "")
 
         # Cited sources — one line each, max 10
         citations = q.get("citations") or []
