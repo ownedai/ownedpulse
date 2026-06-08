@@ -966,6 +966,10 @@ def generate_audit_log_pdf(
     ))
     story.append(PageBreak())
 
+    # ── page geometry constants (shared with header/footer callbacks) ───────
+    hdr_h = 18 * mm
+    ftr_y = 14 * mm
+
     # ═══════════════════════════════════════════════════════════════════════════
     # QUERY PAGES
     # ═══════════════════════════════════════════════════════════════════════════
