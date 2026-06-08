@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.26"
+APP_VERSION = "0.8.31"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -1906,53 +1906,68 @@ async def export_history(
         if not rows:
             raise HTTPException(status_code=404, detail="No queries match the filters")
 
-        from lib.pdf_export import generate_query_export_pdf
-        from pypdf import PdfReader, PdfWriter
         import io as _io
 
-        writer = PdfWriter()
-
+        # Build query list for audit log
+        queries = []
         for row in rows:
             (qid, qtext, routing, ts, answer, citations_raw,
              sub_queries_raw, filters_raw, retrieval_raw,
              trace_id, model_used) = row
 
             citations = citations_raw if isinstance(citations_raw, list) else (json.loads(citations_raw) if citations_raw else [])
-            sub_queries = sub_queries_raw if isinstance(sub_queries_raw, list) else (json.loads(sub_queries_raw) if sub_queries_raw else [])
-            filters_dict = filters_raw if isinstance(filters_raw, dict) else (json.loads(filters_raw) if filters_raw else {})
-            retrieval_dict = retrieval_raw if isinstance(retrieval_raw, dict) else (json.loads(retrieval_raw) if retrieval_raw else {})
-
             ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
 
-            payload = {
+            queries.append({
                 "query_id": str(qid),
-                "query_text": qtext,
+                "query_text": qtext or "",
                 "timestamp": ts_iso,
-                "routing_path": routing,
+                "routing_path": routing or "",
+                "prompt_version": (retrieval_raw or {}).get("prompt_version", "") if isinstance(retrieval_raw, dict) else "",
                 "answer": answer or "",
                 "citations": citations,
-                "sub_queries": sub_queries,
-                "filters_applied": filters_dict,
-                "retrieval_params_applied": retrieval_dict,
                 "langfuse_trace_id": str(trace_id) if trace_id else "",
-            }
+            })
 
-            pdf_bytes = generate_query_export_pdf(payload)
-            reader = PdfReader(_io.BytesIO(pdf_bytes))
-            for page in reader.pages:
-                writer.add_page(page)
+        filters_for_cover = {
+            "date_from": str(date_from) if date_from else None,
+            "date_to": str(date_to) if date_to else None,
+            "search": search,
+            "routing_path": routing_path,
+        }
 
-        output = _io.BytesIO()
-        writer.write(output)
-        output.seek(0)
+        # Get corpus date and system version from system_config
+        corpus_date = "—"
+        try:
+            cfg_conn = get_pg_conn()
+            with cfg_conn.cursor() as c:
+                c.execute("SELECT key, value FROM system_config WHERE key IN ('corpus_snapshot_date', 'prompt_version')")
+                cfg = dict(c.fetchall())
+            cfg_conn.close()
+            raw_snap = cfg.get("corpus_snapshot_date", "")
+            if raw_snap:
+                try:
+                    corpus_date = datetime.strptime(str(raw_snap), "%Y-%m-%d").strftime("%d.%m.%Y")
+                except Exception:
+                    corpus_date = str(raw_snap)
+        except Exception:
+            pass
+
+        from lib.pdf_export import generate_audit_log_pdf
+        pdf_bytes = generate_audit_log_pdf(
+            queries=queries,
+            filters_applied=filters_for_cover,
+            corpus_date=corpus_date,
+            system_version=APP_VERSION,
+        )
 
         date_suffix = ""
         if date_from and date_to:
             date_suffix = f"_{date_from}_{date_to}"
-        filename = f"regpulse_audit{date_suffix}_{len(rows)}queries.pdf"
+        filename = f"regpulse_audit_log{date_suffix}_{len(queries)}queries.pdf"
 
         return Response(
-            content=output.getvalue(),
+            content=pdf_bytes,
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )

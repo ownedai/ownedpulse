@@ -811,3 +811,295 @@ def generate_query_export_pdf(
     if output_path:
         Path(output_path).write_bytes(pdf_bytes)
     return pdf_bytes
+
+
+# ── Compact Audit Log PDF ─────────────────────────────────────────────────────
+
+def generate_audit_log_pdf(
+    queries: list[dict],
+    filters_applied: dict,
+    corpus_date: str,
+    system_version: str,
+) -> bytes:
+    """
+    Generate a compact audit log PDF covering multiple queries.
+
+    Each query occupies one page maximum. No retrieval parameters,
+    no chunk text. Designed for inspector review of a session.
+    """
+    import html as _html
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, PageBreak,
+        HRFlowable, KeepTogether, BaseDocTemplate, PageTemplate, Frame,
+    )
+    from reportlab.platypus.flowables import HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
+    from io import BytesIO
+
+    _register_fonts()
+
+    buffer = BytesIO()
+
+    A4_W, A4_H = A4  # 595.27 x 841.89 pt
+    MARGIN = 20 * mm  # ~56.7 pt
+    CONT_W = A4_W - 2 * MARGIN
+
+    # ── styles ──────────────────────────────────────────────────────────────────
+    MUTED     = _rgb("6B7280")
+    BRAND_BG  = _rgb("0F172A")
+
+    style_cover_title = ParagraphStyle(
+        "AuditCoverTitle", fontName="Inter-Bold", fontSize=18,
+        textColor=C_INK, spaceAfter=6, leading=22,
+    )
+    style_cover_sub = ParagraphStyle(
+        "AuditCoverSub", fontName="Mono", fontSize=8,
+        textColor=C_INK_TER, spaceAfter=2, leading=13,
+    )
+    style_cover_body = ParagraphStyle(
+        "AuditCoverBody", fontName="Inter", fontSize=9.5,
+        textColor=C_INK_SEC, spaceAfter=3, leading=14,
+    )
+    style_cover_disclaimer = ParagraphStyle(
+        "AuditDisclaimer", fontName="Inter-Medium", fontSize=8.5,
+        textColor=C_WARN_TEXT, spaceAfter=0, leading=13,
+    )
+    style_query_meta = ParagraphStyle(
+        "AuditQMeta", fontName="Mono", fontSize=7.5,
+        textColor=C_INK_TER, spaceAfter=4, leading=11,
+    )
+    style_query_label = ParagraphStyle(
+        "AuditQLabel", fontName="Mono", fontSize=7,
+        textColor=MUTED, spaceAfter=3, leading=10,
+    )
+    style_query_text = ParagraphStyle(
+        "AuditQText", fontName="Inter-SemiBold", fontSize=10,
+        textColor=C_INK, spaceAfter=8, leading=14,
+    )
+    style_answer = ParagraphStyle(
+        "AuditAnswer", fontName="Inter", fontSize=9,
+        textColor=C_INK, spaceAfter=8, leading=13,
+    )
+    style_sources_label = ParagraphStyle(
+        "AuditSrcLabel", fontName="Mono", fontSize=7,
+        textColor=MUTED, spaceAfter=3, leading=10,
+    )
+    style_source_line = ParagraphStyle(
+        "AuditSrcLine", fontName="Inter", fontSize=8,
+        textColor=C_INK_SEC, spaceAfter=1, leading=11,
+    )
+    style_no_src = ParagraphStyle(
+        "AuditNoSrc", fontName="Inter-Italic", fontSize=8,
+        textColor=C_INK_TER, spaceAfter=4, leading=11,
+    )
+    style_trace = ParagraphStyle(
+        "AuditTrace", fontName="Mono", fontSize=7,
+        textColor=C_INK_TER, spaceAfter=0, leading=10,
+    )
+
+    export_ts = datetime.now(timezone.utc)
+    export_ts_str = export_ts.strftime("%d.%m.%Y %H:%M UTC")
+    export_id = f"AUDIT-{export_ts.strftime('%Y%m%d-%H%M%S')}"
+
+    def _esc(text: str) -> str:
+        return _html.escape(text or "", quote=False)
+
+    # ── build filter summary string ────────────────────────────────────────────
+    filter_parts = []
+    df = filters_applied.get("date_from")
+    dt = filters_applied.get("date_to")
+    if df or dt:
+        filter_parts.append(f"{df or '—'} to {dt or '—'}")
+    if filters_applied.get("search"):
+        filter_parts.append(f'Search: "{filters_applied["search"]}"')
+    rp = filters_applied.get("routing_path")
+    if rp:
+        filter_parts.append(f"Routing: {rp}")
+    pv = filters_applied.get("prompt_version")
+    if pv:
+        filter_parts.append(f"Prompt: {pv}")
+    filter_str = " · ".join(filter_parts) if filter_parts else "No filters — full history"
+
+    story = []
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # COVER PAGE
+    # ═══════════════════════════════════════════════════════════════════════════
+    story.append(Spacer(1, 32 * mm))
+    story.append(Paragraph("regpulse", style_cover_title))
+    story.append(Paragraph("REGULATORY INTELLIGENCE · OWNEDAI", style_cover_sub))
+    story.append(Spacer(1, 6 * mm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=_rgb("2563EB"),
+                             spaceAfter=6*mm))
+    story.append(Paragraph("Query Session Audit Log", ParagraphStyle(
+        "AuditTitle2", parent=style_cover_title, fontSize=14, fontName="Inter-SemiBold",
+    )))
+    story.append(Spacer(1, 6 * mm))
+
+    cover_rows = [
+        ("Export ID",  export_id),
+        ("Generated",  export_ts_str),
+        ("Corpus date", corpus_date),
+        ("System",     f"regpulse {system_version}"),
+        ("Filters",    filter_str),
+        ("Total queries", str(len(queries))),
+    ]
+    for label, value in cover_rows:
+        story.append(Paragraph(
+            f'<font color="#6B7280">{label}:</font>  {_esc(value)}',
+            style_cover_body,
+        ))
+
+    story.append(Spacer(1, 8 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_BORDER,
+                             spaceAfter=4*mm))
+    story.append(Paragraph(
+        "▲ This output is informational. Human review required before any GxP decision.",
+        style_cover_disclaimer,
+    ))
+    story.append(PageBreak())
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # QUERY PAGES
+    # ═══════════════════════════════════════════════════════════════════════════
+    for idx, q in enumerate(queries):
+        ts = q.get("timestamp", "")
+        if ts:
+            try:
+                dt_val = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                ts_str = dt_val.strftime("%d.%m.%Y %H:%M UTC")
+            except Exception:
+                ts_str = str(ts)[:19]
+        else:
+            ts_str = "—"
+
+        qid_short = str(q.get("query_id", ""))[:8]
+        routing = q.get("routing_path") or "—"
+        prompt_ver = q.get("prompt_version") or "—"
+        routing_label = "Metadata lookup" if routing == "METADATA" else "Semantic search"
+
+        # Header bar
+        header_text = (
+            f"[{_esc(qid_short)}]  {_esc(ts_str)}  ·  "
+            f"{_esc(routing_label)}  ·  {_esc(prompt_ver)}"
+        )
+
+        # Answer — truncate at 500 chars
+        answer = q.get("answer") or ""
+        answer_display = answer[:500]
+        if len(answer) > 500:
+            answer_display += "... [full answer in system]"
+        answer_display = _esc(answer_display)
+
+        # Cited sources — one line each, max 10
+        citations = q.get("citations") or []
+        cited = [c for c in citations if c.get("cited_by_llm")]
+
+        source_blocks = []
+        for i, c in enumerate(cited[:10]):
+            title = (c.get("document_title") or c.get("document_id") or "Unknown")[:70]
+            issuing = (c.get("issuing_body") or "").strip()
+            pub_date = str(c.get("publication_date") or "")[:4]
+            clause = (c.get("clause_id") or "").strip()
+            score = c.get("score")
+
+            parts = [f"[{i + 1}] {_esc(title)}"]
+            if issuing:
+                parts.append(_esc(issuing))
+            if pub_date and pub_date != "None":
+                parts.append(pub_date)
+            if clause and clause != "Not available":
+                parts.append(f"§{_esc(clause)}")
+            if score is not None:
+                parts.append(f"sim={score:.3f}")
+
+            source_blocks.append(Paragraph(" · ".join(parts), style_source_line))
+
+        trace_id = str(q.get("langfuse_trace_id") or "")[:36]
+
+        # Assemble query block
+        block_items = [
+            HRFlowable(width="100%", thickness=1, color=C_ACCENT, spaceAfter=4),
+            Paragraph(_esc(header_text), style_query_meta),
+            Spacer(1, 2 * mm),
+            Paragraph("QUERY", style_query_label),
+            Paragraph(_esc(q.get("query_text", "")), style_query_text),
+            Paragraph("ANSWER", style_answer_label),
+            Paragraph(answer_display, style_answer),
+        ]
+
+        if source_blocks:
+            block_items.append(Paragraph("CITED SOURCES", style_sources_label))
+            block_items.extend(source_blocks)
+            block_items.append(Spacer(1, 2 * mm))
+        else:
+            block_items.append(Paragraph(
+                "No sources cited", style_no_src,
+            ))
+
+        if trace_id:
+            block_items.append(Paragraph(
+                f"Trace: {_esc(trace_id)}", style_trace,
+            ))
+
+        story.append(KeepTogether(block_items))
+
+        if idx < len(queries) - 1:
+            story.append(PageBreak())
+
+    # ── header / footer callbacks ──────────────────────────────────────────────
+    def _on_page(canvas_obj, doc):
+        canvas_obj.saveState()
+
+        # Header — branded bar at top
+        hdr_h = 18 * mm
+        canvas_obj.setFillColorRGB(*BRAND_BG)
+        canvas_obj.rect(0, A4_H - hdr_h, A4_W, hdr_h, fill=1, stroke=0)
+
+        canvas_obj.setFont("Inter-SemiBold", 10)
+        canvas_obj.setFillColorRGB(*C_WHITE)
+        canvas_obj.drawString(MARGIN, A4_H - 10 * mm, "regpulse  AUDIT LOG")
+
+        canvas_obj.setFont("Mono", 7)
+        canvas_obj.setFillColorRGB(*C_SHELL_MUTED)
+        canvas_obj.drawString(MARGIN, A4_H - 14 * mm, export_id)
+        canvas_obj.drawRightString(
+            A4_W - MARGIN, A4_H - 14 * mm,
+            f"Generated: {export_ts_str}",
+        )
+        canvas_obj.setStrokeColorRGB(*C_BORDER)
+        canvas_obj.setLineWidth(0.5)
+        canvas_obj.line(MARGIN, A4_H - hdr_h, A4_W - MARGIN, A4_H - hdr_h)
+
+        # Footer
+        ftr_y = 14 * mm
+        canvas_obj.line(MARGIN, ftr_y, A4_W - MARGIN, ftr_y)
+        canvas_obj.setFont("Mono", 7)
+        canvas_obj.setFillColorRGB(*C_INK_TER)
+        canvas_obj.drawString(
+            MARGIN, ftr_y - 5 * mm,
+            f"Page {canvas_obj.getPageNumber()}  ·  {export_id}  ·  {export_ts_str}",
+        )
+        canvas_obj.drawRightString(
+            A4_W - MARGIN, ftr_y - 5 * mm,
+            "Confidential — Internal Use",
+        )
+
+        canvas_obj.restoreState()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=MARGIN,
+        leftMargin=MARGIN,
+        topMargin=hdr_h + 4 * mm,
+        bottomMargin=ftr_y,
+    )
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+
+    buffer.seek(0)
+    return buffer.read()
