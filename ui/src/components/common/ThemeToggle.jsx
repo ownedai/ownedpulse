@@ -8,7 +8,7 @@ function getInitialTheme() {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'dark' || stored === 'light') return stored;
   } catch {}
-  return 'light';
+  return 'dark';
 }
 
 export default function ThemeToggle() {
