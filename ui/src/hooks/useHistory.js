@@ -8,7 +8,7 @@ export default function useHistory(limit = 10) {
   function refresh() {
     setLoading(true);
     getQueryHistory(limit, 0)
-      .then(setItems)
+      .then((res) => setItems(Array.isArray(res) ? res : (res.items ?? [])))
       .catch(() => {})
       .finally(() => setLoading(false));
   }
