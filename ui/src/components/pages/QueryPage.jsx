@@ -792,7 +792,6 @@ export default function QueryPage() {
         <div className="rp-content-inner">
           <div className="container">
             <div className="rp-query-area">
-              <div className="rp-ask-lbl">Ask a regulatory question</div>
               <div className="rp-query-bar">
                 <QueryInput value={queryText} onSubmit={handleSubmit} disabled={false} />
               </div>

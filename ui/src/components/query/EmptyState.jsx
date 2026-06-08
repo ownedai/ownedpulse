@@ -8,7 +8,7 @@ export default function EmptyState({ onSubmit, disabled }) {
   return (
     <div className="rp-empty-state">
       <div className="rp-empty-suggestions">
-        <div className="ex-lbl">Try these queries</div>
+        <div className="ex-lbl">Try these queries:</div>
         <div className="ex-chips">
           {EXAMPLE_QUERIES.map((eq, i) => (
             <button
