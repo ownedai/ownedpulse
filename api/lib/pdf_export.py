@@ -611,8 +611,8 @@ def generate_query_export_pdf(
                 ctxt_pad      = 9
                 LBL_H         = 12
                 ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row + LBL_H
-                src_display = source_url[:120] + ("…" if len(source_url) > 120 else "")
-                loc_display = source_local[:100] + ("…" if len(source_local) > 100 else "")
+                src_display = source_url[:90] + ("…" if len(source_url) > 90 else "")
+                loc_display = source_local[:80] + ("…" if len(source_local) > 80 else "")
                 trace_max_w   = CONTENT_W - 20
                 src2_h = _measure_wrapped(rc, f"Source  {src_display}", "Mono", 7.5, trace_max_w, 11)
                 src3_h = (_measure_wrapped(rc, f"File  {loc_display}", "Mono", 7.5, trace_max_w, 11)
@@ -674,7 +674,7 @@ def generate_query_export_pdf(
                 # "Chunk text" label at top of box
                 _text(rc, MARGIN_X + 14, chunk_y - 12,
                       "Chunk text", "Inter-SemiBold", 8.0, C_INK_TER)
-                txt_draw_y = chunk_y - LBL_H - ctxt_pad - 6
+                txt_draw_y = chunk_y - LBL_H - ctxt_pad - 2
                 if truncated:
                     _text(rc, MARGIN_X + 16, txt_draw_y,
                           f"[Truncated — first {DISPLAY_CHARS} of {len(chunk_txt)} chars shown."
@@ -738,8 +738,8 @@ def generate_query_export_pdf(
                 uc_url       = chunk.get("source_url") or "—"
                 uc_local     = chunk.get("source_local_path") or ""
 
-                uc_src_disp = uc_url[:120] + ("…" if len(uc_url) > 120 else "")
-                uc_loc_disp = uc_local[:100] + ("…" if len(uc_local) > 100 else "")
+                uc_src_disp = uc_url[:90] + ("…" if len(uc_url) > 90 else "")
+                uc_loc_disp = uc_local[:80] + ("…" if len(uc_local) > 80 else "")
                 uc_trace_max_w = CONTENT_W - 20
                 uc_src2_h   = _measure_wrapped(rc, f"Source  {uc_src_disp}", "Mono", 7.5, uc_trace_max_w, 11)
                 uc_src3_h   = (_measure_wrapped(rc, f"File  {uc_loc_disp}", "Mono", 7.5, uc_trace_max_w, 11)
