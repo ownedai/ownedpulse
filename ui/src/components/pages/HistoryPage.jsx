@@ -196,8 +196,10 @@ export default function HistoryPage() {
   const [routingPath, setRoutingPath] = useState(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [exportFormat, setExportFormat] = useState('csv');
   const [isExporting, setIsExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportMenuPos, setExportMenuPos] = useState({ top: 0, left: 0 });
+  const exportRef = useRef(null);
 
   const hasFilters = !!(search || routingPath || dateFrom || dateTo);
 
@@ -215,14 +217,15 @@ export default function HistoryPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  function handleExport() {
+  function handleExport(fmt) {
+    setShowExportMenu(false);
     setIsExporting(true);
-    exportHistory({ format: exportFormat, dateFrom, dateTo, search, routingPath: routingPath || '' })
+    exportHistory({ format: fmt, dateFrom, dateTo, search, routingPath: routingPath || '' })
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `regpulse-audit-${todayISO()}.${exportFormat}`;
+        a.download = `regpulse-audit-${todayISO()}.${fmt}`;
         a.click();
         URL.revokeObjectURL(url);
       })
@@ -294,21 +297,23 @@ export default function HistoryPage() {
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-3)', alignSelf: 'center' }}>
             {total} records
           </span>
-          <select
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value)}
-            style={{
-              height: 30, padding: '0 8px', fontSize: 12,
-              fontFamily: 'var(--sans)', background: 'var(--doc-surface)',
-              border: '1px solid var(--doc-border)', borderRadius: 3,
-              color: 'var(--doc-text)', cursor: 'pointer',
+          <button
+            className="rp-export"
+            ref={exportRef}
+            disabled={isExporting}
+            onClick={() => {
+              if (exportRef.current) {
+                const r = exportRef.current.getBoundingClientRect();
+                setExportMenuPos({ top: r.bottom + 4, left: r.left });
+              }
+              setShowExportMenu((m) => !m);
             }}
           >
-            <option value="csv">CSV</option>
-            <option value="pdf">PDF</option>
-          </select>
-          <button className="rp-export" onClick={handleExport} disabled={isExporting}>
-            {isExporting ? 'Exporting…' : 'Export audit log'}
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                 stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M8 3v8M4 7l4 4 4-4M3 13h10" />
+            </svg>
+            {isExporting ? 'Exporting…' : 'Export filtered'}
           </button>
         </div>
 
@@ -370,6 +375,31 @@ export default function HistoryPage() {
 
         <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={setPageSize} />
       </div>
+
+      {/* Export format menu */}
+      {showExportMenu && (
+        <div
+          style={{
+            position: 'fixed', top: exportMenuPos.top, left: exportMenuPos.left,
+            border: '1px solid var(--doc-border-strong)', borderRadius: 6,
+            background: 'var(--doc-surface)', zIndex: 100,
+          }}
+          onMouseLeave={() => setShowExportMenu(false)}
+        >
+          {['CSV', 'PDF'].map((fmt) => (
+            <div
+              key={fmt}
+              onClick={() => handleExport(fmt.toLowerCase())}
+              style={{
+                padding: '8px 16px', cursor: 'pointer', fontSize: 13,
+                color: 'var(--doc-text)', whiteSpace: 'nowrap',
+              }}
+            >
+              {fmt}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
