@@ -18,5 +18,10 @@ export default defineConfig({
       },
     },
     allowedHosts: ['rp.ownedai.dev'],
+    hmr: {
+      host: 'rp.ownedai.dev',
+      protocol: 'wss',
+      clientPort: 443,
+    },
   },
 });
