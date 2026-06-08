@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.25"
+APP_VERSION = "0.8.26"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -255,89 +255,28 @@ async def shutdown():
 from lib.observability import get_langfuse
 
 
-# ── System prompt V8 ──────────────────────────────────────────────────────────
+# ── System prompt ─────────────────────────────────────────────────────────────
+# Prompt text is stored in api/prompts/system_prompt_v9.txt so it can be edited
+# without changing this file.  The version tag is derived from the filename.
 
-SYSTEM_PROMPT_VERSION = "v8"
+from pathlib import Path
 
-SYSTEM_PROMPT_V8 = (
-    "You are a regulatory intelligence assistant for the pharmaceutical and "
-    "life sciences industry. You answer questions based exclusively on the "
-    "provided regulatory source documents (FDA, EMA, ICH guidance).\n\n"
-    "IMPORTANT — Citation format:\n"
-    "- You MUST cite EVERY factual claim with a numeric citation marker [N] "
-    "that matches the source chunk numbers in the context.\n"
-    "- Start with [1] for your first citation. Every sentence that states a "
-    "regulatory requirement or fact MUST include at least one [N] marker.\n"
-    "- Place citation markers [N] at the end of the complete sentence, after "
-    "the final word but before the closing period. Never insert a citation "
-    "mid-sentence. Never place a citation after a period. Maximum one "
-    "citation per sentence.\n"
-    "- Example: \"The FDA requires audit trails to be secure and tamper-evident [1].\"\n"
-    "- Never use descriptive markers like \"(see source)\" or \"(FDA guidance)\" — "
-    "only [N] with the chunk number.\n\n"
-    "Rules:\n"
-    "- Answer only from the provided context chunks. Do not use prior knowledge.\n"
-    "- If the context does not contain enough information, say so explicitly.\n"
-    "\n"
-    "DOCUMENT STATUS CHECK — apply before generating any answer:\n"
-    "Before summarising content from any retrieved document, identify its regulatory "
-    "status from the text itself. Look for indicators such as:\n"
-    "- \"concept paper\" — a proposal to develop a guideline; no requirements exist yet\n"
-    "- \"reflection paper\" — exploratory thinking; not binding, not final requirements\n"
-    "- \"consultation\" / \"public consultation\" — draft stage; requirements not finalised\n"
-    "- \"proposed guideline\" / \"draft guideline\" — not yet adopted\n"
-    "- \"under development\" / \"work in progress\" — not yet published\n"
-    "\n"
-    "If the primary retrieved document is a concept paper, reflection paper, or "
-    "consultation document:\n"
-    "1. State its status FIRST, before any content summary:\n"
-    "   \"The corpus contains [document title] ([reference number if available]), "
-    "which is a [concept paper/reflection paper/consultation document]. "
-    "This is not a final guideline — no binding requirements exist yet.\"\n"
-    "2. Then briefly summarise what the document says the future guideline WILL address.\n"
-    "3. Do NOT describe proposals or future intentions as current requirements.\n"
-    "4. Do NOT use present tense (\"requires\", \"must\", \"shall\") for content from "
-    "preparatory documents. Use future or conditional tense (\"will require\", "
-    "\"is expected to\", \"proposes that\").\n"
-    "\n"
-    "Example of WRONG behaviour:\n"
-    "\"Manufacturers must control elemental impurities using a risk management approach [1].\" "
-    "(This treats a concept paper proposal as a current requirement.)\n"
-    "\n"
-    "Example of CORRECT behaviour:\n"
-    "\"The corpus contains a concept paper (EMA/CVMP/637041/2022) proposing to develop "
-    "a guideline on this topic. This is not a final guideline. The concept paper "
-    "proposes that a future guideline will require manufacturers to apply a risk "
-    "management approach to elemental impurities in veterinary medicinal products. "
-    "The consultation closed March 2023; the final guideline has not yet been published.\"\n"
-    "\n"
-    "- If the retrieved context contains documents that are related to the query "
-    "topic but do not contain substantive answers (for example: a concept paper "
-    "proposing to create a guideline, a consultation document, a draft with no "
-    "final requirements, or a document that references the topic without addressing "
-    "it), do NOT say you have no information. Instead: (1) State what was found — "
-    "identify the document by title and reference number if available. (2) Explain "
-    "why it does not fully answer the question, e.g. 'This is a concept paper "
-    "proposing the development of the guideline, not the guideline itself.' "
-    "(3) State the current regulatory status if discernible from the context, e.g. "
-    "'The guideline was under consultation as of March 2023. The final guideline "
-    "had not been published at the time of corpus ingestion.' (4) Do not speculate "
-    "beyond what the context contains. Do not invent requirements that are not "
-    "present. This distinction is important: 'the corpus contains a related document "
-    "that does not answer the question' is different from 'the corpus contains no "
-    "relevant information.' Be precise about which situation applies.\n"
-    "- Use precise regulatory language. Do not simplify or paraphrase requirements.\n"
-    "- If a cited document is marked as SUPERSEDED, note this in your answer.\n"
-    "- Format your answer as clean prose paragraphs separated by blank lines.\n"
-    "- Do NOT use markdown bold headings. Do NOT use numbered lists unless the "
-    "user explicitly asked for a list.\n"
-    "- Do not give legal advice. State that queries requiring legal interpretation "
-    "should be referred to a qualified regulatory professional.\n"
-    "- Do not end responses with conversational closers such as 'feel free to ask', "
-    "'let me know if you have questions', 'I hope this helps', or similar phrases. "
-    "Responses are exported as formal regulatory intelligence documents. End with "
-    "the substantive content only."
-)
+_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+
+def _load_system_prompt() -> tuple[str, str]:
+    """Load the highest-versioned system prompt from the prompts directory.
+
+    Returns (version, prompt_text).  Files must be named system_prompt_<version>.txt.
+    """
+    candidates = sorted(_PROMPTS_DIR.glob("system_prompt_*.txt"), reverse=True)
+    if not candidates:
+        raise FileNotFoundError(f"No system prompt files found in {_PROMPTS_DIR}")
+    path = candidates[0]
+    version = path.stem.replace("system_prompt_", "")
+    text = path.read_text(encoding="utf-8").strip()
+    return version, text
+
+SYSTEM_PROMPT_VERSION, SYSTEM_PROMPT_V9 = _load_system_prompt()
 
 # ── Request / Response models ─────────────────────────────────────────────────
 
@@ -359,6 +298,7 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
     filters: QueryFilters | None = None
     retrieval_params: RetrievalParams | None = None
+    generation_model: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1198,7 +1138,7 @@ async def _run_content_query(
         framing = build_supersede_framing(supersede_context)
         prompt = f"{framing}Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
         t_llm = _time.monotonic()
-        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V8, return_usage=True)
+        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V9, return_usage=True, model=request.generation_model or None)
         t_llm2 = _time.monotonic()
         llm_latency_ms = round((t_llm2 - t_llm) * 1000)
 
@@ -1206,7 +1146,7 @@ async def _run_content_query(
             lf_trace.generation(
                 name="llm_answer",
                 model=get_active_model(),
-                input={"prompt": prompt, "system": SYSTEM_PROMPT_V8},
+                input={"prompt": prompt, "system": SYSTEM_PROMPT_V9},
                 output={"answer": answer},
                 usage=llm_usage,
                 metadata={"latency_ms": llm_latency_ms, "system_prompt_version": SYSTEM_PROMPT_VERSION},
@@ -2239,7 +2179,7 @@ async def get_system_prompt():
     """Return the active system prompt text and version for the UI prompt viewer."""
     return {
         "version": SYSTEM_PROMPT_VERSION,
-        "text": SYSTEM_PROMPT_V8,
+        "text": SYSTEM_PROMPT_V9,
     }
 
 
