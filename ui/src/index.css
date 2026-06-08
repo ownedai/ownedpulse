@@ -883,6 +883,8 @@ body {
   padding: 5px 8px;
   border-radius: 3px;
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .rp-date-input:focus { border-color: var(--accent-l); }

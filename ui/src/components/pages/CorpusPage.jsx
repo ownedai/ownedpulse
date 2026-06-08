@@ -93,17 +93,34 @@ function FilterDropdown({ options, value, onChange }) {
   );
 }
 
+function isoToEu(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
+}
+function euToIso(eu) {
+  const trimmed = eu.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return trimmed;
+  return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+}
+
 function DateRangeFilter({ dateFrom, dateTo, onApply }) {
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(dateFrom);
-  const [to, setTo] = useState(dateTo);
+  const [from, setFrom] = useState(isoToEu(dateFrom));
+  const [to, setTo] = useState(isoToEu(dateTo));
   const ref = useRef(null);
   const active = !!(dateFrom || dateTo);
 
   useClickOutside(ref, () => setOpen(false));
-  useEffect(() => { setFrom(dateFrom); setTo(dateTo); }, [dateFrom, dateTo]);
+  useEffect(() => { setFrom(isoToEu(dateFrom)); setTo(isoToEu(dateTo)); }, [dateFrom, dateTo]);
 
-  function handleApply() { onApply(from, to); setOpen(false); }
+  function handleApply() {
+    onApply(euToIso(from) || '', euToIso(to) || '');
+    setOpen(false);
+  }
   function handleClear() { setFrom(''); setTo(''); onApply('', ''); setOpen(false); }
 
   return (
@@ -123,30 +140,23 @@ function DateRangeFilter({ dateFrom, dateTo, onApply }) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
-        {active ? `${dateFrom || '…'} → ${dateTo || '…'}` : 'Date range'}
+        {active ? `${isoToEu(dateFrom) || '…'} → ${isoToEu(dateTo) || '…'}` : 'Date range'}
       </button>
       {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0,
-          background: 'var(--doc-surface)', border: '1px solid var(--doc-border)',
-          borderRadius: 6, zIndex: 100, padding: '14px 16px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.18)', minWidth: 230,
-        }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--doc-text-3)', fontWeight: 600, marginBottom: 12 }}>Publication date</div>
+        <div className="rp-popover" style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, padding: '12px 14px' }}>
+          <div className="rp-popover-section-lbl">Publication date</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
-              From
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-                style={{ background: 'var(--doc-bg)', border: '1px solid var(--doc-border)', borderRadius: 4, padding: '5px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--doc-text)', outline: 'none' }} />
+              From (dd.mm.yyyy)
+              <input type="text" className="rp-date-input" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="dd.mm.yyyy" />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
-              To
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-                style={{ background: 'var(--doc-bg)', border: '1px solid var(--doc-border)', borderRadius: 4, padding: '5px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--doc-text)', outline: 'none' }} />
+              To (dd.mm.yyyy)
+              <input type="text" className="rp-date-input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="dd.mm.yyyy" />
             </label>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button onClick={handleApply} style={{ flex: 1, height: 30, background: 'var(--accent-l)', border: 'none', borderRadius: 4, color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Apply</button>
+            <button className="rp-popover-apply" onClick={handleApply}>Apply</button>
             {(from || to) && (
               <button onClick={handleClear} style={{ height: 30, padding: '0 10px', background: 'transparent', border: '1px solid var(--doc-border)', borderRadius: 4, color: 'var(--doc-text-2)', fontSize: 12, cursor: 'pointer' }}>Clear</button>
             )}
