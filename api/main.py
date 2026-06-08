@@ -342,9 +342,12 @@ METADATA_PATTERNS = [
     re.compile(r'\blist\s+(all|the)\b', re.IGNORECASE),
     re.compile(r'\bwhen\s+was\b', re.IGNORECASE),
     re.compile(r'\bwhat\s+is\s+the\s+current\b', re.IGNORECASE),
-    re.compile(r'\bwhat\s+version\b', re.IGNORECASE),
+    re.compile(r'\b(what|which)\s+version\b', re.IGNORECASE),
     re.compile(r'\bhow\s+much\b', re.IGNORECASE),
     re.compile(r'\bsearch\s+for\b', re.IGNORECASE),
+    # "What/Which X documents are available / in the knowledge base"
+    re.compile(r'\b(what|which)\b.{0,40}\bdocuments?\b.{0,30}\b(available|in\s+the\s+knowledge\s+base|indexed)\b', re.IGNORECASE),
+    re.compile(r'\b(what|which)\b.{0,40}\b(guidelines?|guidances?)\b.{0,30}\b(available|in\s+the\s+knowledge\s+base|indexed)\b', re.IGNORECASE),
 ]
 
 
@@ -1297,8 +1300,9 @@ async def _run_metadata_query(
 
     # Determine what kind of metadata query this is
     is_count = any(w in query_lower for w in ["how many", "how much", "count of", "number of"])
-    is_list = any(w in query_lower for w in ["list", "show", "find all", "what are"])
-    is_current_version = any(w in query_lower for w in ["current version", "what is the current", "latest version"])
+    is_list = any(w in query_lower for w in ["list", "show", "find all", "what are", "available", "which documents", "what documents", "what guidelines", "which guidelines"])
+    is_current_version = any(w in query_lower for w in ["current version", "what is the current", "latest version", "which version", "what version"])
+    is_publication_date = re.search(r'\bwhen\s+was\b|\bpublish(ed|ed\s+in)?\b.*\bwhen\b|\bpublication\s+date\b|\brelease\s+date\b', query_lower) is not None
 
     # Infer agency and document_type from query text if not set by request filters.
     # This lets "How many FDA guidance documents" work without the filter bar being set.
@@ -1469,11 +1473,24 @@ async def _run_metadata_query(
                 password=POSTGRES_PASSWORD, connect_timeout=5
             )
             cur = conn.cursor()
-            where = ""
+            where_clauses = ["ingestion_status = 'indexed'"]
             params = []
-            if filters.agency:
-                params.append(filters.agency)
-                where = f"WHERE issuing_body = %s"
+            if inferred_filters.agency:
+                if inferred_filters.agency == "EMA":
+                    where_clauses.append("issuing_body = ANY(%s)")
+                    params.append(["EMA", "EU-Commission"])
+                else:
+                    where_clauses.append("issuing_body = ANY(%s)")
+                    params.append([inferred_filters.agency])
+            # Extract title keywords — strip version/meta stop words
+            _ver_stop = {"which", "what", "version", "is", "the", "in", "knowledge", "base",
+                         "current", "latest", "of", "a", "an", "are", "available"}
+            _ver_words = [w for w in re.sub(r'[^\w\s]', ' ', query_lower).split()
+                          if w not in _ver_stop and len(w) > 1]
+            for kw in _ver_words[:5]:
+                where_clauses.append("LOWER(metadata_json->>'document_title') LIKE %s")
+                params.append(f"%{kw}%")
+            where = "WHERE " + " AND ".join(where_clauses)
             cur.execute(
                 f"""SELECT document_id, metadata_json->>'document_title' as title,
                           document_version, metadata_json->>'publication_date' as pub_date,
@@ -1662,6 +1679,95 @@ async def _run_metadata_query(
             answer = header + "\n\n" + "\n".join(items)
         else:
             answer = "No documents found matching your criteria."
+    elif is_publication_date:
+        # Publication date lookup: find the best-matching document and return its date
+        import psycopg2 as _psycopg2
+        # Extract meaningful keywords from query for document title search
+        stop_words = {"when", "was", "is", "the", "published", "released", "publication",
+                      "date", "of", "what", "year", "a", "an", "in", "for", "and", "or"}
+        query_words = [w for w in re.sub(r'[^\w\s]', ' ', query_lower).split()
+                       if w not in stop_words and len(w) > 1]
+
+        pg_rows = []
+        try:
+            _conn = _psycopg2.connect(
+                host=POSTGRES_HOST, port=POSTGRES_PORT,
+                dbname=POSTGRES_DB, user=POSTGRES_USER,
+                password=POSTGRES_PASSWORD, connect_timeout=5
+            )
+            _cur = _conn.cursor()
+            where_clauses = ["ingestion_status = 'indexed'"]
+            params = []
+            if inferred_filters.agency:
+                if inferred_filters.agency == "EMA":
+                    where_clauses.append("issuing_body = ANY(%s)")
+                    params.append(["EMA", "EU-Commission"])
+                else:
+                    where_clauses.append("issuing_body = ANY(%s)")
+                    params.append([inferred_filters.agency])
+            if query_words:
+                # Each keyword must appear somewhere in the title (AND logic for precision)
+                for kw in query_words[:5]:
+                    where_clauses.append("LOWER(metadata_json->>'document_title') LIKE %s")
+                    params.append(f"%{kw}%")
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+            _cur.execute(
+                f"""SELECT document_id,
+                           metadata_json->>'document_title' as title,
+                           issuing_body, publication_date, source_url
+                    FROM document_registry {where_sql}
+                    ORDER BY publication_date DESC NULLS LAST
+                    LIMIT 5""",
+                params
+            )
+            pg_rows = _cur.fetchall()
+            _cur.close()
+            _conn.close()
+        except Exception as _e:
+            logger.warning(f"Publication date PG query failed: {_e}")
+
+        if pg_rows:
+            parts = []
+            for row in pg_rows:
+                doc_id, title, agency, pub_date, src_url = row
+                title_clean = strip_title_suffix(title or "") or "Untitled"
+                agency_norm = normalise_agency(agency or "")
+                if pub_date:
+                    year = str(pub_date)[:4]
+                    date_full = str(pub_date)[:10]
+                    parts.append(
+                        f"**{title_clean}** ({agency_norm}) was published on {date_full} (year: {year})."
+                    )
+                    citations.append({
+                        "index": len(citations) + 1,
+                        "chunk_id": "",
+                        "document_id": doc_id,
+                        "chunk_text": "",
+                        "document_title": title_clean,
+                        "issuing_body": agency_norm,
+                        "document_version": None,
+                        "clause_id": None,
+                        "publication_date": date_full,
+                        "page_no": None,
+                        "chunk_index": None,
+                        "char_offset_start": None,
+                        "char_offset_end": None,
+                        "chunked_at": None,
+                        "score": 1.0,
+                        "cited_by_llm": True,
+                        "superseded": False,
+                        "superseded_by": None,
+                        "source_local_path": None,
+                        "source_url": src_url or "",
+                    })
+                else:
+                    parts.append(
+                        f"**{title_clean}** ({agency_norm}): publication date not available in the corpus."
+                    )
+            answer = "\n\n".join(parts)
+        else:
+            answer = f"No document matching that description was found in the indexed corpus."
+
     else:
         # General metadata: count and overview
         count_result = client.count(
