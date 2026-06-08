@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getQueryHistory, exportHistory, getAuditCount } from '../../api/client';
-import { formatDateTime, todayISO } from '../../dateFormat';
+import { formatDateTime, todayISO as todayISOFile } from '../../dateFormat';
+import DateInput, { todayISO } from '../common/DateInput';
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -71,40 +72,34 @@ function FilterDropdown({ options, value, onChange }) {
 
 function isoToEu(iso) {
   if (!iso) return '';
-  const [y, m, d] = iso.split('-');
+  const [y, m, d] = String(iso).split('-');
   if (!y || !m || !d) return iso;
   return `${d}.${m}.${y}`;
-}
-function euToIso(eu) {
-  const trimmed = eu.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!match) return trimmed;
-  return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
 }
 
 function DateRangeFilter({ dateFrom, dateTo, onApply }) {
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(isoToEu(dateFrom));
-  const [to, setTo] = useState(isoToEu(dateTo));
+  const [from, setFrom] = useState(dateFrom || todayISO());
+  const [to, setTo] = useState(dateTo || todayISO());
   const ref = useRef(null);
   const active = !!(dateFrom || dateTo);
 
   useClickOutside(ref, () => setOpen(false));
-  useEffect(() => { setFrom(isoToEu(dateFrom)); setTo(isoToEu(dateTo)); }, [dateFrom, dateTo]);
+  useEffect(() => {
+    if (open) {
+      setFrom(dateFrom || todayISO());
+      setTo(dateTo || todayISO());
+    }
+  }, [open, dateFrom, dateTo]);
 
-  function handleApply() {
-    onApply(euToIso(from) || '', euToIso(to) || '');
-    setOpen(false);
-  }
-  function handleClear() { setFrom(''); setTo(''); onApply('', ''); setOpen(false); }
+  function handleApply() { onApply(from, to); setOpen(false); }
+  function handleClear() { onApply('', ''); setOpen(false); }
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen((o) => !o)}
         title="Filter by query date"
-        className={`rp-dropdown-btn${active ? '' : ''}`}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 5,
           height: 30, padding: '0 10px',
@@ -126,11 +121,11 @@ function DateRangeFilter({ dateFrom, dateTo, onApply }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
               From (dd.mm.yyyy)
-              <input type="text" className="rp-date-input" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="dd.mm.yyyy" />
+              <DateInput value={from} onChange={setFrom} />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--doc-text-2)' }}>
               To (dd.mm.yyyy)
-              <input type="text" className="rp-date-input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="dd.mm.yyyy" />
+              <DateInput value={to} onChange={setTo} />
             </label>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>

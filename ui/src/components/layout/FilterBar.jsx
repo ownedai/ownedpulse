@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../common/Tooltip';
+import DateInput, { todayISO } from '../common/DateInput';
 
 const AGENCIES = ['All', 'FDA', 'EMA', 'ICH'];
 const AGENCY_TIPS = {
@@ -29,21 +30,6 @@ function useClickOutside(ref, handler) {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [ref, handler]);
-}
-
-function isoToEu(iso) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  if (!y || !m || !d) return iso;
-  return `${d}.${m}.${y}`;
-}
-
-function euToIso(eu) {
-  const trimmed = eu.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!match) return trimmed;
-  return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
 }
 
 /* ── Floating popover ────────────────────────────────────────────────────── */
@@ -111,7 +97,8 @@ function DateDropdown({ filters, onChange }) {
       const d = new Date(); d.setDate(d.getDate() - 90);
       onChange({ ...filters, date_from: d.toISOString().split('T')[0], date_to: null, _datePreset: '90d' });
     } else if (v === 'custom') {
-      onChange({ ...filters, date_from: null, date_to: null, _datePreset: 'custom' });
+      const today = todayISO();
+      onChange({ ...filters, date_from: filters.date_from || today, date_to: filters.date_to || today, _datePreset: 'custom' });
       setCustomOpen(true);
     } else {
       onChange({ ...filters, date_from: null, date_to: null, _datePreset: null });
@@ -148,24 +135,16 @@ function DateDropdown({ filters, onChange }) {
           <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div>
               <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 3 }}>From (dd.mm.yyyy)</div>
-              <input
-                type="text"
-                value={isoToEu(filters.date_from)}
-                onChange={(e) => onChange({ ...filters, date_from: euToIso(e.target.value) })}
-                placeholder="dd.mm.yyyy"
-                className="rp-date-input"
-                style={{ width: '100%' }}
+              <DateInput
+                value={filters.date_from}
+                onChange={(iso) => onChange({ ...filters, date_from: iso || null })}
               />
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 3 }}>To (dd.mm.yyyy)</div>
-              <input
-                type="text"
-                value={isoToEu(filters.date_to)}
-                onChange={(e) => onChange({ ...filters, date_to: euToIso(e.target.value) })}
-                placeholder="dd.mm.yyyy"
-                className="rp-date-input"
-                style={{ width: '100%' }}
+              <DateInput
+                value={filters.date_to}
+                onChange={(iso) => onChange({ ...filters, date_to: iso || null })}
               />
             </div>
             <button

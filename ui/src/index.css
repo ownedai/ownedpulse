@@ -889,6 +889,11 @@ body {
 
 .rp-date-input:focus { border-color: var(--accent-l); }
 
+.rp-date-invalid {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.2);
+}
+
 /* ── Retrieval settings row ─────────────────────────────────────────────── */
 
 .rp-retrieval {
