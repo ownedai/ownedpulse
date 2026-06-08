@@ -276,6 +276,7 @@ def main():
                                  workflow_id, n8n_execution_id,
                                  feed_source, status)
             VALUES (%s, %s, %s, %s, %s, %s, 'running')
+            ON CONFLICT (run_id) DO NOTHING
         """, (run_id, args.trigger_source, args.triggered_by,
               args.workflow_id, args.n8n_execution_id, args.feed_id))
     conn.close()

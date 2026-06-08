@@ -60,10 +60,14 @@ def _write_run_log_error_or_insert(
                         """INSERT INTO run_log
                                (run_id, trigger_source, triggered_by, feed_source, status,
                                 completed_at, error_detail)
-                           VALUES (%s, %s, %s, %s, 'error', NOW(), %s)""",
+                           VALUES (%s, %s, %s, %s, 'error', NOW(), %s)
+                           ON CONFLICT (run_id) DO NOTHING""",
                         (run_id, trigger_source, triggered_by, feed_id, detail[:500]),
                     )
                 conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
     except Exception as e:
