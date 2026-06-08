@@ -883,6 +883,10 @@ def generate_audit_log_pdf(
         "AuditAnswer", fontName="Inter", fontSize=9,
         textColor=C_INK, spaceAfter=8, leading=13,
     )
+    style_answer_label = ParagraphStyle(
+        "AuditALabel", fontName="Mono", fontSize=7,
+        textColor=MUTED, spaceAfter=3, leading=10,
+    )
     style_sources_label = ParagraphStyle(
         "AuditSrcLabel", fontName="Mono", fontSize=7,
         textColor=MUTED, spaceAfter=3, leading=10,
