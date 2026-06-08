@@ -528,7 +528,8 @@ async def retrieve_chunks(
 
 
 def deduplicate_chunks(chunks: list[dict], top_n: int = 8) -> list[dict]:
-    """Keep best-scoring chunk per document_id, then take top N by score."""
+    """Keep best-scoring chunk per document_id, then take top N by score.
+    Also remove chunks with identical text (duplicate content from different doc_ids)."""
     seen = {}
     for chunk in chunks:
         doc_id = chunk.get("document_id", chunk.get("chunk_id"))
@@ -536,7 +537,18 @@ def deduplicate_chunks(chunks: list[dict], top_n: int = 8) -> list[dict]:
             seen[doc_id] = chunk
 
     deduped = sorted(seen.values(), key=lambda c: c["score"], reverse=True)
-    return deduped[:top_n]
+
+    # Remove chunks with identical text — same content ingested under different doc_ids
+    seen_text = {}
+    result = []
+    for chunk in deduped:
+        text_key = (chunk.get("chunk_text", "") or "")[:200].strip()
+        if text_key and text_key in seen_text:
+            continue  # skip lower-scored duplicate (list is already score-sorted)
+        seen_text[text_key] = True
+        result.append(chunk)
+
+    return result[:top_n]
 
 
 # ── Force-include explicitly mentioned documents ────────────────────────────────

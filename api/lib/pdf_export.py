@@ -609,10 +609,13 @@ def generate_query_export_pdf(
                 HEAD_META_GAP = 24
                 META_CHUNK_GAP = 8
                 ctxt_pad      = 9
-                ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row
+                LBL_H         = 12
+                ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row + LBL_H
+                src_display = source_url[:120] + ("…" if len(source_url) > 120 else "")
+                loc_display = source_local[:100] + ("…" if len(source_local) > 100 else "")
                 trace_max_w   = CONTENT_W - 20
-                src2_h = _measure_wrapped(rc, f"Source  {source_url}", "Mono", 7.5, trace_max_w, 11)
-                src3_h = (_measure_wrapped(rc, f"File  {source_local}", "Mono", 7.5, trace_max_w, 11)
+                src2_h = _measure_wrapped(rc, f"Source  {src_display}", "Mono", 7.5, trace_max_w, 11)
+                src3_h = (_measure_wrapped(rc, f"File  {loc_display}", "Mono", 7.5, trace_max_w, 11)
                           if source_local else 0)
                 TRACE_BLOCK = 8 + 10 + 11 + src2_h + (11 + src3_h if source_local else 0) + 10
                 card_h = (HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H
@@ -668,13 +671,16 @@ def generate_query_export_pdf(
                 chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
                 _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
                       fill=box_bg, stroke=C_BORDER, lw=0.75)
-                txt_draw_y = chunk_y - ctxt_pad - 10
+                # "Chunk text" label at top of box
+                _text(rc, MARGIN_X + 14, chunk_y - 12,
+                      "Chunk text", "Inter-SemiBold", 8.0, C_INK_TER)
+                txt_draw_y = chunk_y - LBL_H - ctxt_pad - 6
                 if truncated:
                     _text(rc, MARGIN_X + 16, txt_draw_y,
                           f"[Truncated — first {DISPLAY_CHARS} of {len(chunk_txt)} chars shown."
                           f" Full text in source document.]",
                           "Mono", 7.5, C_INK_TER)
-                    txt_draw_y -= 14
+                    txt_draw_y -= 18
                 _wrapped_text(rc, MARGIN_X + 16, txt_draw_y,
                               (display_txt or "—").replace("\n", " "), "Mono", 8.5,
                               _rgb("1E293B"), draw_w - 4, 13.5)
@@ -685,11 +691,11 @@ def generate_query_export_pdf(
                       f"Ingested  {chunked_at[:10]}   Trace ID  {trace_id}",
                       "Mono", 7.5, C_INK_TER)
                 _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11,
-                              f"Source  {source_url}",
+                              f"Source  {src_display}",
                               "Mono", 7.5, C_INK_TER, trace_max_w, 11)
                 if source_local:
                     _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11 - src2_h,
-                                  f"File  {source_local}",
+                                  f"File  {loc_display}",
                                   "Mono", 7.5, C_INK_TER, trace_max_w, 11)
                 cy -= card_h + 18
 
@@ -732,9 +738,11 @@ def generate_query_export_pdf(
                 uc_url       = chunk.get("source_url") or "—"
                 uc_local     = chunk.get("source_local_path") or ""
 
+                uc_src_disp = uc_url[:120] + ("…" if len(uc_url) > 120 else "")
+                uc_loc_disp = uc_local[:100] + ("…" if len(uc_local) > 100 else "")
                 uc_trace_max_w = CONTENT_W - 20
-                uc_src2_h   = _measure_wrapped(rc, f"Source  {uc_url}", "Mono", 7.5, uc_trace_max_w, 11)
-                uc_src3_h   = (_measure_wrapped(rc, f"File  {uc_local}", "Mono", 7.5, uc_trace_max_w, 11)
+                uc_src2_h   = _measure_wrapped(rc, f"Source  {uc_src_disp}", "Mono", 7.5, uc_trace_max_w, 11)
+                uc_src3_h   = (_measure_wrapped(rc, f"File  {uc_loc_disp}", "Mono", 7.5, uc_trace_max_w, 11)
                                if uc_local else 0)
                 _UNC_TRACE_BLOCK = 8 + 10 + 11 + uc_src2_h + (11 + uc_src3_h if uc_local else 0) + 10
                 unc_card_h = (_UNC_HEAD_TOP + _UNC_HEAD_META_GAP
@@ -780,11 +788,11 @@ def generate_query_export_pdf(
                       f"Ingested  {uc_chunked[:10]}   Trace ID  {uc_trace_id}",
                       "Mono", 7.5, C_INK_TER)
                 _wrapped_text(rc, MARGIN_X + 10, uc_tl1_y - 11,
-                              f"Source  {uc_url}",
+                              f"Source  {uc_src_disp}",
                               "Mono", 7.5, C_INK_TER, uc_trace_max_w, 11)
                 if uc_local:
                     _wrapped_text(rc, MARGIN_X + 10, uc_tl1_y - 11 - uc_src2_h,
-                                  f"File  {uc_local}",
+                                  f"File  {uc_loc_disp}",
                                   "Mono", 7.5, C_INK_TER, uc_trace_max_w, 11)
 
                 cy -= unc_card_h + 18
