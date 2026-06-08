@@ -2420,6 +2420,20 @@ body {
   white-space: nowrap;
 }
 
+.rp-table tbody td .query-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.rp-table tbody td .query-id {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--doc-text-3);
+  white-space: nowrap;
+}
+
 .rp-table tbody td .action {
   background: transparent;
   border: 1px solid var(--doc-border-strong);

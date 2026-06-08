@@ -25,8 +25,13 @@ export function getQuery(queryId) {
   return request(`/api/query/${queryId}`);
 }
 
-export function getQueryHistory(limit = 10, offset = 0) {
-  return request(`/api/query/history?limit=${limit}&offset=${offset}`);
+export function getQueryHistory(limit = 10, offset = 0, filters = {}) {
+  const params = new URLSearchParams({ limit, offset });
+  if (filters.search) params.set('search', filters.search);
+  if (filters.routingPath) params.set('routing_path', filters.routingPath);
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo) params.set('date_to', filters.dateTo);
+  return request(`/api/query/history?${params}`);
 }
 
 export function exportQuery(queryId, format = 'json') {
@@ -37,11 +42,27 @@ export function exportQuery(queryId, format = 'json') {
   });
 }
 
-export function exportHistory() {
-  return fetch(`${API_BASE}/api/query/history/export`).then(r => {
-    if (!r.ok) throw new Error(`History export failed: ${r.status}`);
-    return r.text();
+export function exportHistory(filters = {}) {
+  const params = new URLSearchParams();
+  params.append('format', filters.format || 'csv');
+  if (filters.dateFrom) params.append('date_from', filters.dateFrom);
+  if (filters.dateTo) params.append('date_to', filters.dateTo);
+  if (filters.search) params.append('search', filters.search);
+  if (filters.routingPath) params.append('routing_path', filters.routingPath);
+  if (filters.limit) params.append('limit', filters.limit);
+  return fetch(`${API_BASE}/api/query/history/export?${params.toString()}`).then(r => {
+    if (!r.ok) return r.json().then(e => { throw new Error(e.detail || `Export failed: ${r.status}`); });
+    return r.blob();
   });
+}
+
+export function getAuditCount(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.dateFrom) params.append('date_from', filters.dateFrom);
+  if (filters.dateTo) params.append('date_to', filters.dateTo);
+  if (filters.search) params.append('search', filters.search);
+  if (filters.routingPath) params.append('routing_path', filters.routingPath);
+  return request(`/api/audit/count?${params.toString()}`);
 }
 
 export function getTrace(traceId) {

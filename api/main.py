@@ -1698,18 +1698,46 @@ async def _run_metadata_query(
 
 
 @app.get("/api/query/history")
-async def query_history(limit: int = 10, offset: int = 0):
-    """Return paginated query history from PostgreSQL."""
+async def query_history(
+    limit: int = 10,
+    offset: int = 0,
+    search: str = "",
+    routing_path: str = "",
+    date_from: str = "",
+    date_to: str = "",
+):
+    """Return paginated, filtered query history from PostgreSQL."""
+    conditions = []
+    params: list = []
+
+    if search:
+        conditions.append("query_text ILIKE %s")
+        params.append(f"%{search}%")
+    if routing_path:
+        conditions.append("routing_path = %s")
+        params.append(routing_path)
+    if date_from:
+        conditions.append("timestamp::date >= %s")
+        params.append(date_from)
+    if date_to:
+        conditions.append("timestamp::date <= %s")
+        params.append(date_to)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
+        cur.execute(f"SELECT COUNT(*) FROM query_history {where}", params)
+        total = cur.fetchone()[0]
         cur.execute(
-            """SELECT query_id, query_text, timestamp, routing_path,
+            f"""SELECT query_id, query_text, timestamp, routing_path,
                       citations, filters_applied
                FROM query_history
+               {where}
                ORDER BY timestamp DESC
                LIMIT %s OFFSET %s""",
-            (limit, offset)
+            params + [limit, offset]
         )
         rows = cur.fetchall()
         items = []
@@ -1727,7 +1755,7 @@ async def query_history(limit: int = 10, offset: int = 0):
                 "agency_filter": filts.get("agency", "All"),
             })
         cur.close()
-        return items
+        return {"items": items, "total": total}
     finally:
         conn.close()
 
@@ -1735,98 +1763,221 @@ async def query_history(limit: int = 10, offset: int = 0):
 # ── GET /api/query/history/export ─────────────────────────────────────────────
 
 
+def build_audit_query(
+    date_from=None,
+    date_to=None,
+    search=None,
+        routing_path=None,
+    limit=500,
+) -> tuple[str, list]:
+    """Build filtered query_history SELECT with parameterised filters."""
+    conditions = []
+    params = []
+
+    if date_from:
+        conditions.append("timestamp::date >= %s")
+        params.append(date_from)
+
+    if date_to:
+        conditions.append("timestamp::date <= %s")
+        params.append(date_to)
+
+    if search:
+        conditions.append("(query_text ILIKE %s OR answer ILIKE %s)")
+        params.extend([f"%{search}%", f"%{search}%"])
+
+    if routing_path:
+        conditions.append("routing_path = %s")
+        params.append(routing_path)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    sql = f"""
+        SELECT
+            query_id, query_text, routing_path, timestamp,
+            answer, citations, sub_queries,
+            filters_applied, retrieval_params,
+            langfuse_trace_id, model_used
+        FROM query_history
+        {where}
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+    params.append(limit)
+
+    return sql, params
+
+
 @app.get("/api/query/history/export")
-async def export_history():
+async def export_history(
+    format: str = Query("csv", regex="^(csv|pdf)$"),
+    date_from: Optional[_date] = Query(None),
+    date_to: Optional[_date] = Query(None),
+    search: Optional[str] = Query(None, max_length=200),
+    routing_path: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+):
     import csv
-    from io import StringIO
+    from io import StringIO, BytesIO
+
+    sql, params = build_audit_query(
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+        routing_path=routing_path,
+        limit=limit,
+    )
 
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """SELECT query_id, query_text, routing_path, timestamp,
-                      answer, citations, sub_queries,
-                      filters_applied, retrieval_params,
-                      langfuse_trace_id, model_used
-               FROM query_history
-               ORDER BY timestamp DESC
-               LIMIT 1000"""
-        )
+        cur.execute(sql, params)
         rows = cur.fetchall()
         cur.close()
     finally:
         conn.close()
 
-    buf = StringIO()
-    writer = csv.writer(buf)
-    writer.writerow([
-        "query_id",
-        "timestamp",
-        "query_text",
-        "answer_excerpt",
-        "routing",
-        "model_used",
-        "agency_filter",
-        "document_type_filter",
-        "date_from",
-        "date_to",
-        "query_depth",
-        "top_k",
-        "score_threshold",
-        "sub_queries",
-        "citation_count",
-        "cited_document_ids",
-        "cited_document_titles",
-        "langfuse_trace_id",
-    ])
-
-    for row in rows:
-        (qid, qtext, routing, ts, answer, citations_raw,
-         sub_queries_raw, filters_raw, retrieval_raw,
-         trace_id, model_used) = row
-
-        citations = citations_raw if isinstance(citations_raw, list) else (json.loads(citations_raw) if citations_raw else [])
-        sub_queries = sub_queries_raw if isinstance(sub_queries_raw, list) else (json.loads(sub_queries_raw) if sub_queries_raw else [])
-        filters = filters_raw if isinstance(filters_raw, dict) else (json.loads(filters_raw) if filters_raw else {})
-        retrieval = retrieval_raw if isinstance(retrieval_raw, dict) else (json.loads(retrieval_raw) if retrieval_raw else {})
-
-        cited = [c for c in citations if c.get("cited_by_llm")]
-        cited_ids = " | ".join(c.get("document_id", "") for c in cited)
-        cited_titles = " | ".join(c.get("document_title", "") for c in cited)
-
-        routing_label = "Metadata lookup" if routing == "METADATA" else "Semantic search"
-
-        # Truncate answer to 300 chars for CSV readability; full answer retrievable via query_id
-        answer_text = answer or ""
-        answer_excerpt = (answer_text[:300] + "… [full answer: load query_id in regpulse]") if len(answer_text) > 300 else answer_text
-
+    if format == "csv":
+        buf = StringIO()
+        writer = csv.writer(buf)
         writer.writerow([
-            qid,
-            ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-            qtext,
-            answer_excerpt,
-            routing_label,
-            model_used or "",
-            filters.get("agency") or "All",
-            filters.get("document_type") or "All",
-            filters.get("date_from") or "",
-            filters.get("date_to") or "",
-            retrieval.get("query_depth") or "",
-            retrieval.get("top_k") or "",
-            retrieval.get("score_threshold") or "",
-            " | ".join(sub_queries),
-            len(citations),
-            cited_ids,
-            cited_titles,
-            trace_id or "",
+            "query_id", "timestamp", "query_text", "answer_excerpt", "routing",
+            "model_used", "agency_filter", "document_type_filter",
+            "date_from", "date_to", "query_depth", "top_k", "score_threshold",
+            "sub_queries", "citation_count", "cited_document_ids", "cited_document_titles",
+            "langfuse_trace_id",
         ])
 
-    filename = f"regpulse-audit-export-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
-    return Response(
-        content=buf.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        for row in rows:
+            (qid, qtext, routing, ts, answer, citations_raw,
+             sub_queries_raw, filters_raw, retrieval_raw,
+             trace_id, model_used) = row
+
+            citations = citations_raw if isinstance(citations_raw, list) else (json.loads(citations_raw) if citations_raw else [])
+            sub_queries = sub_queries_raw if isinstance(sub_queries_raw, list) else (json.loads(sub_queries_raw) if sub_queries_raw else [])
+            filters = filters_raw if isinstance(filters_raw, dict) else (json.loads(filters_raw) if filters_raw else {})
+            retrieval = retrieval_raw if isinstance(retrieval_raw, dict) else (json.loads(retrieval_raw) if retrieval_raw else {})
+
+            cited = [c for c in citations if c.get("cited_by_llm")]
+            cited_ids = " | ".join(c.get("document_id", "") for c in cited)
+            cited_titles = " | ".join(c.get("document_title", "") for c in cited)
+
+            routing_label = "Metadata lookup" if routing == "METADATA" else "Semantic search"
+
+            answer_text = answer or ""
+            answer_excerpt = (answer_text[:300] + "… [full answer: load query_id in regpulse]") if len(answer_text) > 300 else answer_text
+
+            writer.writerow([
+                qid, ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                qtext, answer_excerpt, routing_label, model_used or "",
+                filters.get("agency") or "All", filters.get("document_type") or "All",
+                filters.get("date_from") or "", filters.get("date_to") or "",
+                retrieval.get("query_depth") or "", retrieval.get("top_k") or "",
+                retrieval.get("score_threshold") or "", " | ".join(sub_queries),
+                len(citations), cited_ids, cited_titles, trace_id or "",
+            ])
+
+        date_suffix = ""
+        if date_from and date_to:
+            date_suffix = f"_{date_from}_{date_to}"
+        elif date_from:
+            date_suffix = f"_from_{date_from}"
+        filename = f"regpulse_audit{date_suffix}.csv"
+
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    elif format == "pdf":
+        if not rows:
+            raise HTTPException(status_code=404, detail="No queries match the filters")
+
+        from lib.pdf_export import generate_query_export_pdf
+        from pypdf import PdfReader, PdfWriter
+        import io as _io
+
+        writer = PdfWriter()
+
+        for row in rows:
+            (qid, qtext, routing, ts, answer, citations_raw,
+             sub_queries_raw, filters_raw, retrieval_raw,
+             trace_id, model_used) = row
+
+            citations = citations_raw if isinstance(citations_raw, list) else (json.loads(citations_raw) if citations_raw else [])
+            sub_queries = sub_queries_raw if isinstance(sub_queries_raw, list) else (json.loads(sub_queries_raw) if sub_queries_raw else [])
+            filters_dict = filters_raw if isinstance(filters_raw, dict) else (json.loads(filters_raw) if filters_raw else {})
+            retrieval_dict = retrieval_raw if isinstance(retrieval_raw, dict) else (json.loads(retrieval_raw) if retrieval_raw else {})
+
+            ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+
+            payload = {
+                "query_id": str(qid),
+                "query_text": qtext,
+                "timestamp": ts_iso,
+                "routing_path": routing,
+                "answer": answer or "",
+                "citations": citations,
+                "sub_queries": sub_queries,
+                "filters_applied": filters_dict,
+                "retrieval_params_applied": retrieval_dict,
+                "langfuse_trace_id": str(trace_id) if trace_id else "",
+            }
+
+            pdf_bytes = generate_query_export_pdf(payload)
+            reader = PdfReader(_io.BytesIO(pdf_bytes))
+            for page in reader.pages:
+                writer.add_page(page)
+
+        output = _io.BytesIO()
+        writer.write(output)
+        output.seek(0)
+
+        date_suffix = ""
+        if date_from and date_to:
+            date_suffix = f"_{date_from}_{date_to}"
+        filename = f"regpulse_audit{date_suffix}_{len(rows)}queries.pdf"
+
+        return Response(
+            content=output.getvalue(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+
+# ── GET /api/audit/count ──────────────────────────────────────────────────────
+
+
+@app.get("/api/audit/count")
+async def audit_count(
+    date_from: Optional[_date] = Query(None),
+    date_to: Optional[_date] = Query(None),
+    search: Optional[str] = Query(None, max_length=200),
+    routing_path: Optional[str] = Query(None),
+):
+    sql, params = build_audit_query(
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+        routing_path=routing_path,
+        limit=99999,
     )
+    # Wrap in COUNT(*) — remove the LIMIT param for count
+    count_sql = f"SELECT COUNT(*) FROM ({sql.rstrip()}) sub"
+    count_params = params
+
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(count_sql, count_params)
+        row = cur.fetchone()
+        cur.close()
+        count = row[0] if row else 0
+    finally:
+        conn.close()
+
+    return {"count": count}
 
 
 # ── GET /api/query/{query_id} ──────────────────────────────────────────────────
