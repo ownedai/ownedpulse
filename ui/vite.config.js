@@ -18,10 +18,6 @@ export default defineConfig({
       },
     },
     allowedHosts: ['rp.ownedai.dev'],
-    hmr: {
-      host: 'rp.ownedai.dev',
-      protocol: 'wss',
-      clientPort: 443,
-    },
+    hmr: process.env.VITE_HMR_DISABLED === 'true' ? false : { overlay: false },
   },
 });
