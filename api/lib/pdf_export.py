@@ -905,7 +905,12 @@ def generate_audit_log_pdf(
     )
 
     export_ts = datetime.now(timezone.utc)
-    export_ts_str = export_ts.strftime("%d.%m.%Y %H:%M UTC")
+    try:
+        from zoneinfo import ZoneInfo
+        _local = datetime.now(ZoneInfo("Europe/Brussels"))
+    except Exception:
+        _local = export_ts
+    export_ts_str = _local.strftime("%d.%m.%Y %H:%M") + " CET"
     export_id = f"AUDIT-{export_ts.strftime('%Y%m%d-%H%M%S')}"
 
     def _esc(text: str) -> str:

@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.33"
+APP_VERSION = "0.8.35"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -38,7 +38,7 @@ app.include_router(sources_router, prefix="/api/sources")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://rp.ownedai.dev", "http://localhost:5173"],
+    allow_origins=["https://rp.ownedai.dev", "http://localhost:5173", "http://192.168.3.3:5173", "http://192.168.3.2:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2036,26 +2036,26 @@ async def export_history(
             })
 
         filters_for_cover = {
-            "date_from": str(date_from) if date_from else None,
-            "date_to": str(date_to) if date_to else None,
+            "date_from": datetime.strptime(str(date_from), "%Y-%m-%d").strftime("%d.%m.%Y") if date_from else None,
+            "date_to": datetime.strptime(str(date_to), "%Y-%m-%d").strftime("%d.%m.%Y") if date_to else None,
             "search": search,
             "routing_path": routing_path,
         }
 
-        # Get corpus date and system version from system_config
+        # Get corpus date from most recent successful ingestion run
         corpus_date = "—"
         try:
             cfg_conn = get_pg_conn()
             with cfg_conn.cursor() as c:
-                c.execute("SELECT key, value FROM system_config WHERE key IN ('corpus_snapshot_date', 'prompt_version')")
-                cfg = dict(c.fetchall())
+                c.execute(
+                    "SELECT completed_at FROM run_log"
+                    " WHERE status = 'success' AND items_new > 0"
+                    " ORDER BY completed_at DESC LIMIT 1"
+                )
+                row = c.fetchone()
             cfg_conn.close()
-            raw_snap = cfg.get("corpus_snapshot_date", "")
-            if raw_snap:
-                try:
-                    corpus_date = datetime.strptime(str(raw_snap), "%Y-%m-%d").strftime("%d.%m.%Y")
-                except Exception:
-                    corpus_date = str(raw_snap)
+            if row and row[0]:
+                corpus_date = row[0].strftime("%d.%m.%Y")
         except Exception:
             pass
 

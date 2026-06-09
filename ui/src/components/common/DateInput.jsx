@@ -1,37 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
-function isoToEu(iso) {
-  if (!iso) return '';
-  const [y, m, d] = String(iso).split('-');
-  if (!y || !m || !d) return iso || '';
-  return `${d}.${m}.${y}`;
+function euToIso(d, m, y) {
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
-function euToIso(eu) {
-  const trimmed = String(eu || '').trim();
-  if (!trimmed) return '';
-  const match = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!match) return '';
-  return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+function isValidDay(d) {
+  return /^(0[1-9]|[12]\d|3[01])$/.test(d);
+}
+function isValidMonth(m) {
+  return /^(0[1-9]|1[0-2])$/.test(m);
+}
+function isValidYear(y) {
+  return /^(19|20)\d{2}$/.test(y);
 }
 
-function formatDateDigits(raw) {
-  const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return digits.slice(0, 2) + '.' + digits.slice(2);
-  return digits.slice(0, 2) + '.' + digits.slice(2, 4) + '.' + digits.slice(4);
+function isValidDate(d, m, y) {
+  if (!isValidDay(d) || !isValidMonth(m) || !isValidYear(y)) return false;
+  const days = new Date(parseInt(y), parseInt(m), 0).getDate();
+  return parseInt(d) <= days;
 }
 
-function isValidEuDate(eu) {
-  const match = String(eu || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!match) return false;
-  const d = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10);
-  const y = parseInt(match[3], 10);
-  if (m < 1 || m > 12) return false;
-  if (d < 1 || d > 31) return false;
-  if (y < 1900 || y > 2100) return false;
-  return true;
+function segmentDigits(raw, max) {
+  return raw.replace(/\D/g, '').slice(0, max);
 }
 
 export function todayISO() {
@@ -39,40 +29,162 @@ export function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function DateInput({ value, onChange, placeholder }) {
-  const display = isoToEu(value);
-  const [local, setLocal] = useState(display);
-  const [invalid, setInvalid] = useState(false);
+export default function DateInput({ value, onChange }) {
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
+  const [invalidDay, setInvalidDay] = useState(false);
+  const [invalidMonth, setInvalidMonth] = useState(false);
+  const [invalidYear, setInvalidYear] = useState(false);
 
+  const dayRef = useRef(null);
+  const monthRef = useRef(null);
+  const yearRef = useRef(null);
+
+  // Sync from parent ISO value
   useEffect(() => {
-    setLocal(isoToEu(value));
+    if (!value) { setDay(''); setMonth(''); setYear(''); return; }
+    const parts = String(value).split('-');
+    if (parts.length === 3) {
+      setDay(parts[2]);
+      setMonth(parts[1]);
+      setYear(parts[0]);
+      setInvalidDay(false);
+      setInvalidMonth(false);
+      setInvalidYear(false);
+    }
   }, [value]);
 
-  function handleChange(e) {
-    const formatted = formatDateDigits(e.target.value);
-    setLocal(formatted);
-
-    if (/^\d{2}\.\d{2}\.\d{4}$/.test(formatted)) {
-      if (isValidEuDate(formatted)) {
-        setInvalid(false);
-        onChange(euToIso(formatted));
-      } else {
-        setInvalid(true);
-      }
-    } else {
-      setInvalid(false);
-      // Pass empty for incomplete dates — caller decides whether to keep partial
+  const tryPropagate = useCallback((nd, nm, ny) => {
+    if (nd === '' && nm === '' && ny === '') {
       onChange('');
+      return;
+    }
+    if (nd.length === 2 && nm.length === 2 && ny.length === 4) {
+      if (isValidDate(nd, nm, ny)) {
+        setInvalidDay(false); setInvalidMonth(false); setInvalidYear(false);
+        onChange(euToIso(nd, nm, ny));
+      } else {
+        if (!isValidDay(nd)) setInvalidDay(true); else setInvalidDay(false);
+        if (!isValidMonth(nm)) setInvalidMonth(true); else setInvalidMonth(false);
+        if (!isValidYear(ny)) setInvalidYear(true); else setInvalidYear(false);
+      }
+    }
+  }, [onChange]);
+
+  function handleDayChange(e) {
+    const val = segmentDigits(e.target.value, 2);
+    setDay(val);
+    if (val.length === 2) {
+      if (isValidDay(val)) { setInvalidDay(false); monthRef.current?.focus(); }
+      else { setInvalidDay(true); }
+    } else {
+      setInvalidDay(false);
+    }
+    tryPropagate(val, month, year);
+  }
+
+  function handleMonthChange(e) {
+    const val = segmentDigits(e.target.value, 2);
+    setMonth(val);
+    if (val.length === 2) {
+      if (isValidMonth(val)) { setInvalidMonth(false); yearRef.current?.focus(); }
+      else { setInvalidMonth(true); }
+    } else {
+      setInvalidMonth(false);
+    }
+    tryPropagate(day, val, year);
+  }
+
+  function handleYearChange(e) {
+    const val = segmentDigits(e.target.value, 4);
+    setYear(val);
+    if (val.length === 4) {
+      if (isValidYear(val)) setInvalidYear(false);
+      else setInvalidYear(true);
+    } else {
+      setInvalidYear(false);
+    }
+    tryPropagate(day, month, val);
+  }
+
+  function handleDayKeyDown(e) {
+    if (e.key === 'Backspace' && day === '' && e.target.selectionStart === 0) {
+      // already at start of day, nothing to do
+    }
+    if (e.key === 'ArrowRight' && e.target.selectionStart === day.length) {
+      monthRef.current?.focus();
     }
   }
 
+  function handleMonthKeyDown(e) {
+    if (e.key === 'Backspace' && month === '' && e.target.selectionStart === 0) {
+      dayRef.current?.focus();
+      dayRef.current?.setSelectionRange(day.length, day.length);
+    }
+    if (e.key === 'ArrowRight' && e.target.selectionStart === month.length) {
+      yearRef.current?.focus();
+    }
+    if (e.key === 'ArrowLeft' && e.target.selectionStart === 0) {
+      dayRef.current?.focus();
+      dayRef.current?.setSelectionRange(day.length, day.length);
+    }
+  }
+
+  function handleYearKeyDown(e) {
+    if (e.key === 'Backspace' && year === '' && e.target.selectionStart === 0) {
+      monthRef.current?.focus();
+      monthRef.current?.setSelectionRange(month.length, month.length);
+    }
+    if (e.key === 'ArrowLeft' && e.target.selectionStart === 0) {
+      monthRef.current?.focus();
+      monthRef.current?.setSelectionRange(month.length, month.length);
+    }
+  }
+
+  const anyInvalid = invalidDay || invalidMonth || invalidYear;
+
+  function segCls(extra) {
+    return `rp-date-input rp-date-seg ${extra}`;
+  }
+
   return (
-    <input
-      type="text"
-      className={`rp-date-input${invalid ? ' rp-date-invalid' : ''}`}
-      value={local}
-      onChange={handleChange}
-      placeholder={placeholder || 'dd.mm.yyyy'}
-    />
+    <div className={`rp-date-input-group${anyInvalid ? ' rp-date-invalid' : ''}`}>
+      <input
+        ref={dayRef}
+        type="text"
+        className={segCls('rp-date-seg-day')}
+        value={day}
+        onChange={handleDayChange}
+        onKeyDown={handleDayKeyDown}
+        placeholder="DD"
+        maxLength={2}
+        inputMode="numeric"
+      />
+      <span className="rp-date-dot">.</span>
+      <input
+        ref={monthRef}
+        type="text"
+        className={segCls('rp-date-seg-month')}
+        value={month}
+        onChange={handleMonthChange}
+        onKeyDown={handleMonthKeyDown}
+        placeholder="MM"
+        maxLength={2}
+        inputMode="numeric"
+      />
+      <span className="rp-date-dot">.</span>
+      <input
+        ref={yearRef}
+        type="text"
+        className={segCls('rp-date-seg-year')}
+        value={year}
+        onChange={handleYearChange}
+        onKeyDown={handleYearKeyDown}
+        placeholder="YYYY"
+        maxLength={4}
+        inputMode="numeric"
+      />
+    </div>
   );
 }

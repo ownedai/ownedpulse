@@ -655,10 +655,10 @@ function DateRangeFilter({ dateFrom, dateTo, onApply }) {
               <DateInput value={to} onChange={setTo} />
             </label>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button className="rp-popover-apply" onClick={handleApply}>Apply</button>
+          <div className="rp-date-actions">
+            <button className="rp-date-apply" onClick={handleApply}>Apply</button>
             {(from || to) && (
-              <button onClick={handleClear} style={{ height: 30, padding: '0 10px', background: 'transparent', border: '1px solid var(--doc-border)', borderRadius: 4, color: 'var(--doc-text-2)', fontSize: 12, cursor: 'pointer' }}>Clear</button>
+              <button className="rp-date-clear" onClick={handleClear}>Clear</button>
             )}
           </div>
         </div>

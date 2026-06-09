@@ -894,6 +894,89 @@ body {
   box-shadow: 0 0 0 1px rgba(239,68,68,0.2);
 }
 
+.rp-date-input-group {
+  display: flex;
+  align-items: center;
+  background: var(--doc-bg);
+  border: 1px solid var(--doc-border);
+  border-radius: 3px;
+  padding: 5px 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rp-date-input-group:focus-within {
+  border-color: var(--accent-l);
+}
+
+.rp-date-input-group .rp-date-seg {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  outline: none;
+  width: auto;
+  text-align: center;
+  padding: 0;
+}
+
+.rp-date-input-group .rp-date-seg:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.rp-date-input-group .rp-date-seg-day { width: 3ch; }
+.rp-date-input-group .rp-date-seg-month { width: 3ch; }
+.rp-date-input-group .rp-date-seg-year { width: 5ch; }
+
+.rp-date-dot {
+  color: var(--doc-text-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  user-select: none;
+  cursor: default;
+}
+
+.rp-date-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.rp-date-apply {
+  flex: 1;
+  height: 28px;
+  background: var(--accent-l);
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.rp-date-clear {
+  flex: 1;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--doc-border);
+  border-radius: 3px;
+  color: var(--doc-text-2);
+  font-size: 11px;
+  font-family: var(--sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 /* ── Retrieval settings row ─────────────────────────────────────────────── */
 
 .rp-retrieval {

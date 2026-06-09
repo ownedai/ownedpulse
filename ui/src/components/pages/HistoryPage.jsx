@@ -128,9 +128,9 @@ function DateRangeFilter({ dateFrom, dateTo, onApply }) {
               <DateInput value={to} onChange={setTo} />
             </label>
           </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-            <button className="rp-popover-apply" onClick={handleApply}>Apply</button>
-            {active && <button onClick={handleClear} style={{ width: '100%', height: 28, background: 'transparent', color: 'var(--doc-text-2)', border: '1px solid var(--doc-border)', borderRadius: 4, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--sans)' }}>Clear</button>}
+          <div className="rp-date-actions">
+            <button className="rp-date-apply" onClick={handleApply}>Apply</button>
+            {active && <button className="rp-date-clear" onClick={handleClear}>Clear</button>}
           </div>
         </div>
       )}
