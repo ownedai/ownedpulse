@@ -377,6 +377,7 @@ def generate_query_export_pdf(
     retrieval     = query_response.get("retrieval_params_applied") or {}
     filters_raw   = query_response.get("filters_applied") or {}
     langfuse_id   = query_response.get("langfuse_trace_id") or "—"
+    classifier    = query_response.get("classifier") or "—"
     timestamp_iso = query_response.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
     cited_chunks   = [c for c in citations if     c.get("cited_by_llm")]
@@ -538,6 +539,8 @@ def generate_query_export_pdf(
             ("Inference",        "Ollama (local)"),
             ("Query expansion",  "Enabled" if sub_queries else "Disabled"),
             ("Trace ID",         langfuse_id),
+            ("Routing Path",     routing_label),
+            ("Classifier",       classifier),
         ]
         box_h = max(len(left_rows), len(right_rows)) * 13 + 30
         cy = chk(cy, box_h + 20, fp)
@@ -581,7 +584,8 @@ def generate_query_export_pdf(
                 superseded = chunk.get("superseded", False)
                 title_c    = (chunk.get("document_title") or "—")[:80]
                 agency     = chunk.get("issuing_body") or "—"
-                version    = chunk.get("document_version") or "—"
+                version_raw = chunk.get("document_version") or ""
+                version    = version_raw if (version_raw and version_raw != "1.0") else "—"
                 clause     = chunk.get("clause_id") or "Not available"
                 pub_date   = chunk.get("publication_date") or "Not available"
                 page_no    = str(chunk.get("page_no") or "—")
@@ -726,7 +730,8 @@ def generate_query_export_pdf(
             for idx, chunk in enumerate(uncited_chunks):
                 uc_title    = (chunk.get("document_title") or "—")[:80]
                 uc_agency   = chunk.get("issuing_body") or "—"
-                uc_version  = chunk.get("document_version") or "—"
+                uc_version_raw = chunk.get("document_version") or ""
+                uc_version  = uc_version_raw if (uc_version_raw and uc_version_raw != "1.0") else "—"
                 uc_pub_date = chunk.get("publication_date") or "Not available"
                 uc_clause   = chunk.get("clause_id") or "Not available"
                 uc_page_no  = str(chunk.get("page_no") or "—")

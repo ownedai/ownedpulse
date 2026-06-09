@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.36"
+APP_VERSION = "0.8.37"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -516,13 +516,16 @@ def build_qdrant_filter(filters: QueryFilters | None) -> Optional[Filter]:
 
     # Exclude training materials and concept papers from standard content queries.
     # These remain retrievable when the user applies an explicit document_type filter.
-    must_not: list = []
+    # Also exclude superseded chunks — old chunker versions replaced by reingestion.
+    must_not: list = [
+        FieldCondition(key="chunk_status", match=MatchValue(value="superseded")),
+    ]
     if not (filters and filters.document_type in ("training_material", "concept_paper")):
-        must_not = [
+        must_not.append(
             FieldCondition(key="document_type", match=MatchAny(any=["training_material", "concept_paper"])),
-        ]
+        )
 
-    return Filter(must=conditions, must_not=must_not or None)
+    return Filter(must=conditions, must_not=must_not)
 
 
 async def retrieve_chunks(
@@ -1008,9 +1011,9 @@ async def submit_query(request: QueryRequest):
     # LLM-based query classification
     routing_path, classifier = classify_query(request.query)
     if routing_path == "METADATA":
-        result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval)
+        result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
     else:
-        result = await _run_content_query(query_id, timestamp, request, filters, retrieval)
+        result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
 
     # Persist to query_history
     filters_dict = filters.model_dump() if filters else {}
@@ -1043,6 +1046,8 @@ async def _run_content_query(
     request: QueryRequest,
     filters: QueryFilters,
     retrieval: RetrievalParams,
+    routing_path: str = "CONTENT",
+    classifier: str = "",
 ) -> dict:
     """Execute a CONTENT-path (semantic RAG) query."""
     import time as _time
@@ -1059,7 +1064,7 @@ async def _run_content_query(
                 id=query_id,
                 name="query",
                 input={"query": request.query, "filters": filters.model_dump() if filters else {}},
-                metadata={"routing_path": "CONTENT", "query_depth": retrieval.query_depth},
+                metadata={"routing_path": routing_path, "classifier": classifier, "query_depth": retrieval.query_depth},
             )
     except Exception:
         lf = None
@@ -1303,6 +1308,8 @@ async def _run_metadata_query(
     request: QueryRequest,
     filters: QueryFilters,
     retrieval: RetrievalParams,
+    routing_path: str = "METADATA",
+    classifier: str = "",
 ) -> dict:
     """Execute a METADATA-path query using Qdrant scroll/count and PostgreSQL."""
     import time as _time
@@ -1320,7 +1327,7 @@ async def _run_metadata_query(
                 id=query_id,
                 name="query",
                 input={"query": request.query, "filters": filters.model_dump() if filters else {}},
-                metadata={"routing_path": "METADATA"},
+                metadata={"routing_path": routing_path, "classifier": classifier},
             )
     except Exception:
         lf = None
@@ -2205,7 +2212,7 @@ async def export_query(query_id: str, format: str = "json"):
         cur = conn.cursor()
         cur.execute(
             "SELECT query_text, routing_path, answer, citations, sub_queries, "
-            "filters_applied, retrieval_params, langfuse_trace_id, timestamp "
+            "filters_applied, retrieval_params, langfuse_trace_id, timestamp, classifier "
             "FROM query_history WHERE query_id = %s",
             (query_id,)
         )
@@ -2216,7 +2223,7 @@ async def export_query(query_id: str, format: str = "json"):
             raise HTTPException(status_code=404, detail="Query not found")
 
         (query_text, routing_path, answer, citations, sub_queries,
-         filters_applied, retrieval_params, langfuse_trace_id, timestamp) = row
+         filters_applied, retrieval_params, langfuse_trace_id, timestamp, classifier) = row
 
         citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
         filters_dict = json.loads(filters_applied) if isinstance(filters_applied, str) else (filters_applied or {})
@@ -2247,8 +2254,9 @@ async def export_query(query_id: str, format: str = "json"):
                 "retrieval_params_applied": retrieval_dict,
                 "uncited_chunks": [c for c in citations_list if not c.get("cited_by_llm")],
                 "langfuse_trace_id": langfuse_trace_id,
+                "classifier": classifier or "",
                 "export_timestamp": datetime.now(timezone.utc).isoformat(),
-                "regpulse_version": "0.7.0",
+                "regpulse_version": APP_VERSION,
             }
             return JSONResponse(
                 content=export,
@@ -2269,6 +2277,7 @@ async def export_query(query_id: str, format: str = "json"):
                 "filters_applied":        filters_dict,
                 "retrieval_params_applied": retrieval_dict,
                 "langfuse_trace_id":      langfuse_trace_id,
+                "classifier":             classifier or "",
             }
             pdf_bytes = generate_query_export_pdf(payload)
             filename = f"regpulse-export-{query_id[:8]}.pdf"
