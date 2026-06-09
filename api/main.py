@@ -26,7 +26,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.8.35"
+APP_VERSION = "0.8.36"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -167,6 +167,7 @@ def persist_query(
     langfuse_trace_id: str = "",
     timestamp: str = "",
     model_used: str = "",
+    classifier: str = "",
 ):
     """Persist a query result to query_history. Raises on failure."""
     conn = get_pg_conn()
@@ -175,13 +176,13 @@ def persist_query(
         cur.execute(
             """INSERT INTO query_history
                (query_id, query_text, routing_path, answer, citations,
-                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp, model_used)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp, model_used, classifier)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 query_id, query_text, routing_path, answer,
                 json.dumps(citations), json.dumps(sub_queries),
                 json.dumps(filters_applied), json.dumps(retrieval_params),
-                langfuse_trace_id, timestamp, model_used,
+                langfuse_trace_id, timestamp, model_used, classifier,
             )
         )
         conn.commit()
@@ -334,26 +335,53 @@ def normalise_agency_for_filter(agency: str) -> list[str]:
     return [agency]
 
 
-# ── Metadata query detection ──────────────────────────────────────────────────
+# ── LLM query classifier ───────────────────────────────────────────────────────
 
-METADATA_PATTERNS = [
-    re.compile(r'^how\s+many', re.IGNORECASE),
-    re.compile(r'\bcount\s+(of|all|the)\b', re.IGNORECASE),
-    re.compile(r'\blist\s+(all|the)\b', re.IGNORECASE),
-    re.compile(r'\bwhen\s+was\b', re.IGNORECASE),
-    re.compile(r'\bwhat\s+is\s+the\s+current\b', re.IGNORECASE),
-    re.compile(r'\b(what|which)\s+version\b', re.IGNORECASE),
-    re.compile(r'\bhow\s+much\b', re.IGNORECASE),
-    re.compile(r'\bsearch\s+for\b', re.IGNORECASE),
-    # "What/Which X documents are available / in the knowledge base"
-    re.compile(r'\b(what|which)\b.{0,40}\bdocuments?\b.{0,30}\b(available|in\s+the\s+knowledge\s+base|indexed)\b', re.IGNORECASE),
-    re.compile(r'\b(what|which)\b.{0,40}\b(guidelines?|guidances?)\b.{0,30}\b(available|in\s+the\s+knowledge\s+base|indexed)\b', re.IGNORECASE),
-]
+CLASSIFIER_SYSTEM_PROMPT = (
+    "You are a query classifier for a regulatory document knowledge base. "
+    "Classify the user query into exactly one category:\n"
+    "CONTENT: requires reading document text to answer — explanations, requirements, procedures, what a regulation says\n"
+    "METADATA: requires knowing what documents exist — counts, lists, dates, versions, publication status, which issuing bodies\n"
+    "SUPERSEDE: asks about revision history, what replaced what, changes between versions, or compares document versions\n"
+    "Respond with exactly one word. No punctuation, no explanation."
+)
 
 
-def is_metadata_query(query: str) -> bool:
-    """Detect if a query is asking for metadata, not semantic content."""
-    return any(p.search(query) for p in METADATA_PATTERNS)
+def classify_query(query: str) -> tuple[str, str]:
+    """
+    Classify query routing path using phi4 LLM.
+    Returns (routing_path, classifier_label).
+    Falls back to CONTENT on any error or unrecognised response.
+    SUPERSEDE falls back to CONTENT — no dedicated handler yet.
+    """
+    try:
+        resp = httpx.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={
+                "model": "phi4:14b-q8_0",
+                "prompt": f"Classify this query: {query}",
+                "system": CLASSIFIER_SYSTEM_PROMPT,
+                "stream": False,
+                "options": {"temperature": 0.0, "num_predict": 5},
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        result = resp.json().get("response", "").strip().upper()
+
+        if result in ("CONTENT", "METADATA"):
+            logger.info(f"LLM classifier: '{query[:80]}' → {result}")
+            return result, f"llm:phi4:14b-q8_0"
+        elif result == "SUPERSEDE":
+            logger.info(f"LLM classifier: '{query[:80]}' → SUPERSEDE (fallback to CONTENT — no handler yet)")
+            return "CONTENT", f"llm:phi4:14b-q8_0"
+        else:
+            logger.warning(f"LLM classifier returned unexpected '{result}' — falling back to CONTENT")
+            return "CONTENT", f"llm:phi4:14b-q8_0"
+
+    except Exception as e:
+        logger.error(f"LLM classifier failed: {e} — falling back to CONTENT")
+        return "CONTENT", "fallback:error"
 
 
 # ── Ollama helpers ────────────────────────────────────────────────────────────
@@ -977,8 +1005,9 @@ async def submit_query(request: QueryRequest):
     filters = request.filters or QueryFilters()
     retrieval = request.retrieval_params or RetrievalParams()
 
-    # Determine routing
-    if is_metadata_query(request.query):
+    # LLM-based query classification
+    routing_path, classifier = classify_query(request.query)
+    if routing_path == "METADATA":
         result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval)
     else:
         result = await _run_content_query(query_id, timestamp, request, filters, retrieval)
@@ -999,6 +1028,7 @@ async def submit_query(request: QueryRequest):
             langfuse_trace_id=result.get("langfuse_trace_id", ""),
             timestamp=timestamp,
             model_used=get_active_model(),
+            classifier=classifier,
         )
     except Exception as e:
         logger.error("Failed to persist query %s: %s", query_id, e)

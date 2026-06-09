@@ -44,3 +44,21 @@ These six must all return correct results before Phase G is done:
 6. "List all FDA press releases related to data integrity."
 
 All six must return non-empty answer + citations + correct routing.
+
+---
+
+## Pre-Phase-H Quality Improvements (2026-06-09)
+
+### LLM Query Router (resolved)
+
+Regex-based `is_metadata_query()` replaced with `classify_query()` using `phi4:14b-q8_0` (temperature=0.0). Adds `classifier` column to `query_history`. SUPERSEDE detection works but falls back to CONTENT — dedicated SUPERSEDE path is a future item.
+
+**Impact on clean-install eval:** The 50-question eval re-run should be checked for previously misrouted Category A/B questions that now pass. The LLM router may correct edge-case METADATA detections that the regex patterns missed. If confirmed, add one sentence to README under "Query Intelligence."
+
+### Date Input Redesign (resolved)
+
+Three-field date input (DD.MM.YYYY in one visual box, independently editable segments) deployed across Corpus, History, and Ingestions pages. Per-digit validation, auto-tab, shared button classes.
+
+### PDF Export Fixes (resolved)
+
+Corpus date now derived from most recent `run_log` with `items_new > 0`. Filter dates shown in `dd.mm.yyyy`. Generated timestamp uses local time (CET).
