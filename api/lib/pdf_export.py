@@ -566,17 +566,29 @@ def generate_query_export_pdf(
         cy = cy - box_h - 28
 
         if cited_chunks:
-            cy = chk(cy, 80, fp)
-            cy = _section_header(rc, MARGIN_X, cy,
-                                 f"Source Evidence — {len(cited_chunks)} Cited Source{'s' if len(cited_chunks) != 1 else ''}",
-                                 "")
-            cy -= 4
-            intro = (
-                f"This export contains {len(cited_chunks)} source{'s' if len(cited_chunks) != 1 else ''} "
-                f"cited by the AI in its answer. "
-                f"Provenance metadata is reproduced exactly as recorded at ingestion; "
-                f"verify currency against the live corpus before relying on any source."
+            is_metadata_citation = (routing_path == "METADATA")
+
+            section_heading = (
+                "Referenced Documents"
+                if is_metadata_citation else
+                f"Source Evidence — {len(cited_chunks)} Cited Source{'s' if len(cited_chunks) != 1 else ''}"
             )
+            cy = chk(cy, 80, fp)
+            cy = _section_header(rc, MARGIN_X, cy, section_heading, "")
+            cy -= 4
+            if is_metadata_citation:
+                intro = (
+                    f"{len(cited_chunks)} document{'s' if len(cited_chunks) != 1 else ''} matched from the "
+                    f"document registry. These are document-level references, not retrieved text chunks. "
+                    f"Verify currency against the live corpus before relying on any source."
+                )
+            else:
+                intro = (
+                    f"This export contains {len(cited_chunks)} source{'s' if len(cited_chunks) != 1 else ''} "
+                    f"cited by the AI in its answer. "
+                    f"Provenance metadata is reproduced exactly as recorded at ingestion; "
+                    f"verify currency against the live corpus before relying on any source."
+                )
             cy = _wrapped_text(rc, MARGIN_X, cy, intro, "Inter", 9.5, C_INK_SEC, CONTENT_W, 14.5)
             cy -= 14
 
@@ -602,28 +614,34 @@ def generate_query_export_pdf(
                 truncated     = len(chunk_txt) > DISPLAY_CHARS
                 display_txt   = chunk_txt[:DISPLAY_CHARS] if truncated else chunk_txt
 
-                draw_w  = CONTENT_W - 28
-                ctxt_h  = _measure_wrapped(rc, display_txt or "—", "Mono", 8.5,
-                                           draw_w, 13.5) if display_txt else 14
-                ctxt_h  = min(ctxt_h, max_ln * 13.5)
-                trunc_row     = 14 if truncated else 0
                 META_ROW_H    = 22
                 META_ROWS     = 3
                 HEAD_TOP      = 22
                 HEAD_META_GAP = 24
-                META_CHUNK_GAP = 8
-                ctxt_pad      = 9
-                LBL_H         = 12
-                ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row + LBL_H
-                src_display = source_url[:90] + ("…" if len(source_url) > 90 else "")
-                loc_display = source_local[:80] + ("…" if len(source_local) > 80 else "")
-                trace_max_w   = CONTENT_W - 20
-                src2_h = _measure_wrapped(rc, f"Source  {src_display}", "Mono", 7.5, trace_max_w, 11)
-                src3_h = (_measure_wrapped(rc, f"File  {loc_display}", "Mono", 7.5, trace_max_w, 11)
-                          if source_local else 0)
-                TRACE_BLOCK = 8 + 10 + 11 + src2_h + (11 + src3_h if source_local else 0) + 10
-                card_h = (HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H
-                          + META_CHUNK_GAP + ctxt_box_h + TRACE_BLOCK)
+
+                if is_metadata_citation:
+                    # Compact card: head + metadata grid + footer line — no chunk text, no traces
+                    FOOTER_H   = 16
+                    card_h = HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H + FOOTER_H
+                else:
+                    draw_w  = CONTENT_W - 28
+                    ctxt_h  = _measure_wrapped(rc, display_txt or "—", "Mono", 8.5,
+                                               draw_w, 13.5) if display_txt else 14
+                    ctxt_h  = min(ctxt_h, max_ln * 13.5)
+                    trunc_row     = 14 if truncated else 0
+                    META_CHUNK_GAP = 8
+                    ctxt_pad      = 9
+                    LBL_H         = 12
+                    ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row + LBL_H
+                    src_display = source_url[:90] + ("…" if len(source_url) > 90 else "")
+                    loc_display = source_local[:80] + ("…" if len(source_local) > 80 else "")
+                    trace_max_w   = CONTENT_W - 20
+                    src2_h = _measure_wrapped(rc, f"Source  {src_display}", "Mono", 7.5, trace_max_w, 11)
+                    src3_h = (_measure_wrapped(rc, f"File  {loc_display}", "Mono", 7.5, trace_max_w, 11)
+                              if source_local else 0)
+                    TRACE_BLOCK = 8 + 10 + 11 + src2_h + (11 + src3_h if source_local else 0) + 10
+                    card_h = (HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H
+                              + META_CHUNK_GAP + ctxt_box_h + TRACE_BLOCK)
 
                 cy = chk(cy, card_h + 18, fp)
 
@@ -657,11 +675,19 @@ def generate_query_export_pdf(
 
                 # ── metadata grid 3×3 ─────────────────────────────────────────
                 meta_y = cy - HEAD_TOP - HEAD_META_GAP
-                cells = [
-                    ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
-                    ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
-                    ("Similarity",  score_str),  ("",          ""),            ("",          ""),
-                ]
+                if is_metadata_citation:
+                    doc_id = chunk.get("document_id") or "—"
+                    cells = [
+                        ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
+                        ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
+                        ("Document ID", doc_id[:32]),("",          ""),            ("",          ""),
+                    ]
+                else:
+                    cells = [
+                        ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
+                        ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
+                        ("Similarity",  score_str),  ("",          ""),            ("",          ""),
+                    ]
                 col_w3 = CONTENT_W / 3
                 for ci, (k, v) in enumerate(cells):
                     if not k:
@@ -671,36 +697,43 @@ def generate_query_export_pdf(
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
                     _text(rc, cx3, row_y - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
 
-                # ── chunk text box ────────────────────────────────────────────
-                chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
-                _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
-                      fill=box_bg, stroke=C_BORDER, lw=0.75)
-                # "Chunk text" label at top of box
-                _text(rc, MARGIN_X + 14, chunk_y - 12,
-                      "Chunk text", "Inter-SemiBold", 8.0, C_INK_TER)
-                txt_draw_y = chunk_y - LBL_H - ctxt_pad - 2
-                if truncated:
-                    _text(rc, MARGIN_X + 16, txt_draw_y,
-                          f"[Truncated — first {DISPLAY_CHARS} of {len(chunk_txt)} chars shown."
-                          f" Full text in source document.]",
+                if is_metadata_citation:
+                    # ── document registry reference footer ────────────────────
+                    footer_y = meta_y - META_ROWS * META_ROW_H - 6
+                    _text(rc, MARGIN_X + 14, footer_y,
+                          "Document registry reference  ·  No chunk text retrieved",
                           "Mono", 7.5, C_INK_TER)
-                    txt_draw_y -= 18
-                _wrapped_text(rc, MARGIN_X + 16, txt_draw_y,
-                              (display_txt or "—").replace("\n", " "), "Mono", 8.5,
-                              _rgb("1E293B"), draw_w - 4, 13.5)
+                else:
+                    # ── chunk text box ────────────────────────────────────────
+                    chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
+                    _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
+                          fill=box_bg, stroke=C_BORDER, lw=0.75)
+                    # "Chunk text" label at top of box
+                    _text(rc, MARGIN_X + 14, chunk_y - 12,
+                          "Chunk text", "Inter-SemiBold", 8.0, C_INK_TER)
+                    txt_draw_y = chunk_y - LBL_H - ctxt_pad - 2
+                    if truncated:
+                        _text(rc, MARGIN_X + 16, txt_draw_y,
+                              f"[Truncated — first {DISPLAY_CHARS} of {len(chunk_txt)} chars shown."
+                              f" Full text in source document.]",
+                              "Mono", 7.5, C_INK_TER)
+                        txt_draw_y -= 18
+                    _wrapped_text(rc, MARGIN_X + 16, txt_draw_y,
+                                  (display_txt or "—").replace("\n", " "), "Mono", 8.5,
+                                  _rgb("1E293B"), draw_w - 4, 13.5)
 
-                # ── trace lines (tight below text box) ────────────────────────
-                tl1_y = chunk_y - ctxt_box_h - 8
-                _text(rc, MARGIN_X + 10, tl1_y,
-                      f"Ingested  {chunked_at[:10]}   Trace ID  {trace_id}",
-                      "Mono", 7.5, C_INK_TER)
-                _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11,
-                              f"Source  {src_display}",
-                              "Mono", 7.5, C_INK_TER, trace_max_w, 11)
-                if source_local:
-                    _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11 - src2_h,
-                                  f"File  {loc_display}",
+                    # ── trace lines (tight below text box) ────────────────────
+                    tl1_y = chunk_y - ctxt_box_h - 8
+                    _text(rc, MARGIN_X + 10, tl1_y,
+                          f"Ingested  {chunked_at[:10]}   Trace ID  {trace_id}",
+                          "Mono", 7.5, C_INK_TER)
+                    _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11,
+                                  f"Source  {src_display}",
                                   "Mono", 7.5, C_INK_TER, trace_max_w, 11)
+                    if source_local:
+                        _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11 - src2_h,
+                                      f"File  {loc_display}",
+                                      "Mono", 7.5, C_INK_TER, trace_max_w, 11)
                 cy -= card_h + 18
 
             _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
