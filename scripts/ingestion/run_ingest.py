@@ -232,17 +232,40 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
     dest_tmp = archive_dir / "_download.tmp"
 
     def _stream_to_file(url: str, dest: Path) -> tuple:
-        """Download url → dest, return (sha256_hex, is_pdf)."""
-        r = requests.get(url, headers=req_headers, timeout=120, stream=True)
-        r.raise_for_status()
-        ct = r.headers.get("content-type", "").lower()
-        is_pdf = "pdf" in ct or url.lower().split("?")[0].endswith(".pdf")
-        h = hashlib.sha256()
-        with open(dest, "wb") as fh:
-            for chunk in r.iter_content(8192):
-                fh.write(chunk)
-                h.update(chunk)
-        return h.hexdigest(), is_pdf
+        """Download url → dest with exponential backoff on 429/5xx. Returns (sha256_hex, is_pdf)."""
+        is_ema = "ema.europa.eu" in url
+        base_delay = 10 if is_ema else 5
+        max_attempts = 5 if is_ema else 4
+        for attempt in range(max_attempts):
+            try:
+                r = requests.get(url, headers=req_headers, timeout=120, stream=True)
+            except (requests.ConnectionError, requests.Timeout):
+                if attempt < max_attempts - 1:
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
+                    print(f"  Connection error, retrying in {delay:.0f}s (attempt {attempt+1}/{max_attempts})",
+                          file=sys.stderr)
+                    time.sleep(delay)
+                    continue
+                raise
+            if r.status_code == 429 or r.status_code >= 500:
+                if attempt < max_attempts - 1:
+                    retry_after = r.headers.get("Retry-After", "")
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
+                    if retry_after and retry_after.isdigit():
+                        delay = max(delay, int(retry_after))
+                    print(f"  HTTP {r.status_code}, retrying in {delay:.0f}s (attempt {attempt+1}/{max_attempts})",
+                          file=sys.stderr)
+                    time.sleep(delay)
+                    continue
+            r.raise_for_status()
+            ct = r.headers.get("content-type", "").lower()
+            is_pdf = "pdf" in ct or url.lower().split("?")[0].endswith(".pdf")
+            h = hashlib.sha256()
+            with open(dest, "wb") as fh:
+                for chunk in r.iter_content(8192):
+                    fh.write(chunk)
+                    h.update(chunk)
+            return h.hexdigest(), is_pdf
 
     try:
         new_hash, is_pdf = _stream_to_file(source_url, dest_tmp)
@@ -294,8 +317,15 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
         # Keep metadata.json in sync with the actual saved file format so that
         # run_ingest_v2() routes to the correct ingestion path after redownload.
         new_fmt = "pdf" if is_pdf else "html"
+        new_path = str(archive_dir / ("source.pdf" if is_pdf else "source.html"))
+        changed = False
         if metadata.get("source_file_format") != new_fmt:
             metadata["source_file_format"] = new_fmt
+            changed = True
+        if metadata.get("source_local_path") != new_path:
+            metadata["source_local_path"] = new_path
+            changed = True
+        if changed:
             with open(meta_path, "w") as fh:
                 json.dump(metadata, fh)
 

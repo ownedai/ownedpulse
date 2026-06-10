@@ -40,6 +40,85 @@ def _fmt_dt(dt) -> str | None:
 
 # ── GET /ingestions ───────────────────────────────────────────────────────────
 
+SESSION_GAP_SECONDS = 300  # 5 min gap between run_log rows = new session
+
+
+def _ts_key(ts) -> str:
+    """URL-safe timestamp key: replace '+' with 'p', ':' with 'c'."""
+    return ts.isoformat().replace("+", "p").replace(":", "c")
+
+
+def _detect_sessions(rows: list) -> list:
+    """Group consecutive run_log rows into sessions by gap detection.
+
+    Two consecutive rows belong to the same session if:
+      - Same trigger_source
+      - triggered_at gap < SESSION_GAP_SECONDS
+    """
+    if not rows:
+        return []
+    sessions = []
+    cur_source = None
+    cur_start = None
+    cur_end = None
+    cur_rows = 0
+    cur_succeeded = 0
+    cur_failed = 0
+    run_ids = []
+
+    def flush():
+        nonlocal cur_source, cur_start, cur_end, cur_rows, cur_succeeded, cur_failed, run_ids
+        total = cur_succeeded + cur_failed
+        if cur_failed == 0:
+            grp_status = "success"
+        elif cur_succeeded == 0:
+            grp_status = "error"
+        else:
+            grp_status = "partial"
+        sessions.append({
+            "type": "session_group",
+            "run_token": f"{_ts_key(cur_start)}__{_ts_key(cur_end)}__{cur_source}",
+            "source": cur_source,
+            "triggered_at": cur_start.isoformat(),
+            "status": grp_status,
+            "doc_count": cur_rows,
+            "doc_count_succeeded": cur_succeeded,
+            "doc_count_failed": cur_failed,
+            "_run_ids": list(run_ids),
+        })
+        cur_source = None
+        cur_start = None
+        cur_end = None
+        cur_rows = 0
+        cur_succeeded = 0
+        cur_failed = 0
+        run_ids = []
+
+    for row in rows:
+        ts, source, run_id, run_status = row
+        if cur_source is None:
+            cur_source = source
+            cur_start = ts
+            cur_end = ts
+        elif source != cur_source or (ts - cur_end).total_seconds() >= SESSION_GAP_SECONDS:
+            flush()
+            cur_source = source
+            cur_start = ts
+            cur_end = ts
+        else:
+            cur_end = ts
+        cur_rows += 1
+        if run_status == "success":
+            cur_succeeded += 1
+        elif run_status in ("error", "failed"):
+            cur_failed += 1
+        run_ids.append(run_id)
+
+    if cur_source is not None:
+        flush()
+    return sessions
+
+
 @router.get("")
 async def list_ingestions(
     status: str | None = Query(None),
@@ -54,7 +133,7 @@ async def list_ingestions(
         conn = get_pg_conn()
         cur = conn.cursor()
 
-        # ── Session groups: group manual_cli/bootstrap_ui by date ──────────
+        # ── Session groups: gap-detection on individual run_log rows ───────
         sg_where = ["trigger_source = ANY(%s)"]
         sg_params: list = [list(SESSION_SOURCES)]
         if date_from:
@@ -66,49 +145,25 @@ async def list_ingestions(
 
         cur.execute(
             f"""
-            SELECT
-                trigger_source,
-                (triggered_at AT TIME ZONE 'UTC')::date::text AS grp_date,
-                MIN(triggered_at) AS triggered_at,
-                COUNT(*) AS run_count,
-                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS succeeded,
-                SUM(CASE WHEN status IN ('error','failed') THEN 1 ELSE 0 END) AS failed
+            SELECT triggered_at, trigger_source, run_id, status
             FROM run_log
             WHERE {' AND '.join(sg_where)}
-            GROUP BY trigger_source, (triggered_at AT TIME ZONE 'UTC')::date
-            ORDER BY MIN(triggered_at) DESC
+            ORDER BY trigger_source, triggered_at
             """,
             sg_params
         )
-        session_groups = []
-        for row in cur.fetchall():
-            ts, grp_date, triggered_at, run_count, succeeded, failed = row
-            run_token = f"{grp_date}_{ts}"
-            total = succeeded + failed
-            if failed == 0:
-                grp_status = "success"
-            elif succeeded == 0:
-                grp_status = "error"
-            else:
-                grp_status = "partial"
+        raw_rows = cur.fetchall()
+        session_groups = _detect_sessions(raw_rows)
+        # Drop internal _run_ids from response
+        for sg in session_groups:
+            sg.pop("_run_ids", None)
 
-            if status and grp_status != status:
-                continue
-            if source:
-                allowed = SOURCE_CATEGORIES.get(source, (source,))
-                if ts not in allowed:
-                    continue
-
-            session_groups.append({
-                "type": "session_group",
-                "run_token": run_token,
-                "source": ts,
-                "triggered_at": _fmt_dt(triggered_at),
-                "status": grp_status,
-                "doc_count": int(run_count),
-                "doc_count_succeeded": int(succeeded),
-                "doc_count_failed": int(failed),
-            })
+        # Apply status/source filters post-detection
+        if status:
+            session_groups = [sg for sg in session_groups if sg["status"] == status]
+        if source:
+            allowed = SOURCE_CATEGORIES.get(source, (source,))
+            session_groups = [sg for sg in session_groups if sg["source"] in allowed]
 
         # ── RSS runs: each run_log row for rss/scheduled sources ───────────
         rss_where = ["trigger_source = ANY(%s)"]
@@ -180,28 +235,47 @@ async def session_documents(
     page_size: int = Query(50, ge=1, le=100),
 ):
     """Documents ingested in a session group (bootstrap/manual bulk)."""
-    # run_token = "YYYY-MM-DD_trigger_source"
+    # run_token = "{start_ts_key}__{end_ts_key}__{trigger_source}"
+    # where ts_key = isoformat with +→p, :→- (URL-safe)
+    def _parse_ts_key(key: str):
+        return key.replace("p", "+").replace("c", ":")
     try:
-        parts = run_token.split("_", 1)
-        grp_date = parts[0]
-        trigger_src = parts[1] if len(parts) > 1 else None
-        if not trigger_src:
-            raise HTTPException(status_code=422, detail="Invalid run_token format")
+        from datetime import datetime as _dt
+        parts = run_token.rsplit("__", 2)
+        if len(parts) != 3:
+            raise ValueError("Expected 3 parts")
+        start_ts_str = _parse_ts_key(parts[0])
+        end_ts_str = _parse_ts_key(parts[1])
+        trigger_src = parts[2]
+        start_ts = _dt.fromisoformat(start_ts_str)
+        end_ts = _dt.fromisoformat(end_ts_str)
     except Exception:
-        raise HTTPException(status_code=422, detail="Invalid run_token format")
+        # Fallback: old format "YYYY-MM-DD_trigger_source"
+        try:
+            parts = run_token.split("_", 1)
+            grp_date = parts[0]
+            trigger_src = parts[1] if len(parts) > 1 else None
+            if not trigger_src:
+                raise HTTPException(status_code=422, detail="Invalid run_token format")
+            from datetime import datetime as _dt
+            start_ts = _dt.fromisoformat(f"{grp_date}T00:00:00")
+            end_ts = _dt.fromisoformat(f"{grp_date}T23:59:59.999999")
+        except Exception:
+            raise HTTPException(status_code=422, detail="Invalid run_token format")
 
     try:
         conn = get_pg_conn()
         cur = conn.cursor()
 
-        # Get run_ids for this session group
+        # Get run_ids for this session group using time bounds
         cur.execute(
             """
             SELECT run_id FROM run_log
             WHERE trigger_source = %s
-              AND (triggered_at AT TIME ZONE 'UTC')::date::text = %s
+              AND triggered_at >= %s
+              AND triggered_at <= %s
             """,
-            (trigger_src, grp_date)
+            (trigger_src, start_ts, end_ts)
         )
         run_ids = [str(row[0]) for row in cur.fetchall()]
         if not run_ids:

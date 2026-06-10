@@ -14,7 +14,7 @@ Usage:
 Place this file at: /opt/scripts/ingestion/reingest_pending.py
 """
 
-import sys, json, time, requests, argparse
+import sys, json, time, random, requests, argparse
 sys.path.insert(0, "/opt/scripts")
 
 from pathlib import Path
@@ -30,18 +30,32 @@ from ingestion.ingest import ingest_document
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def get_pending_docs() -> list:
+def get_pending_docs(interleave: bool = False) -> list:
     with pg_conn() as conn:
         with conn.cursor() as c:
             c.execute("""
-                SELECT document_id, archive_path
-                FROM document_registry
+                SELECT document_id, archive_path, feed_id
+                FROM document_registry_ext
                 WHERE ingestion_status = 'pending'
-                -- not_viable is intentionally excluded: requires manual reset to retry
-                -- To retry a not_viable doc: SET ingestion_status = 'pending' in registry
                 ORDER BY document_id
             """)
-            return c.fetchall()
+            rows = c.fetchall()
+    if not interleave:
+        return [(r[0], r[1]) for r in rows]
+    # Round-robin interleave by feed so same-host requests are spaced apart
+    # (e.g. EMA, FDA, ICH, EMA, FDA, ICH, ... instead of all-EMA-then-all-FDA)
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for doc_id, archive_path, feed_id in rows:
+        groups[feed_id or "_unknown"].append((doc_id, archive_path))
+    interleaved = []
+    group_lists = list(groups.values())
+    max_len = max(len(g) for g in group_lists)
+    for i in range(max_len):
+        for g in group_lists:
+            if i < len(g):
+                interleaved.append(g[i])
+    return interleaved
 
 
 def unload_model(model: str):
@@ -82,10 +96,12 @@ def main():
     parser.add_argument("--phase", default="live",
                         choices=["live", "backfill", "manual"],
                         help="Phase label written to Qdrant payload (default: live).")
+    parser.add_argument("--interleave", action="store_true",
+                        help="Round-robin documents by feed to space out same-host requests.")
     args = parser.parse_args()
 
     # ── list pending ──────────────────────────────────────────────────────────
-    pending = get_pending_docs()
+    pending = get_pending_docs(interleave=args.interleave)
     if not pending:
         print("No pending documents. Nothing to do.")
         sys.exit(0)
@@ -151,6 +167,9 @@ def main():
     results = []
 
     for doc_id, archive_path, metadata, meta_built, cls, ct, feed_id in classified:
+        # Rate-limiting: space out EMA requests to avoid 429s
+        if feed_id and "ema" in feed_id.lower():
+            time.sleep(3 + random.uniform(0, 2))
         print(f"\n  [{ct.upper()}] {doc_id}")
         try:
             if ct == "html":

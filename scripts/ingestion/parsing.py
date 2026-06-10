@@ -32,6 +32,12 @@ def parse_document(meta: dict) -> tuple:
 
     # Submit
     fmt = meta.get('source_file_format', 'pdf')
+    # source_local_path can be stale after redownload changes format (html→pdf).
+    # Fall back to the archive source file that actually exists on disk.
+    if not Path(source_path).exists():
+        fallback = archive / ("source.pdf" if fmt == "pdf" else "source.html")
+        if fallback.exists():
+            source_path = str(fallback)
     mime = 'text/html' if fmt in ('html', 'xml') else 'application/pdf'
     upload_name = 'source.html' if fmt in ('html', 'xml') else Path(source_path).name
     with open(source_path, 'rb') as f:
