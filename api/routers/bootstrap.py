@@ -350,10 +350,8 @@ def _interleave_docs(docs: list) -> list:
 
 def _build_doc_list(scope: BootstrapScope) -> list:
     conditions = []
-    if scope.fda_guidance:
-        conditions.append("(issuing_body = 'FDA' AND doc_type NOT IN ('press_release', 'news_item'))")
-    if scope.fda_press:
-        conditions.append("(issuing_body = 'FDA' AND doc_type IN ('press_release', 'news_item'))")
+    if scope.fda_guidance or scope.fda_press:
+        conditions.append("issuing_body = 'FDA'")
     if scope.ema:
         conditions.append("issuing_body IN ('EMA', 'EU-Commission')")
     if scope.ich:
