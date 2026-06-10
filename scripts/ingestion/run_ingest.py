@@ -43,6 +43,17 @@ def _mark_error(doc_id: str, error: str) -> None:
         )
         conn.autocommit = True
         with conn.cursor() as cur:
+            # GATE3b: write error state to ingestion_state
+            cur.execute(
+                "INSERT INTO ingestion_state (document_id, ingestion_status, ingestion_error, updated_at) "
+                "VALUES (%s, 'error', %s, NOW()) "
+                "ON CONFLICT (document_id) DO UPDATE SET "
+                "ingestion_status = 'error', "
+                "ingestion_error  = EXCLUDED.ingestion_error, "
+                "updated_at       = NOW()",
+                (doc_id, error[:500]),
+            )
+            # GATE3b: dormant write pending Gate 5 column drop
             cur.execute(
                 "UPDATE document_registry "
                 "SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW() "
@@ -456,8 +467,8 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
         "document_title":     metadata.get("document_title","") or metadata.get("title",""),
         "document_class":     "regulatory",
         "document_type":      get_document_type(cls["doc_type"]),
-        "document_status":    metadata.get("chunk_status","active") == "superseded" and "superseded" or "final",
-        "document_version":   metadata.get("document_version","") or metadata.get("version","") or "1.0",
+        "document_status":    metadata.get("chunk_status","active") == "superseded" and "superseded" or "active",
+        "document_version":   metadata.get("document_version","") or metadata.get("version","") or "",
         "document_family_id": metadata.get("document_family_id",""),
         "superseded_by":      metadata.get("superseded_by",""),
         "language":           "en",
@@ -621,7 +632,7 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
                 "document_class":meta.get("document_class","regulatory"),
                 "document_type":meta.get("document_type","other"),
                 "document_status":meta.get("document_status","final"),
-                "document_version":meta.get("document_version","1.0"),
+                "document_version":meta.get("document_version",""),
                 "document_family_id":meta.get("document_family_id",""),
                 "language":"en",
                 "source_local_path":str(source),
@@ -653,12 +664,35 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
         jsonl_path.write_text(lines, encoding="utf-8")
         with pg_conn() as conn:
             with conn.cursor() as c:
+                # GATE3b: classification columns stay in document_registry (identity)
+                c.execute(
+                    "UPDATE document_registry SET "
+                    "doc_type=%s, classifier_confidence=%s, classified_by=%s, "
+                    "doc_type_classified_at=NOW(), updated_at=NOW() "
+                    "WHERE document_id=%s",
+                    (cls["doc_type"], cls["classifier_confidence"], "llm", doc_id)
+                )
+                # GATE3b: ingestion state → ingestion_state
+                c.execute(
+                    "INSERT INTO ingestion_state "
+                    "(document_id, ingestion_status, chunk_count, last_indexed_at, "
+                    " chunker_version, run_id, updated_at) "
+                    "VALUES (%s, 'indexed', %s, NOW(), %s, %s, NOW()) "
+                    "ON CONFLICT (document_id) DO UPDATE SET "
+                    "ingestion_status = 'indexed', "
+                    "chunk_count      = EXCLUDED.chunk_count, "
+                    "last_indexed_at  = EXCLUDED.last_indexed_at, "
+                    "chunker_version  = EXCLUDED.chunker_version, "
+                    "run_id           = EXCLUDED.run_id, "
+                    "ingestion_error  = NULL, "
+                    "updated_at       = NOW()",
+                    (doc_id, len(chunks), CHUNKER_VERSION, trace_id or None)
+                )
+                # GATE3b: dormant write pending Gate 5 column drop
                 c.execute(
                     "UPDATE document_registry SET ingestion_status=%s, chunk_count=%s, "
-                    "doc_type=%s, classifier_confidence=%s, classified_by=%s, "
-                    "doc_type_classified_at=NOW(), last_indexed_at=NOW(), updated_at=NOW() WHERE document_id=%s",
-                    ("indexed", len(chunks), cls["doc_type"],
-                     cls["classifier_confidence"], "llm", doc_id)
+                    "last_indexed_at=NOW(), updated_at=NOW() WHERE document_id=%s",
+                    ("indexed", len(chunks), doc_id)
                 )
 
         if doc_span:
@@ -671,6 +705,17 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
         try:
             with pg_conn() as conn:
                 with conn.cursor() as c:
+                    # GATE3b: write error state to ingestion_state
+                    c.execute(
+                        "INSERT INTO ingestion_state (document_id, ingestion_status, ingestion_error, updated_at) "
+                        "VALUES (%s, 'error', %s, NOW()) "
+                        "ON CONFLICT (document_id) DO UPDATE SET "
+                        "ingestion_status = 'error', "
+                        "ingestion_error  = EXCLUDED.ingestion_error, "
+                        "updated_at       = NOW()",
+                        (doc_id, err_msg),
+                    )
+                    # GATE3b: dormant write pending Gate 5 column drop
                     c.execute(
                         "UPDATE document_registry "
                         "SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW() "

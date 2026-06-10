@@ -2,7 +2,9 @@
 
 import os
 import uuid
+import subprocess
 import threading
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +12,8 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 from lib import ingestion_lock
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -67,7 +71,7 @@ async def bootstrap_status():
                     last_indexed_at,
                     metadata_json->>'document_title' AS document_title,
                     publication_date
-                FROM document_registry
+                FROM document_registry_ext
                 WHERE corpus_doc = TRUE
                 ORDER BY issuing_body, document_id
             """)
@@ -93,7 +97,7 @@ async def bootstrap_status():
                         WHERE dr.ingestion_status IN ('indexed', 'success')
                     ) AS last_indexed_at
                 FROM feed_config fc
-                LEFT JOIN document_registry dr ON dr.feed_id = fc.feed_id
+                LEFT JOIN document_registry_ext dr ON dr.feed_id = fc.feed_id
                 GROUP BY fc.feed_id, fc.name, fc.enabled, fc.last_run_at
                 ORDER BY fc.feed_id
             """)
@@ -177,7 +181,7 @@ async def date_estimate(
 
             where = " AND ".join(conditions)
             cur.execute(
-                f"SELECT COUNT(*), COALESCE(SUM(chunk_count), 0) FROM document_registry WHERE {where}",
+                f"SELECT COUNT(*), COALESCE(SUM(chunk_count), 0) FROM document_registry_ext WHERE {where}",
                 params,
             )
             row = cur.fetchone()
@@ -280,6 +284,45 @@ async def sources_bootstrap(body: BootstrapRequest):
                 detail=f"Bootstrap already running (session {sid}). Wait for it to complete.",
             )
 
+    # ── Discovery phase ──────────────────────────────────────────────────────
+    # Run feed discovery (fetch → download → archive → register) for each
+    # selected RSS feed before reading document_registry. This populates the
+    # registry so _build_doc_list_from_scope() finds the newly discovered docs.
+    for feed_entry in body.rss_feeds:
+        feed_id = feed_entry.feed_id
+        if not feed_id:
+            continue
+
+        months_override = None
+        if feed_entry.date_from:
+            try:
+                dt_from = datetime.fromisoformat(feed_entry.date_from).replace(tzinfo=timezone.utc)
+                months_override = int((datetime.now(timezone.utc) - dt_from).days / 30.44) + 1
+            except Exception:
+                pass
+
+        cmd = [
+            "python3", "/opt/scripts/rss/run_pipeline.py",
+            "--feed-id", feed_id,
+            "--mode", "backfill",
+            "--trigger-source", "bootstrap_ui",
+            "--triggered-by", "bootstrap_ui",
+        ]
+        if months_override is not None:
+            cmd.extend(["--months-override", str(months_override)])
+
+        logger.info(f"Bootstrap discovery: feed={feed_id} months={months_override or 'default'}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode != 0:
+                logger.error(f"Bootstrap discovery failed for {feed_id}: {result.stderr[-500:]}")
+            else:
+                logger.info(f"Bootstrap discovery complete for {feed_id}")
+        except subprocess.TimeoutExpired:
+            logger.error(f"Bootstrap discovery timed out for {feed_id} — proceeding with registered docs")
+        except Exception as e:
+            logger.error(f"Bootstrap discovery error for {feed_id}: {e}")
+
     docs = _build_doc_list_from_scope(body.base_corpus, body.rss_feeds)
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
@@ -305,6 +348,12 @@ async def sources_bootstrap(body: BootstrapRequest):
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
+            # GATE3c: delete ingestion_state rows — absence = not indexed
+            cur.execute(
+                "DELETE FROM ingestion_state WHERE document_id = ANY(%s)",
+                (doc_ids,),
+            )
+            # GATE3b/3c: dormant write pending Gate 5 column drop
             cur.execute(
                 "UPDATE document_registry SET ingestion_status = 'pending', chunk_count = 0, last_indexed_at = NULL WHERE document_id = ANY(%s)",
                 (doc_ids,),

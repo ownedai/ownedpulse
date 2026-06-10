@@ -187,7 +187,12 @@ export default function BootstrapModal({ onClose, onStarted }) {
     if (!loading) refreshEstimate();
   }, [selectedFeeds, dateWindow, customFromYear, customToYear, loading, refreshEstimate]);
 
-  // Cleanup on unmount
+  // Notify other pages when bootstrap completes (e.g. CorpusPage auto-refresh)
+  useEffect(() => {
+    if (uiMode === 'complete') {
+      window.dispatchEvent(new CustomEvent('regpulse:bootstrap-complete'));
+    }
+  }, [uiMode]);
   useEffect(() => () => {
     if (estimateTimeoutRef.current) clearTimeout(estimateTimeoutRef.current);
     if (estimateAbortRef.current) estimateAbortRef.current.abort();
@@ -451,7 +456,9 @@ export default function BootstrapModal({ onClose, onStarted }) {
                             <span className="cls">{feed.label}</span>
                             <span className="cnt" style={{ fontStyle: 'italic', marginRight: 6 }}>{feed.description}</span>
                             <span className="cnt">
-                              {feed.doc_count.toLocaleString()} docs
+                              {feed.doc_count > 0
+                                ? `${feed.doc_count.toLocaleString()} docs`
+                                : '— docs'}
                               {feed.date_min && feed.date_max && (
                                 <> · {feed.date_min.slice(0, 4)}–{feed.date_max.slice(0, 4)}</>
                               )}

@@ -17,6 +17,7 @@ from .extraction import (
     compute_char_offsets, extract_provenance,
 )
 from .payload import build_payload
+from .chunk_archive import upsert_chunks_pg
 from .embedding import embed
 from .qdrant_client import get_client
 
@@ -77,6 +78,11 @@ def supersede_old_chunks(doc_id: str, old_version: str, new_version: str) -> int
             points=[pt.id],
         )
 
+    # Mirror supersede to PostgreSQL — keeps PG in sync with Qdrant
+    from .chunk_archive import supersede_chunks_pg
+    chunk_ids = [str(pt.id) for pt in active]
+    supersede_chunks_pg(chunk_ids)
+
     print(f'  Superseded {len(active)} chunks: {doc_id} {old_version} -> {new_version}')
     return len(active)
 
@@ -126,6 +132,10 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
         max_tok = 200 if meta.get('document_id') == '21-CFR-Part-11' else None
         chunks = chunk_document(doc, max_tokens=max_tok) if max_tok else chunk_document(doc)
         print(f'C3: {len(chunks)} chunks')
+
+        # C3b — Split trapped sub-clauses (B-DV1)
+        from .subclause_splitter import split_trapped_subclauses
+        chunks = split_trapped_subclauses(chunks)
 
     # Carry-forward clause_id for sub-heading chunks (Annex 15 pattern)
         # Sub-sections with text-only headings inherit nearest preceding numbered clause
@@ -177,9 +187,17 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
             if (i + 1) % 5 == 0 or i == len(chunks) - 1:
                 print(f'  [{i+1}/{len(chunks)}] {clause_id or "—"}')
 
+        # Post-pass: fix zero-length char_offset spans (table chunks where extraction fell through)
+        for j in range(len(points) - 1):
+            cs = points[j].payload['char_offset_start']
+            ce = points[j].payload['char_offset_end']
+            if cs == ce:
+                points[j].payload['char_offset_end'] = points[j + 1].payload['char_offset_start']
+
         # Batch upsert to Qdrant
         get_client().upsert(collection_name=QDRANT_COLLECTION, points=points)
-        print(f'Qdrant: {len(points)} upserted')
+        upsert_chunks_pg(points)
+        print(f'Qdrant: {len(points)} upserted (+ PG)')
 
         # Write JSONL replay file
         chunks_dir = Path(meta['archive_path']) / 'chunks'
@@ -279,6 +297,16 @@ def supersede_by_family_id(new_doc_id: str, family_id: str,
         try:
             with pg_conn() as conn:
                 with conn.cursor() as cur:
+                    # GATE3c: write superseded status to ingestion_state
+                    cur.execute(
+                        "INSERT INTO ingestion_state (document_id, ingestion_status, updated_at) "
+                        "VALUES (%s, 'superseded', NOW()) "
+                        "ON CONFLICT (document_id) DO UPDATE SET "
+                        "ingestion_status = 'superseded', "
+                        "updated_at = NOW()",
+                        (doc_id,),
+                    )
+                    # GATE3b: dormant write pending Gate 5 column drop
                     cur.execute(
                         "UPDATE document_registry SET ingestion_status = 'superseded', "
                         "updated_at = NOW() WHERE document_id = %s",

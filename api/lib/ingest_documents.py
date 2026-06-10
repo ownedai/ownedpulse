@@ -53,7 +53,7 @@ _INTERMEDIATE_DOC_STATUSES = ('parsing', 'chunking', 'embedding', 'uploading', '
 def _resolve_stale_spans(doc_id: str, trace_id: str, reason: str):
     """After a subprocess error, mark any lingering pending/intermediate rows as failed.
 
-    run_ingest.py sets ingestion_doc.status='pending' and document_registry.ingestion_status
+    run_ingest.py sets ingestion_doc.status='pending' and ingestion_state.ingestion_status
     to intermediate values at start. If the subprocess crashes or times out, those rows
     are never finalised. This cleans them up so the document shows a terminal state.
     """
@@ -68,6 +68,14 @@ def _resolve_stale_spans(doc_id: str, trace_id: str, reason: str):
                WHERE doc_id = %s AND trace_id::text = %s AND status = 'pending'""",
             (short_reason, doc_id, trace_id),
         )
+        # GATE3b: write error state to ingestion_state
+        cur.execute(
+            """UPDATE ingestion_state
+               SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW()
+               WHERE document_id = %s AND ingestion_status = ANY(%s)""",
+            (short_reason, doc_id, list(_INTERMEDIATE_DOC_STATUSES)),
+        )
+        # GATE3b: dormant write pending Gate 5 column drop
         cur.execute(
             """UPDATE document_registry
                SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW()
@@ -163,6 +171,7 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
             triggered_by=triggered_by,
             workflow_id=workflow_id,
             workflow_execution_id=workflow_execution_id,
+            doc_id=doc_id,
         )
 
         ok, detail = None, None
@@ -171,7 +180,16 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
             chunk_count = r.get("chunk_count", r.get("chunks", 0))
             status = r.get("status", "error")
 
-            if status == "ok":
+            if status == "ok" and r.get("note") == "already ingested":
+                ok = None
+                detail = r.get("note")
+                trace.finalize(
+                    status="skipped",
+                    doc_count_attempted=1,
+                    doc_count_succeeded=0,
+                    doc_count_failed=0,
+                )
+            elif status == "ok":
                 ok = True
                 trace.finalize(
                     status="success",

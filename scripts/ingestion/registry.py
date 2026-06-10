@@ -91,16 +91,28 @@ def mark_document_not_viable(doc_id: str, reason: str) -> None:
 
 
 def update_ingestion_status(doc_id: str, status: str, **fields) -> None:
-    """Update ingestion_status and optional fields in registry."""
-    clauses = ['ingestion_status = %s', 'updated_at = NOW()']
-    params = [status]
+    """Update ingestion_status and optional fields in ingestion_state."""
+    # GATE3b: write to ingestion_state instead of document_registry
+    insert_cols = ['document_id', 'ingestion_status', 'updated_at']
+    insert_vals = ['%s', '%s', 'NOW()']
+    update_clauses = ['ingestion_status = EXCLUDED.ingestion_status', 'updated_at = NOW()']
+    params = [doc_id, status]
     for k, v in fields.items():
-        clauses.append(f'{k} = %s')
+        insert_cols.append(k)
+        insert_vals.append('%s')
+        update_clauses.append(f'{k} = EXCLUDED.{k}')
         params.append(v)
-    params.append(doc_id)
+    sql = (
+        f"INSERT INTO ingestion_state ({', '.join(insert_cols)}) "
+        f"VALUES ({', '.join(insert_vals)}) "
+        f"ON CONFLICT (document_id) DO UPDATE SET {', '.join(update_clauses)}"
+    )
     with pg_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute(sql, params)
+            # GATE3b: dormant write pending Gate 5 column drop
             cur.execute(
-                f'UPDATE document_registry SET {", ".join(clauses)} WHERE document_id = %s',
-                params
+                f'UPDATE document_registry SET ingestion_status = %s, updated_at = NOW() '
+                f'WHERE document_id = %s',
+                [status, doc_id],
             )

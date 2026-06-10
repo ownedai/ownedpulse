@@ -282,6 +282,13 @@ export default function CorpusPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Auto-refresh when bootstrap ingestion completes
+  useEffect(() => {
+    const handler = () => fetchData();
+    window.addEventListener('regpulse:bootstrap-complete', handler);
+    return () => window.removeEventListener('regpulse:bootstrap-complete', handler);
+  }, [fetchData]);
+
   async function handleDefer(docId) {
     setActionBusy(docId);
     try { await deferDocument(docId); fetchData(); } catch (e) { alert(e.message); }
@@ -382,7 +389,7 @@ export default function CorpusPage() {
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
                   {DOC_TYPE_LABELS[doc.doc_type] || DOC_TYPE_LABELS[doc.document_type] || (doc.doc_type || '—').replace(/_/g, ' ')}
                 </td>
-                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version || '—'}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                   {isFutureDate(doc.publication_date) ? (
                     <Tooltip tip="Future effective date — this document is not yet in force">

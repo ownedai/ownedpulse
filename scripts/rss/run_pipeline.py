@@ -49,17 +49,18 @@ def run(cmd, stdin_data=None, timeout=120):
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def fetch_items(feed_id: str, run_id: str, mode: str, trigger_source: str, triggered_by: str):
+def fetch_items(feed_id: str, run_id: str, mode: str, trigger_source: str, triggered_by: str,
+                 months_override: int = None):
     """Call fetch_feed.py. Returns list of items. run_log row created internally."""
-    rc, stdout, stderr = run(
-        [PYTHON, FETCH_FEED,
-         "--feed-id", feed_id,
-         "--mode", mode,
-         "--run-id", run_id,
-         "--trigger-source", trigger_source,
-         "--triggered-by", triggered_by],
-        timeout=120,
-    )
+    cmd = [PYTHON, FETCH_FEED,
+           "--feed-id", feed_id,
+           "--mode", mode,
+           "--run-id", run_id,
+           "--trigger-source", trigger_source,
+           "--triggered-by", triggered_by]
+    if months_override is not None:
+        cmd.extend(["--months-override", str(months_override)])
+    rc, stdout, stderr = run(cmd, timeout=120)
     if rc != 0:
         raise RuntimeError(f"fetch_feed failed rc={rc}: {stderr.decode()[:400]}")
     try:
@@ -114,7 +115,7 @@ def get_failed_doc_ids(feed_id: str) -> list:
         conn = pg_conn()
         with conn.cursor() as c:
             c.execute(
-                "SELECT document_id FROM document_registry "
+                "SELECT document_id FROM document_registry_ext "
                 "WHERE feed_id = %s AND ingestion_status = 'failed' "
                 "ORDER BY updated_at ASC",
                 (feed_id,)
@@ -164,21 +165,18 @@ def _make_doc_id(feed_id: str, url: str) -> str:
 def _register_unsupported(item: dict, resolved: dict, doc_id: str):
     """Register an unsupported document so it is not re-fetched."""
     from datetime import datetime, timezone
+    reason = resolved.get("reason", "Unsupported file format")
     conn = pg_conn()
     conn.autocommit = True
     with conn.cursor() as c:
+        # GATE3d: identity-only insert — state columns removed
         c.execute(
             """INSERT INTO document_registry
                (document_id, source_url, feed_id, issuing_body,
                 document_class, document_type, document_status,
-                metadata_json, ingestion_status, ingestion_error,
-                created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
-               ON CONFLICT (document_id) DO UPDATE SET
-               ingestion_status = EXCLUDED.ingestion_status,
-               ingestion_error = EXCLUDED.ingestion_error,
-               updated_at = NOW()
-               WHERE document_registry.ingestion_status NOT IN ('indexed','success')""",
+                metadata_json, created_at, updated_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+               ON CONFLICT (document_id) DO NOTHING""",
             (doc_id,
              item.get("url", ""),
              item.get("feed_id", ""),
@@ -187,9 +185,17 @@ def _register_unsupported(item: dict, resolved: dict, doc_id: str):
              item.get("default_doc_type", "other"),
              "final",
              json.dumps({"doc_id": doc_id, "feed_id": item.get("feed_id", "")}),
-             "unsupported",
-             resolved.get("reason", "Unsupported file format"),
              ),
+        )
+        # GATE3d: write 'unsupported' status to ingestion_state
+        c.execute(
+            """INSERT INTO ingestion_state (document_id, ingestion_status, ingestion_error, updated_at)
+               VALUES (%s, 'unsupported', %s, NOW())
+               ON CONFLICT (document_id) DO UPDATE SET
+                   ingestion_status = 'unsupported',
+                   ingestion_error  = EXCLUDED.ingestion_error,
+                   updated_at       = NOW()""",
+            (doc_id, reason),
         )
     conn.close()
 
@@ -202,6 +208,8 @@ def main():
     parser.add_argument("--trigger-source", default="scheduled",
                         choices=["scheduled", "manual", "manual_cli", "bootstrap_ui"])
     parser.add_argument("--triggered-by", default="scheduler")
+    parser.add_argument("--months-override", type=int, default=None,
+                        help="Override backfill depth in months (forwarded to fetch_feed.py)")
     args = parser.parse_args()
 
     run_id = args.run_id or str(uuid.uuid4())
@@ -209,7 +217,8 @@ def main():
 
     # Step 1: Fetch — creates run_log row, returns new items
     try:
-        items = fetch_items(args.feed_id, run_id, args.mode, args.trigger_source, args.triggered_by)
+        items = fetch_items(args.feed_id, run_id, args.mode, args.trigger_source, args.triggered_by,
+                            months_override=args.months_override)
     except Exception as e:
         logger.error(f"Fetch failed: {e}")
         sys.exit(1)

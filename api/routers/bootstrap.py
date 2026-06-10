@@ -76,7 +76,7 @@ async def bootstrap_state():
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT count(*) FROM document_registry WHERE ingestion_status IN ('indexed', 'success')")
+            cur.execute("SELECT count(*) FROM document_registry_ext WHERE ingestion_status IN ('indexed', 'success')")
             doc_count = cur.fetchone()[0]
             # Bootstrap doc count: documents currently in registry that were
             # ingested via bootstrap_ui (not RSS scheduler or manual CLI runs).
@@ -84,7 +84,7 @@ async def bootstrap_state():
             cur.execute(
                 """
                 SELECT COUNT(d.document_id), MAX(r.triggered_at)
-                FROM document_registry d
+                FROM document_registry_ext d
                 JOIN run_log r ON d.run_id = r.run_id
                 WHERE r.trigger_source = 'bootstrap_ui'
                   AND d.ingestion_status IN ('indexed', 'success')
@@ -141,7 +141,7 @@ async def corpus_summary():
             cur.execute(
                 """
                 SELECT issuing_body, doc_type, count(*)
-                FROM document_registry
+                FROM document_registry_ext
                 WHERE ingestion_status IN ('indexed', 'success')
                 GROUP BY issuing_body, doc_type
                 ORDER BY issuing_body, count(*) DESC
@@ -164,7 +164,7 @@ async def corpus_summary():
                 SELECT issuing_body,
                        min((metadata_json->>'publication_date')::text),
                        max((metadata_json->>'publication_date')::text)
-                FROM document_registry
+                FROM document_registry_ext
                 WHERE ingestion_status IN ('indexed', 'success')
                   AND metadata_json->>'publication_date' IS NOT NULL
                   AND metadata_json->>'publication_date' != ''

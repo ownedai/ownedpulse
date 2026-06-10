@@ -3,11 +3,15 @@
 import os
 import uuid
 import json
+import logging
+import subprocess
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from lib import ingestion_lock
+
+logger = logging.getLogger("regpulse.admin")
 
 router = APIRouter()
 
@@ -80,7 +84,7 @@ async def admin_health():
             cur = conn.cursor()
             cur.execute("SELECT count(*) FROM document_registry")
             document_count = cur.fetchone()[0]
-            cur.execute("SELECT max(last_indexed_at) FROM document_registry")
+            cur.execute("SELECT max(last_indexed_at) FROM document_registry_ext")
             last_ingestion = cur.fetchone()[0]
             cur.close()
             result["postgres"] = {
@@ -406,6 +410,96 @@ async def admin_warmup():
     asyncio.create_task(_load())
     asyncio.create_task(_load_embed())
     return {"status": "warmup initiated", "model": active_model, "embed_model": "mxbai-embed-large"}
+
+
+# ── POST /admin/reset-corpus ──────────────────────────────────────────────────
+
+class ResetCorpusRequest(BaseModel):
+    confirm: bool = False
+
+
+@router.post("/reset-corpus")
+async def admin_reset_corpus(body: ResetCorpusRequest):
+    """
+    Destructive reset: wipes Qdrant collection, truncates run_log and
+    ingestion_doc tables, then re-seeds document_registry from archive metadata.
+    Requires confirm=true. Blocks if ingestion is running.
+    """
+    if not body.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Set confirm=true to proceed. This will wipe all Qdrant chunks, "
+                   "run_log, and ingestion_doc tables."
+        )
+
+    lock_st = ingestion_lock.state()
+    if lock_st["active"]:
+        raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
+
+    result: dict = {
+        "qdrant_wiped": False,
+        "tables_truncated": [],
+        "registry_reset": 0,
+        "base_corpus_seeded": 0,
+        "seed_registry_ok": False,
+    }
+
+    # 1. Wipe Qdrant collection
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        client.delete_collection(QDRANT_COLLECTION)
+        result["qdrant_wiped"] = True
+        logger.info("Qdrant collection '%s' deleted", QDRANT_COLLECTION)
+    except Exception as e:
+        logger.error("Qdrant wipe failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Qdrant wipe failed: {e}")
+
+    # 2. Truncate trace tables and ingestion_state
+    conn = get_pg_conn()
+    try:
+        cur = conn.cursor()
+        for table in ["run_log", "ingestion_doc", "ingestion_state"]:
+            cur.execute(f"TRUNCATE TABLE {table}")
+            result["tables_truncated"].append(table)
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Table truncate failed: {e}")
+    finally:
+        if not conn.closed:
+            conn.close()
+
+    # 3. Re-seed document_registry from archive metadata
+    try:
+        seed_result = subprocess.run(
+            ["python3", "/opt/scripts/registry/seed_registry.py"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if seed_result.returncode != 0:
+            logger.error("seed_registry.py failed after reset: %s", seed_result.stderr)
+        else:
+            result["seed_registry_ok"] = True
+            logger.info("seed_registry.py completed after reset")
+    except subprocess.TimeoutExpired:
+        logger.error("seed_registry.py timed out after reset")
+    except Exception as e:
+        logger.error("seed_registry.py failed after reset: %s", e)
+
+    # 4. Count re-seeded documents
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM document_registry")
+            result["base_corpus_seeded"] = cur.fetchone()[0]
+            cur.close()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error("Post-reset count query failed: %s", e)
+
+    return result
 
 
 # ── GET /admin/scheduler/status ───────────────────────────────────────────────

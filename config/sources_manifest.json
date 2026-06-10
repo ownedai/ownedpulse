@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "description": "Authoritative source-feed registry for RegPulse. Gates the RSS archive scan (only feeds listed here are seeded into document_registry) and provides per-feed identity defaults for metadata.json files that lack document_type/class/status.",
+  "feeds": [
+    {
+      "feed_id": "fda_press_releases",
+      "name": "FDA Press Releases",
+      "authority": "FDA",
+      "feed_type": "rss",
+      "feed_url": "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml",
+      "default_document_class": "regulatory-public",
+      "default_document_type": "press-release",
+      "default_document_status": "final"
+    },
+    {
+      "feed_id": "ema_sci_guidelines",
+      "name": "EMA Scientific Guidelines",
+      "authority": "EMA",
+      "feed_type": "rss",
+      "feed_url": "https://www.ema.europa.eu/en/scientific-guidelines.xml",
+      "default_document_class": "regulatory-public",
+      "default_document_type": "guidance",
+      "default_document_status": "final"
+    },
+    {
+      "feed_id": "ema_reg_guidance",
+      "name": "EMA Regulatory Guidance",
+      "authority": "EMA",
+      "feed_type": "rss",
+      "feed_url": "https://www.ema.europa.eu/en/regulatory-and-procedural-guideline.xml",
+      "default_document_class": "regulatory-public",
+      "default_document_type": "guidance",
+      "default_document_status": "final"
+    },
+    {
+      "feed_id": "ich_guidelines",
+      "name": "ICH Guidelines",
+      "authority": "ICH",
+      "feed_type": "json_api",
+      "feed_url": "https://admin.ich.org/api/v1/nodes",
+      "default_document_class": "regulatory-public",
+      "default_document_type": "guidance",
+      "default_document_status": "final"
+    }
+  ]
+}

@@ -60,31 +60,36 @@ def register(item: dict, archive_dir: Path, content_type: str):
     pub_date = _parse_date(raw_date) or _date_from_url(item.get('url', ''))
     conn = get_kb()
     with conn.cursor() as c:
+        # GATE3b: identity-only upsert — state columns removed
         c.execute(
             'INSERT INTO document_registry '
             '(document_id, source_url, source_hash, source_fetched_at, '
             'archive_path, issuing_body, feed_id, '
             'document_class, document_type, document_status, document_version, '
-            'metadata_json, ingestion_status, ingestion_error, publication_date, created_at, updated_at) '
-            'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW()) '
+            'metadata_json, publication_date, created_at, updated_at) '
+            'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW()) '
             'ON CONFLICT (document_id) DO UPDATE SET '
             'source_url=EXCLUDED.source_url, source_hash=EXCLUDED.source_hash, '
             'source_fetched_at=EXCLUDED.source_fetched_at, archive_path=EXCLUDED.archive_path, '
             'publication_date=COALESCE(EXCLUDED.publication_date, document_registry.publication_date), '
-            'ingestion_status=CASE '
-            '  WHEN document_registry.ingestion_status IN (\'indexed\',\'success\') '
-            '  THEN document_registry.ingestion_status '
-            '  ELSE %s END, '
-            'ingestion_error=NULL, updated_at=NOW()',
+            'updated_at=NOW()',
             (
                 item['doc_id'], item.get('pdf_url') or item.get('url',''), item.get('sha256',''),
                 datetime.now(timezone.utc), str(archive_dir),
                 item.get('authority',''), item.get('feed_id',''),
-                'regulatory', content_type, 'final',
+                'regulatory', content_type, 'active',
                 meta.get('version',''),
                 json.dumps({'doc_id': item['doc_id'], 'feed_id': item.get('feed_id','')}),
-                'pending', None, pub_date, 'pending',
+                pub_date,
             )
+        )
+        # GATE3b: seed ingestion_state separately — DO NOTHING preserves
+        # existing state if this doc was already indexed
+        c.execute(
+            "INSERT INTO ingestion_state (document_id, ingestion_status, updated_at) "
+            "VALUES (%s, 'pending', NOW()) "
+            "ON CONFLICT (document_id) DO NOTHING",
+            (item['doc_id'],)
         )
     conn.close()
 

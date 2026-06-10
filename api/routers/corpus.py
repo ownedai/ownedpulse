@@ -46,6 +46,18 @@ def repair_stale_pending(threshold_minutes: int = 30) -> int:
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
+        # GATE3c: stale-pending sweep on ingestion_state
+        cur.execute(
+            """UPDATE ingestion_state
+               SET ingestion_status = 'error',
+                   ingestion_error   = 'Ingestion process did not complete',
+                   updated_at        = NOW()
+               WHERE ingestion_status = 'pending'
+                 AND updated_at < NOW() - (%s * INTERVAL '1 minute')""",
+            (threshold_minutes,)
+        )
+        count = cur.rowcount
+        # GATE3b/3c: dormant write pending Gate 5 column drop
         cur.execute(
             """UPDATE document_registry
                SET ingestion_status = 'error',
@@ -55,7 +67,6 @@ def repair_stale_pending(threshold_minutes: int = 30) -> int:
                  AND updated_at < NOW() - (%s * INTERVAL '1 minute')""",
             (threshold_minutes,)
         )
-        count = cur.rowcount
         conn.commit()
         cur.close()
         return count
@@ -110,10 +121,10 @@ async def corpus_stats():
     try:
         cur = conn.cursor()
 
-        cur.execute("SELECT count(*) FROM document_registry WHERE ingestion_status = 'indexed'")
+        cur.execute("SELECT count(*) FROM document_registry_ext WHERE ingestion_status = 'indexed'")
         total = cur.fetchone()[0]
 
-        cur.execute("SELECT issuing_body, count(*) FROM document_registry WHERE ingestion_status = 'indexed' GROUP BY issuing_body")
+        cur.execute("SELECT issuing_body, count(*) FROM document_registry_ext WHERE ingestion_status = 'indexed' GROUP BY issuing_body")
         raw_agency = dict(cur.fetchall())
         per_agency = {}
         for agency, count in raw_agency.items():
@@ -122,7 +133,7 @@ async def corpus_stats():
 
         cur.execute(
             "SELECT metadata_json->>'document_type', count(*) "
-            "FROM document_registry WHERE ingestion_status = 'indexed'"
+            "FROM document_registry_ext WHERE ingestion_status = 'indexed'"
             " GROUP BY metadata_json->>'document_type'"
         )
         per_doc_type = dict(cur.fetchall())
@@ -196,7 +207,7 @@ async def corpus_documents(
         if conditions:
             where = " WHERE " + " AND ".join(conditions)
 
-        cur.execute(f"SELECT count(*) FROM document_registry{where}", params)
+        cur.execute(f"SELECT count(*) FROM document_registry_ext{where}", params)
         total = cur.fetchone()[0]
 
         offset = (page - 1) * page_size
@@ -210,7 +221,7 @@ async def corpus_documents(
                        metadata_json->>'document_type' as regulatory_type,
                        metadata_json->>'source_url' as source_url,
                        document_family_id, corpus_doc
-                FROM document_registry{where}
+                FROM document_registry_ext{where}
                 {order_clause}
                 LIMIT %s OFFSET %s""",
             params + [page_size, offset]
@@ -263,7 +274,7 @@ async def document_detail(doc_id: str):
                       metadata_json->>'archive_path' as archive_path_json,
                       metadata_json->>'source_local_path' as source_local_path,
                       document_family_id, archive_path, feed_id, corpus_doc
-               FROM document_registry WHERE document_id = %s""",
+               FROM document_registry_ext WHERE document_id = %s""",
             (doc_id,)
         )
         row = cur.fetchone()
@@ -517,7 +528,7 @@ async def feed_run_detail(run_id: str):
                       metadata_json->>'publication_date' as pub_date,
                       chunk_count, ingestion_status, archive_path, source_url"""
         cur.execute(
-            f"{_DOC_SELECT} FROM document_registry WHERE run_id = %s ORDER BY created_at ASC",
+            f"{_DOC_SELECT} FROM document_registry_ext WHERE run_id = %s ORDER BY created_at ASC",
             (run_id,)
         )
         doc_rows = list(cur.fetchall())
@@ -532,7 +543,7 @@ async def feed_run_detail(run_id: str):
             end_ts = run.get("completed_at") or run["triggered_at"]
             cur.execute(
                 f"""{_DOC_SELECT}
-                   FROM document_registry
+                   FROM document_registry_ext
                    WHERE feed_id = %s
                      AND created_at >= %s::timestamptz - INTERVAL '24 hours'
                      AND created_at <= %s::timestamptz + INTERVAL '30 minutes'
@@ -599,7 +610,7 @@ async def supersede_chain(document_family_id: str):
                       metadata_json->>'publication_date' as pub_date,
                       chunk_count, ingestion_status,
                       metadata_json->>'document_type' as doc_type
-               FROM document_registry
+               FROM document_registry_ext
                WHERE document_family_id = %s
                ORDER BY metadata_json->>'publication_date' ASC NULLS LAST""",
             (document_family_id,)
@@ -645,6 +656,16 @@ async def update_ingestion_status(doc_id: str, body: IngestionStatusUpdate):
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
+        # GATE3c: write status to ingestion_state
+        cur.execute(
+            """INSERT INTO ingestion_state (document_id, ingestion_status, updated_at)
+               VALUES (%s, %s, NOW())
+               ON CONFLICT (document_id) DO UPDATE SET
+                   ingestion_status = EXCLUDED.ingestion_status,
+                   updated_at = NOW()""",
+            (doc_id, body.status),
+        )
+        # GATE3b/3c: dormant write pending Gate 5 column drop
         cur.execute(
             "UPDATE document_registry SET ingestion_status = %s, updated_at = NOW() WHERE document_id = %s",
             (body.status, doc_id),
