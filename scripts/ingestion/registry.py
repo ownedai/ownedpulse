@@ -81,12 +81,13 @@ def mark_document_not_viable(doc_id: str, reason: str) -> None:
     with pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """UPDATE document_registry
-                   SET ingestion_status = 'not_viable',
-                       ingestion_error = %s,
-                       updated_at = NOW()
-                   WHERE document_id = %s""",
-                (f"Not viable: {reason}", doc_id),
+                """INSERT INTO ingestion_state (document_id, ingestion_status, ingestion_error, updated_at)
+                   VALUES (%s, 'not_viable', %s, NOW())
+                   ON CONFLICT (document_id) DO UPDATE SET
+                       ingestion_status = 'not_viable',
+                       ingestion_error  = EXCLUDED.ingestion_error,
+                       updated_at       = NOW()""",
+                (doc_id, f"Not viable: {reason}"),
             )
 
 

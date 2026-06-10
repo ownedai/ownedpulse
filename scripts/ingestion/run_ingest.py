@@ -427,21 +427,17 @@ def _backfill_pub_date_from_chunks(doc_id: str, archive_dir: Path):
 def update_registry_phase_f(doc_id: str, cls: dict, run_id: str = None):
     with pg_conn() as conn:
         with conn.cursor() as c:
+            c.execute(
+                "UPDATE document_registry SET doc_type=%s, classifier_confidence=%s, "
+                "classified_by=%s, doc_type_classified_at=NOW(), updated_at=NOW() "
+                "WHERE document_id=%s",
+                (cls["doc_type"], cls["classifier_confidence"], "llm", doc_id)
+            )
             if run_id:
                 c.execute(
-                    "UPDATE document_registry SET doc_type=%s, classifier_confidence=%s, "
-                    "classified_by=%s, doc_type_classified_at=NOW(), updated_at=NOW(), "
-                    "run_id=%s "
-                    "WHERE document_id=%s",
-                    (cls["doc_type"], cls["classifier_confidence"], "llm",
-                     run_id, doc_id)
-                )
-            else:
-                c.execute(
-                    "UPDATE document_registry SET doc_type=%s, classifier_confidence=%s, "
-                    "classified_by=%s, doc_type_classified_at=NOW(), updated_at=NOW() "
-                    "WHERE document_id=%s",
-                    (cls["doc_type"], cls["classifier_confidence"], "llm", doc_id)
+                    "UPDATE ingestion_state SET run_id = %s::uuid, updated_at = NOW() "
+                    "WHERE document_id = %s",
+                    (run_id, doc_id),
                 )
 
 def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) -> dict:

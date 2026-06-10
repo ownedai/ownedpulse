@@ -78,21 +78,17 @@ async def bootstrap_status():
             base_rows = cur.fetchall()
 
             # RSS feeds: feed_config joined with aggregate stats from document_registry
+            # Count all registered docs (including not-yet-indexed) for the
+            # bootstrap modal's "available for ingestion" display.
             cur.execute("""
                 SELECT
                     fc.feed_id,
                     fc.name,
                     fc.enabled,
                     fc.last_run_at,
-                    COUNT(dr.document_id) FILTER (
-                        WHERE dr.ingestion_status IN ('indexed', 'success')
-                    ) AS doc_count,
-                    MIN(dr.publication_date) FILTER (
-                        WHERE dr.ingestion_status IN ('indexed', 'success')
-                    ) AS date_min,
-                    MAX(dr.publication_date) FILTER (
-                        WHERE dr.ingestion_status IN ('indexed', 'success')
-                    ) AS date_max,
+                    COUNT(dr.document_id) AS doc_count,
+                    MIN(dr.publication_date) AS date_min,
+                    MAX(dr.publication_date) AS date_max,
                     MAX(dr.last_indexed_at) FILTER (
                         WHERE dr.ingestion_status IN ('indexed', 'success')
                     ) AS last_indexed_at
@@ -169,7 +165,8 @@ async def date_estimate(
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
-            conditions = ["feed_id = ANY(%s)", "ingestion_status != 'excluded'"]
+            conditions = ["feed_id = ANY(%s)",
+                          "(ingestion_status IS NULL OR ingestion_status NOT IN ('excluded', 'unsupported', 'not_viable'))"]
             params: list = [feed_id_list]
 
             if date_from:
@@ -284,51 +281,38 @@ async def sources_bootstrap(body: BootstrapRequest):
                 detail=f"Bootstrap already running (session {sid}). Wait for it to complete.",
             )
 
-    # ── Discovery phase ──────────────────────────────────────────────────────
-    # Run feed discovery (fetch → download → archive → register) for each
-    # selected RSS feed before reading document_registry. This populates the
-    # registry so _build_doc_list_from_scope() finds the newly discovered docs.
-    for feed_entry in body.rss_feeds:
-        feed_id = feed_entry.feed_id
-        if not feed_id:
-            continue
-
-        months_override = None
-        if feed_entry.date_from:
-            try:
-                dt_from = datetime.fromisoformat(feed_entry.date_from).replace(tzinfo=timezone.utc)
-                months_override = int((datetime.now(timezone.utc) - dt_from).days / 30.44) + 1
-            except Exception:
-                pass
-
-        cmd = [
-            "python3", "/opt/scripts/rss/run_pipeline.py",
-            "--feed-id", feed_id,
-            "--mode", "backfill",
-            "--trigger-source", "bootstrap_ui",
-            "--triggered-by", "bootstrap_ui",
-        ]
-        if months_override is not None:
-            cmd.extend(["--months-override", str(months_override)])
-
-        logger.info(f"Bootstrap discovery: feed={feed_id} months={months_override or 'default'}")
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode != 0:
-                logger.error(f"Bootstrap discovery failed for {feed_id}: {result.stderr[-500:]}")
-            else:
-                logger.info(f"Bootstrap discovery complete for {feed_id}")
-        except subprocess.TimeoutExpired:
-            logger.error(f"Bootstrap discovery timed out for {feed_id} — proceeding with registered docs")
-        except Exception as e:
-            logger.error(f"Bootstrap discovery error for {feed_id}: {e}")
-
+    # Docs are already registered by startup discovery (populate_registry_if_empty).
+    # _build_doc_list_from_scope reads document_registry directly.
     docs = _build_doc_list_from_scope(body.base_corpus, body.rss_feeds)
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 
     # Map UI mode to redownload strategy (controls source file fetch, not the wipe)
     redownload = "force" if body.mode == "wipe_and_reload" else "check"
+
+    # When wipe_and_reload: delete archive directories for selected docs
+    # so source files are re-downloaded from scratch, not overwritten in place.
+    if body.mode == "wipe_and_reload":
+        import shutil
+        from pathlib import Path
+        ARCHIVE = Path("/archive")
+        wiped = 0
+        for doc in docs:
+            doc_id = doc.get("doc_id", "")
+            if not doc_id:
+                continue
+            for agency_dir in ARCHIVE.iterdir():
+                if not agency_dir.is_dir():
+                    continue
+                candidate = agency_dir / doc_id
+                if candidate.exists() and candidate.is_dir():
+                    try:
+                        shutil.rmtree(candidate)
+                        wiped += 1
+                    except Exception as e:
+                        logger.warning("Could not wipe archive dir %s: %s", candidate, e)
+                    break
+        logger.info("wipe_and_reload: deleted %d archive directories", wiped)
 
     # Always wipe Qdrant chunks and reset registry for selected documents.
     # This is a deliberate reload — the download mode only controls whether

@@ -243,38 +243,148 @@ def _cleanup_abandoned_state():
 
 # ── Startup discovery ───────────────────────────────────────────────────────
 
-def _discover_feed(feed_id: str) -> None:
-    """Run discovery for a single feed in a background thread.
-
-    Calls run_pipeline.py --mode backfill. Writes to archive +
-    document_registry identity only. Does not ingest to Qdrant.
+def _register_feed_items(feed_id: str, items: list, defaults: dict) -> int:
+    """Upsert item list into document_registry as identity rows only.
+    No ingestion, no archiving, no ingestion_state writes.
+    Returns count of rows upserted.
     """
-    logger.info("[startup] beginning registry discovery for feed: %s", feed_id)
+    import hashlib
+    import re
+    from urllib.parse import urlparse
+
+    def _make_doc_id(fid: str, url: str) -> str:
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+        path = urlparse(url).path.rstrip("/").split("/")[-1]
+        path = re.sub(r"[^a-z0-9\-]", "-", path.lower())[:40].strip("-")
+        return f"{fid}-{path}-{url_hash}" if path else f"{fid}-{url_hash}"
+
+    if not items:
+        return 0
+
+    conn = None
+    count = 0
     try:
-        result = subprocess.run(
-            [
-                "python3", "/opt/scripts/rss/run_pipeline.py",
-                "--feed-id", feed_id,
-                "--mode", "backfill",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=600,
+        conn = get_pg_conn()
+        with conn.cursor() as cur:
+            for item in items:
+                url = item.get('url', '')
+                if not url:
+                    continue
+                doc_id = _make_doc_id(feed_id, url)
+                title = item.get('title', '')
+                pub_date = item.get('pub_date', '') or None
+                if pub_date and isinstance(pub_date, str) and len(pub_date) >= 10:
+                    pub_date = pub_date[:10]
+                else:
+                    pub_date = None
+
+                issuing_body = defaults.get('issuing_body', '')
+                archive_path = f"/mnt/data/regulatory_archive/{issuing_body.lower()}/{doc_id}"
+
+                cur.execute("""
+                    INSERT INTO document_registry (
+                        document_id, source_url, issuing_body,
+                        document_class, document_type, document_status,
+                        feed_id, corpus_doc, archive_path,
+                        publication_date, metadata_json, created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s,
+                        %s, %s, %s,
+                        %s, FALSE, %s,
+                        %s, %s, NOW(), NOW()
+                    )
+                    ON CONFLICT (document_id) DO NOTHING
+                """, (
+                    doc_id, url, issuing_body,
+                    defaults.get('document_class', 'regulatory-public'),
+                    defaults.get('document_type', 'guidance'),
+                    defaults.get('document_status', 'final'),
+                    feed_id, archive_path,
+                    pub_date,
+                    json.dumps({'document_title': title, 'title': title,
+                                'feed_id': feed_id, 'source_url': url}),
+                ))
+                count += cur.rowcount
+        conn.commit()
+    except Exception as e:
+        logger.error("[startup] _register_feed_items failed for %s: %s", feed_id, e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn:
+            conn.close()
+    return count
+
+
+# Feed identity defaults for lightweight startup registration.
+# Mirrors sources_manifest.json.
+_FEED_DEFAULTS = {
+    'ema_sci_guidelines': {
+        'issuing_body': 'EMA', 'document_class': 'regulatory-public',
+        'document_type': 'guidance', 'document_status': 'final',
+    },
+    'ema_reg_guidance': {
+        'issuing_body': 'EMA', 'document_class': 'regulatory-public',
+        'document_type': 'guidance', 'document_status': 'final',
+    },
+    'fda_press_releases': {
+        'issuing_body': 'FDA', 'document_class': 'regulatory-public',
+        'document_type': 'press-release', 'document_status': 'final',
+    },
+    'ich_guidelines': {
+        'issuing_body': 'ICH', 'document_class': 'regulatory-public',
+        'document_type': 'guidance', 'document_status': 'final',
+    },
+}
+
+
+def _discover_feed(feed_id: str) -> None:
+    """Lightweight feed discovery for startup registry population.
+    Fetches item list from online source, registers identity rows in
+    document_registry only. No downloading, no archiving, no ingestion.
+    """
+    import sys
+    sys.path.insert(0, '/opt/scripts')
+
+    logger.info("[startup] fetching item list for feed: %s", feed_id)
+
+    try:
+        from rss.fetch_feed import (
+            fetch_ema_sci, fetch_ema_reg,
+            fetch_fda_press, fetch_ich,
+            _fetch_ema_json,
         )
-        if result.returncode != 0:
-            logger.error(
-                "[startup] discovery failed for %s: %s",
-                feed_id, result.stderr[-500:],
+
+        if feed_id == 'ema_sci_guidelines':
+            items = _fetch_ema_json('ema_sci_guidelines', months_override=None)
+        elif feed_id == 'ema_reg_guidance':
+            items = _fetch_ema_json('ema_reg_guidance', months_override=None)
+        elif feed_id == 'fda_press_releases':
+            items, _ = fetch_fda_press(
+                {'feed_id': 'fda_press_releases', 'backfill_months': 12},
+                months_override=None,
+            )
+        elif feed_id == 'ich_guidelines':
+            items, _ = fetch_ich(
+                {'feed_id': 'ich_guidelines', 'feed_type': 'json_api'},
             )
         else:
-            logger.info(
-                "[startup] discovery complete for %s: %s",
-                feed_id, result.stdout[-200:].strip(),
-            )
-    except subprocess.TimeoutExpired:
-        logger.error("[startup] discovery timed out for %s (600s)", feed_id)
+            logger.warning("[startup] unknown feed_id: %s — skipping", feed_id)
+            return
+
+        logger.info("[startup] %s: %d items fetched from source", feed_id, len(items))
+
+        defaults = _FEED_DEFAULTS.get(feed_id, {})
+        registered = _register_feed_items(feed_id, items, defaults)
+
+        logger.info("[startup] %s: %d items registered in document_registry",
+                    feed_id, registered)
+
     except Exception as e:
-        logger.error("[startup] discovery error for %s: %s", feed_id, e)
+        logger.error("[startup] discovery failed for %s: %s", feed_id, e)
 
 
 def populate_registry_if_empty() -> None:
@@ -323,8 +433,26 @@ def populate_registry_if_empty() -> None:
         if conn:
             conn.close()
 
+def _ensure_qdrant_collection():
+    """Create the Qdrant collection if it doesn't exist (e.g. after a wipe)."""
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import VectorParams, Distance
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5)
+        collections = [c.name for c in client.get_collections().collections]
+        if QDRANT_COLLECTION not in collections:
+            client.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+            )
+            logger.info("Qdrant collection '%s' created", QDRANT_COLLECTION)
+    except Exception as e:
+        logger.error("Qdrant collection init failed: %s", e)
+
+
 @app.on_event("startup")
 async def startup():
+    _ensure_qdrant_collection()
     init_db()
     _cleanup_abandoned_state()
     setup_scheduler()

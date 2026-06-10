@@ -11,9 +11,11 @@ Output: JSON array on stdout. Each item:
 Exit:   0 on success, 1 on error
 """
 
-import os, sys, json, time, hashlib, argparse, uuid
+import os, sys, json, time, hashlib, argparse, uuid, logging
 import feedparser, psycopg2, requests
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from dateutil.relativedelta import relativedelta
 from dateutil import parser as dateparser
 from dateutil.tz import tzoffset
@@ -233,14 +235,245 @@ def fetch_ich(feed: dict) -> tuple:
     return items, {"items_fetched": total_fetched, "items_new": len(items),
                    "items_skipped": total_skipped}
 
+
+# ── EMA bulk JSON scraper ──────────────────────────────────────────────────
+
+EMA_JSON_URL = (
+    'https://www.ema.europa.eu/en/documents/report/general-json-report_en.json'
+)
+
+
+def _classify_ema_record(rec: dict) -> str | None:
+    """Classify an EMA JSON report record as sci or reg guideline.
+    Returns 'ema_sci_guidelines', 'ema_reg_guidance', or None (skip).
+    """
+    title = rec.get('title', '').lower()
+    url = rec.get('general_url', '')
+
+    if not url or url in ('', '#'):
+        return None
+
+    # Exclude all non-document URL prefixes
+    SKIP_PREFIXES = (
+        '/en/human-regulatory-overview/',
+        '/en/veterinary-regulatory-overview/',
+        '/en/about-us/',
+        '/en/committees/',
+        '/en/partners-networks/',
+        '/en/medicines/',
+        '/en/news',
+        '/en/events/',
+    )
+    if any(url.startswith('https://www.ema.europa.eu' + p) for p in SKIP_PREFIXES):
+        return None
+
+    is_sci = 'scientific guideline' in title
+    is_reg = any(x in title for x in ('regulatory', 'procedural', 'guidance'))
+
+    if is_sci:
+        return 'ema_sci_guidelines'   # sci wins on overlap
+    elif is_reg:
+        return 'ema_reg_guidance'
+    return None
+
+
+def _fetch_ema_json(target_feed_id: str, months_override: int | None = None) -> list:
+    """Download EMA bulk JSON, classify and filter for the target feed.
+    Single-file download — 2,046 total records. Each record is classified
+    as sci or reg; only records matching target_feed_id are returned.
+    """
+    from dateutil import parser as dateparser
+
+    if months_override is not None:
+        cutoff = datetime.now(timezone.utc) - relativedelta(months=months_override)
+    else:
+        cutoff = None
+
+    logger.info("EMA JSON: downloading %s", EMA_JSON_URL)
+    r = requests.get(EMA_JSON_URL, headers=HEADERS, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    records = data.get('data', data) if isinstance(data, dict) else data
+    logger.info("EMA JSON: %d total records", len(records))
+
+    items = []
+    for rec in records:
+        feed_id = _classify_ema_record(rec)
+        if feed_id != target_feed_id:
+            continue
+
+        title = rec.get('title', '')
+        url = rec.get('general_url', '')
+        if not title or not url:
+            continue
+
+        pub_date = ''
+        raw_date = rec.get('first_published_date', '')
+        if raw_date:
+            try:
+                dt = dateparser.parse(raw_date, dayfirst=True)
+                if dt:
+                    pub_date = dt.date().isoformat()
+            except Exception:
+                pass
+
+        if cutoff and pub_date:
+            try:
+                d = datetime.fromisoformat(pub_date).replace(tzinfo=timezone.utc)
+                if d < cutoff:
+                    continue
+            except Exception:
+                pass
+
+        if not is_ingested(url):
+            items.append({
+                'url':            url,
+                'title':          title,
+                'pub_date':       pub_date,
+                'authority':      'EMA',
+                'feed_id':        feed_id,
+                'rss_body':       rec.get('summary', ''),
+                'feed_item_guid': url,
+            })
+
+    logger.info("EMA JSON: %d new items for %s", len(items), target_feed_id)
+    return items
+
+
+def fetch_ema_sci(feed: dict, months_override: int | None = None) -> tuple:
+    """Fetch EMA Scientific Guidelines via bulk JSON download."""
+    items = _fetch_ema_json('ema_sci_guidelines', months_override=months_override)
+    return items, {"items_fetched": len(items), "items_new": len(items),
+                   "items_skipped": 0}
+
+
+def fetch_ema_reg(feed: dict, months_override: int | None = None) -> tuple:
+    """Fetch EMA Regulatory Guidance via bulk JSON download."""
+    items = _fetch_ema_json('ema_reg_guidance', months_override=months_override)
+    return items, {"items_fetched": len(items), "items_new": len(items),
+                   "items_skipped": 0}
+
+
+# ── FDA press releases scraper ──────────────────────────────────────────────
+
+def fetch_fda_press(feed: dict, months_override: int | None = None) -> tuple:
+    """Paginate FDA press announcements archive via BeautifulSoup.
+    Stops when article date is older than cutoff or no more pages.
+    """
+    import re as _re
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+    from dateutil import parser as dateparser
+
+    FDA_PRESS_URL = 'https://www.fda.gov/news-events/newsroom/press-announcements'
+    DELAY = 2.0
+
+    if months_override is not None:
+        cutoff = datetime.now(timezone.utc) - relativedelta(months=months_override)
+    else:
+        cutoff = None
+
+    items = []
+    page = 0
+
+    while True:
+        url = f'{FDA_PRESS_URL}?page={page}'
+        try:
+            time.sleep(DELAY)
+            r = requests.get(url, headers=HEADERS, timeout=30)
+            if r.status_code == 404:
+                break
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, 'html.parser')
+        except Exception as e:
+            logger.error(f"FDA press error page {page}: {e}")
+            break
+
+        page_items = []
+        seen = set()
+        for a in soup.select('div.view-content a[href]'):
+            href = a.get('href', '')
+            text = a.get_text(strip=True)
+            if not href or not text or len(text) < 20:
+                continue
+            full_url = urljoin('https://www.fda.gov', href)
+            if full_url in seen or 'press-announcements' not in href:
+                continue
+            seen.add(full_url)
+
+            pub_date = ''
+            date_obj = None
+            date_match = _re.match(
+                r'^(\w+ \d+,\s*\d{4})\s*[-–]\s*(.+)$', text, _re.DOTALL
+            )
+            if date_match:
+                try:
+                    dt = dateparser.parse(date_match.group(1))
+                    if dt:
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        date_obj = dt
+                        pub_date = dt.date().isoformat()
+                    text = date_match.group(2).strip()
+                except Exception:
+                    pass
+
+            page_items.append({
+                'url':            full_url,
+                'title':          text,
+                'pub_date':       pub_date,
+                'date_obj':       date_obj,
+                'authority':      'FDA',
+                'feed_id':        'fda_press_releases',
+                'rss_body':       '',
+                'feed_item_guid': full_url,
+            })
+
+        if not page_items:
+            break
+
+        stop = False
+        for item in page_items:
+            dt = item.pop('date_obj', None)
+            if cutoff and dt and dt < cutoff:
+                stop = True
+                break
+            if not is_ingested(item['url']):
+                items.append(item)
+
+        if stop:
+            break
+
+        page += 1
+
+    logger.info("FDA press scrape complete: %d new items", len(items))
+    return items, {"items_fetched": len(items), "items_new": len(items),
+                   "items_skipped": 0}
+
+
+# ── Dispatcher ───────────────────────────────────────────────────────────────
+
 def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None) -> tuple:
     feed = load_feed_config(feed_id)
     cutoff = None
     if mode == "backfill":
         months = months_override or feed["backfill_months"]
         cutoff = datetime.now(timezone.utc) - relativedelta(months=months)
-    if feed["feed_type"] == "json_api":
+    ft = feed["feed_type"]
+    if ft == "json_api":
         return fetch_ich(feed)
+    if ft == "json_bulk":
+        if feed_id == "ema_sci_guidelines":
+            return fetch_ema_sci(feed, months_override=months_override)
+        if feed_id == "ema_reg_guidance":
+            return fetch_ema_reg(feed, months_override=months_override)
+        logger.warning("Unknown json_bulk feed_id: %s", feed_id)
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
+    if ft == "html_pagination":
+        if feed_id == "fda_press_releases":
+            return fetch_fda_press(feed, months_override=months_override)
+        logger.warning("Unknown html_pagination feed_id: %s", feed_id)
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
     return fetch_rss(feed, cutoff_date=cutoff)
 
 def main():
