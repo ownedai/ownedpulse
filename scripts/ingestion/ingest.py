@@ -306,12 +306,6 @@ def supersede_by_family_id(new_doc_id: str, family_id: str,
                         "updated_at = NOW()",
                         (doc_id,),
                     )
-                    # GATE3b: dormant write pending Gate 5 column drop
-                    cur.execute(
-                        "UPDATE document_registry SET ingestion_status = 'superseded', "
-                        "updated_at = NOW() WHERE document_id = %s",
-                        (doc_id,)
-                    )
         except Exception as e:
             print(f"  Warning: failed to update ingestion_status for {doc_id}: {e}")
 

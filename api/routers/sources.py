@@ -353,11 +353,6 @@ async def sources_bootstrap(body: BootstrapRequest):
                 "DELETE FROM ingestion_state WHERE document_id = ANY(%s)",
                 (doc_ids,),
             )
-            # GATE3b/3c: dormant write pending Gate 5 column drop
-            cur.execute(
-                "UPDATE document_registry SET ingestion_status = 'pending', chunk_count = 0, last_indexed_at = NULL WHERE document_id = ANY(%s)",
-                (doc_ids,),
-            )
             conn.commit()
             cur.close()
         finally:

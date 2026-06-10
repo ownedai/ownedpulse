@@ -75,7 +75,7 @@ def is_ingested(url: str) -> bool:
     conn = get_kb()
     with conn.cursor() as c:
         c.execute(
-            "SELECT 1 FROM document_registry "
+            "SELECT 1 FROM document_registry_ext "
             "WHERE source_url = %s "
             "AND (ingestion_status IN ('success','indexed','unsupported','not_viable') "
             "     OR (ingestion_status = 'pending' "
@@ -200,7 +200,7 @@ def fetch_ich(feed: dict) -> tuple:
     conn = get_kb()
     with conn.cursor() as c:
         c.execute(
-            "SELECT COUNT(*) FROM document_registry "
+            "SELECT COUNT(*) FROM document_registry_ext "
             "WHERE feed_id = %s AND ingestion_status = %s",
             ("ich_guidelines", "success")
         )

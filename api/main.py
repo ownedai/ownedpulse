@@ -8,6 +8,8 @@ import re
 import uuid
 import json
 import logging
+import threading
+import subprocess
 from datetime import datetime, timezone, date as _date, timedelta as _timedelta
 from typing import Optional
 
@@ -209,7 +211,7 @@ def _cleanup_abandoned_state():
         cur = conn.cursor()
 
         cur.execute(
-            """UPDATE document_registry
+            """UPDATE ingestion_state
                SET ingestion_status = 'error',
                    ingestion_error   = 'Process was killed before ingestion completed',
                    updated_at        = NOW()
@@ -239,6 +241,88 @@ def _cleanup_abandoned_state():
     except Exception as e:
         logger.warning("Startup: abandoned-state cleanup failed: %s", e)
 
+# ── Startup discovery ───────────────────────────────────────────────────────
+
+def _discover_feed(feed_id: str) -> None:
+    """Run discovery for a single feed in a background thread.
+
+    Calls run_pipeline.py --mode backfill. Writes to archive +
+    document_registry identity only. Does not ingest to Qdrant.
+    """
+    logger.info("[startup] beginning registry discovery for feed: %s", feed_id)
+    try:
+        result = subprocess.run(
+            [
+                "python3", "/opt/scripts/rss/run_pipeline.py",
+                "--feed-id", feed_id,
+                "--mode", "backfill",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            logger.error(
+                "[startup] discovery failed for %s: %s",
+                feed_id, result.stderr[-500:],
+            )
+        else:
+            logger.info(
+                "[startup] discovery complete for %s: %s",
+                feed_id, result.stdout[-200:].strip(),
+            )
+    except subprocess.TimeoutExpired:
+        logger.error("[startup] discovery timed out for %s (600s)", feed_id)
+    except Exception as e:
+        logger.error("[startup] discovery error for %s: %s", feed_id, e)
+
+
+def populate_registry_if_empty() -> None:
+    """Check each enabled feed in feed_config. For any feed with zero
+    registered documents, spawn a background discovery thread.
+
+    Non-blocking — returns immediately, threads run independently.
+    Called once at startup.
+    """
+    conn = None
+    try:
+        conn = get_pg_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT fc.feed_id
+                FROM feed_config fc
+                LEFT JOIN document_registry dr USING (feed_id)
+                WHERE fc.enabled = TRUE AND dr.document_id IS NULL
+                GROUP BY fc.feed_id
+                ORDER BY fc.feed_id
+            """)
+            empty_feeds = [row[0] for row in cur.fetchall()]
+
+        if not empty_feeds:
+            logger.info("[startup] registry populated for all feeds — skipping discovery")
+            return
+
+        logger.info(
+            "[startup] %d feed(s) have no registered documents: %s — starting background discovery",
+            len(empty_feeds), empty_feeds,
+        )
+
+        for feed_id in empty_feeds:
+            t = threading.Thread(
+                target=_discover_feed,
+                args=(feed_id,),
+                daemon=True,
+                name=f"discovery-{feed_id}",
+            )
+            t.start()
+            logger.info("[startup] discovery thread started for %s", feed_id)
+
+    except Exception as e:
+        logger.error("[startup] populate_registry_if_empty failed: %s", e)
+    finally:
+        if conn:
+            conn.close()
+
 @app.on_event("startup")
 async def startup():
     init_db()
@@ -246,6 +330,7 @@ async def startup():
     setup_scheduler()
     scheduler.start()
     logger.info("APScheduler started")
+    populate_registry_if_empty()
 
 
 @app.on_event("shutdown")
@@ -991,6 +1076,49 @@ async def health():
         content={"status": status, **components},
         status_code=http_status,
     )
+
+
+# ── GET /api/system/registry-status ───────────────────────────────────────────
+
+
+@app.get("/api/system/registry-status")
+async def registry_status():
+    """Per-feed discovery status for the bootstrap modal.
+    discovery_running: True if any discovery thread is alive.
+    feeds: per-feed registered document count.
+    """
+    discovery_threads = [
+        t.name for t in threading.enumerate()
+        if t.name.startswith("discovery-")
+    ]
+
+    conn = get_pg_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT fc.feed_id, fc.name, COUNT(dr.document_id) as doc_count
+                FROM feed_config fc
+                LEFT JOIN document_registry dr USING (feed_id)
+                WHERE fc.enabled = TRUE
+                GROUP BY fc.feed_id, fc.name
+                ORDER BY fc.feed_id
+            """)
+            feeds = [
+                {
+                    "feed_id": row[0],
+                    "name": row[1],
+                    "doc_count": row[2],
+                    "discovering": f"discovery-{row[0]}" in discovery_threads,
+                }
+                for row in cur.fetchall()
+            ]
+        return {
+            "discovery_running": len(discovery_threads) > 0,
+            "active_feeds": discovery_threads,
+            "feeds": feeds,
+        }
+    finally:
+        conn.close()
 
 
 # ── POST /api/query ───────────────────────────────────────────────────────────

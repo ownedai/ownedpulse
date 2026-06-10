@@ -165,6 +165,27 @@ export default function BootstrapModal({ onClose, onStarted }) {
       .catch(() => {});
   }, [subscribeToSession]);
 
+  // Poll registry-status while discovery is running at startup
+  const [registryStatus, setRegistryStatus] = useState(null);
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/system/registry-status');
+        const data = await res.json();
+        if (!active) return;
+        setRegistryStatus(data);
+        if (data.discovery_running) {
+          setTimeout(poll, 5000);
+        }
+      } catch (_) {
+        // Non-critical — modal still works without live status
+      }
+    };
+    poll();
+    return () => { active = false; };
+  }, []);
+
   // Refresh estimate whenever selection or date window changes
   const refreshEstimate = useCallback(() => {
     if (estimateTimeoutRef.current) clearTimeout(estimateTimeoutRef.current);
@@ -456,9 +477,15 @@ export default function BootstrapModal({ onClose, onStarted }) {
                             <span className="cls">{feed.label}</span>
                             <span className="cnt" style={{ fontStyle: 'italic', marginRight: 6 }}>{feed.description}</span>
                             <span className="cnt">
-                              {feed.doc_count > 0
-                                ? `${feed.doc_count.toLocaleString()} docs`
-                                : '— docs'}
+                              {(() => {
+                                const rsFeed = registryStatus?.feeds?.find(f => f.feed_id === feed.feed_id);
+                                if (rsFeed?.discovering) {
+                                  return <span style={{ color: 'var(--accent-l)', fontStyle: 'italic' }}>Discovering…</span>;
+                                }
+                                const count = rsFeed?.doc_count ?? feed.doc_count;
+                                if (count > 0) return `${count.toLocaleString()} docs`;
+                                return '— docs';
+                              })()}
                               {feed.date_min && feed.date_max && (
                                 <> · {feed.date_min.slice(0, 4)}–{feed.date_max.slice(0, 4)}</>
                               )}

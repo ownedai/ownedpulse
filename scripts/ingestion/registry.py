@@ -110,9 +110,3 @@ def update_ingestion_status(doc_id: str, status: str, **fields) -> None:
     with pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
-            # GATE3b: dormant write pending Gate 5 column drop
-            cur.execute(
-                f'UPDATE document_registry SET ingestion_status = %s, updated_at = NOW() '
-                f'WHERE document_id = %s',
-                [status, doc_id],
-            )

@@ -53,13 +53,6 @@ def _mark_error(doc_id: str, error: str) -> None:
                 "updated_at       = NOW()",
                 (doc_id, error[:500]),
             )
-            # GATE3b: dormant write pending Gate 5 column drop
-            cur.execute(
-                "UPDATE document_registry "
-                "SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW() "
-                "WHERE document_id = %s AND ingestion_status = 'pending'",
-                (error[:500], doc_id),
-            )
         conn.close()
     except Exception:
         pass
@@ -157,7 +150,7 @@ def get_document_type(doc_type: str) -> str:
 def get_archive_dir(doc_id: str, force: bool = False) -> Path:
     with pg_conn() as conn:
         with conn.cursor() as c:
-            c.execute("SELECT archive_path, ingestion_status FROM document_registry "
+            c.execute("SELECT archive_path, ingestion_status FROM document_registry_ext "
                       "WHERE document_id = %s", (doc_id,))
             row = c.fetchone()
     if not row:
@@ -688,12 +681,6 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
                     "updated_at       = NOW()",
                     (doc_id, len(chunks), CHUNKER_VERSION, trace_id or None)
                 )
-                # GATE3b: dormant write pending Gate 5 column drop
-                c.execute(
-                    "UPDATE document_registry SET ingestion_status=%s, chunk_count=%s, "
-                    "last_indexed_at=NOW(), updated_at=NOW() WHERE document_id=%s",
-                    ("indexed", len(chunks), doc_id)
-                )
 
         if doc_span:
             doc_span.finalize(status="success", chunk_count=len(chunks),
@@ -714,13 +701,6 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
                         "ingestion_error  = EXCLUDED.ingestion_error, "
                         "updated_at       = NOW()",
                         (doc_id, err_msg),
-                    )
-                    # GATE3b: dormant write pending Gate 5 column drop
-                    c.execute(
-                        "UPDATE document_registry "
-                        "SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW() "
-                        "WHERE document_id = %s AND ingestion_status = 'pending'",
-                        (err_msg, doc_id),
                     )
         except Exception:
             pass

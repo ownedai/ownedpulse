@@ -75,13 +75,6 @@ def _resolve_stale_spans(doc_id: str, trace_id: str, reason: str):
                WHERE document_id = %s AND ingestion_status = ANY(%s)""",
             (short_reason, doc_id, list(_INTERMEDIATE_DOC_STATUSES)),
         )
-        # GATE3b: dormant write pending Gate 5 column drop
-        cur.execute(
-            """UPDATE document_registry
-               SET ingestion_status = 'error', ingestion_error = %s, updated_at = NOW()
-               WHERE document_id = %s AND ingestion_status = ANY(%s)""",
-            (short_reason, doc_id, list(_INTERMEDIATE_DOC_STATUSES)),
-        )
         conn.commit()
         cur.close()
         conn.close()

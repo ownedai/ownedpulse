@@ -57,16 +57,6 @@ def repair_stale_pending(threshold_minutes: int = 30) -> int:
             (threshold_minutes,)
         )
         count = cur.rowcount
-        # GATE3b/3c: dormant write pending Gate 5 column drop
-        cur.execute(
-            """UPDATE document_registry
-               SET ingestion_status = 'error',
-                   ingestion_error   = 'Ingestion process did not complete',
-                   updated_at        = NOW()
-               WHERE ingestion_status = 'pending'
-                 AND updated_at < NOW() - (%s * INTERVAL '1 minute')""",
-            (threshold_minutes,)
-        )
         conn.commit()
         cur.close()
         return count
@@ -665,12 +655,9 @@ async def update_ingestion_status(doc_id: str, body: IngestionStatusUpdate):
                    updated_at = NOW()""",
             (doc_id, body.status),
         )
-        # GATE3b/3c: dormant write pending Gate 5 column drop
-        cur.execute(
-            "UPDATE document_registry SET ingestion_status = %s, updated_at = NOW() WHERE document_id = %s",
-            (body.status, doc_id),
-        )
-        if cur.rowcount == 0:
+        # Verify document exists in registry
+        cur.execute("SELECT 1 FROM document_registry WHERE document_id = %s", (doc_id,))
+        if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="Document not found")
         conn.commit()
         cur.close()
