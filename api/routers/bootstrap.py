@@ -300,13 +300,14 @@ def _interleave_docs(docs: list) -> list:
     import random
     groups = defaultdict(list)
     for doc in docs:
-        doc_id = doc["doc_id"]
-        if doc_id.startswith("ema_"):
-            key = "ema"
-        elif doc_id.startswith("fda_"):
-            key = "fda"
-        elif doc_id.startswith("ich_"):
-            key = "ich"
+        body = doc.get("issuing_body", "") or ""
+        # Normalise: EU-Commission = EMA for rate-limiting purposes
+        if body in ("EMA", "EU-Commission"):
+            key = "EMA"
+        elif body == "FDA":
+            key = "FDA"
+        elif body == "ICH":
+            key = "ICH"
         else:
             key = "other"
         groups[key].append(doc)
@@ -367,13 +368,13 @@ def _build_doc_list(scope: BootstrapScope) -> list:
         try:
             cur = conn.cursor()
             cur.execute(
-                f"SELECT document_id FROM document_registry WHERE {where} ORDER BY document_id"
+                f"SELECT document_id, issuing_body FROM document_registry WHERE {where} ORDER BY document_id"
             )
             rows = cur.fetchall()
             cur.close()
         finally:
             conn.close()
-        docs = [{"doc_id": row[0], "phase": "live"} for row in rows]
+        docs = [{"doc_id": row[0], "issuing_body": row[1] or "", "phase": "live"} for row in rows]
         return _interleave_docs(docs)
     except Exception:
         return []

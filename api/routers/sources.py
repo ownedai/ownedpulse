@@ -221,7 +221,7 @@ def _build_doc_list_from_scope(base_corpus: List[str], rss_feeds: List[FeedSelec
 
     # Base corpus: specific doc_ids selected by user
     for doc_id in base_corpus:
-        docs.append({"doc_id": doc_id, "phase": "live"})
+        docs.append({"doc_id": doc_id, "issuing_body": "", "phase": "live"})
 
     # RSS feeds: query document_registry filtered by feed_id + optional date range
     if rss_feeds:
@@ -244,18 +244,20 @@ def _build_doc_list_from_scope(base_corpus: List[str], rss_feeds: List[FeedSelec
                     params.append(date_to)
                 where = " AND ".join(conditions)
                 cur.execute(
-                    f"SELECT document_id FROM document_registry WHERE {where} ORDER BY document_id",
+                    f"SELECT document_id, issuing_body FROM document_registry WHERE {where} ORDER BY document_id",
                     params,
                 )
                 for row in cur.fetchall():
-                    docs.append({"doc_id": row[0], "phase": "live"})
+                    docs.append({"doc_id": row[0], "issuing_body": row[1] or "", "phase": "live"})
                 cur.close()
             finally:
                 conn.close()
         except Exception:
             pass
 
-    return docs
+    # Interleave by issuing body so same-host downloads are spaced apart
+    from routers.bootstrap import _interleave_docs
+    return _interleave_docs(docs)
 
 
 @router.post("/bootstrap")
