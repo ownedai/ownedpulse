@@ -96,14 +96,12 @@ def archive_item(resolved: dict, original_item: dict):
     return json.loads(stdout)
 
 
-def ingest_doc(doc_id: str, run_id: str):
+def ingest_doc(doc_id: str, run_id: str, redownload: str = "none"):
     """Call run_ingest.py for an archived document."""
-    rc, stdout, stderr = run(
-        [PYTHON, RUN_INGEST,
-         "--doc-id", doc_id,
-         "--run-id", run_id],
-        timeout=600,
-    )
+    cmd = [PYTHON, RUN_INGEST, "--doc-id", doc_id, "--run-id", run_id]
+    if redownload != "none":
+        cmd.extend(["--redownload", redownload])
+    rc, stdout, stderr = run(cmd, timeout=600)
     if rc != 0:
         raise RuntimeError(f"run_ingest failed rc={rc}: {stderr.decode()[:400]}")
 
@@ -200,6 +198,32 @@ def _register_unsupported(item: dict, resolved: dict, doc_id: str):
     conn.close()
 
 
+def recheck_not_viable_docs(feed_id: str, run_id: str) -> int:
+    """Re-ingest not_viable docs due for periodic recheck using --redownload force.
+
+    redownload_source() inside run_ingest.py re-fetches the source URL,
+    scrapes for PDF links, and replaces the archive file — no separate
+    resolve/archive steps needed. Returns count of successfully re-ingested docs.
+    """
+    from ingestion.registry import get_docs_due_for_not_viable_recheck
+
+    doc_ids = get_docs_due_for_not_viable_recheck(feed_id)
+    if not doc_ids:
+        return 0
+
+    succeeded = 0
+    for doc_id in doc_ids:
+        try:
+            ingest_doc(doc_id, run_id, redownload="force")
+            logger.info(f"Recheck succeeded: doc_id={doc_id}")
+            succeeded += 1
+        except Exception as e:
+            logger.warning(f"Recheck failed for doc_id={doc_id}: {e}")
+
+    logger.info(f"Not-viable recheck: {succeeded}/{len(doc_ids)} succeeded for feed={feed_id}")
+    return succeeded
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--feed-id", required=True)
@@ -225,41 +249,38 @@ def main():
 
     logger.info(f"Fetched {len(items)} new items for feed={args.feed_id}")
 
-    if not items:
-        logger.info("No new items — pipeline complete")
-        sys.exit(0)
-
     succeeded = 0
     failed = 0
 
-    for item in items:
-        url = item.get("url", "?")
-        try:
-            # Step 2: Resolve (download)
-            resolved = resolve_item(item)
+    if items:
+        for item in items:
+            url = item.get("url", "?")
+            try:
+                # Step 2: Resolve (download)
+                resolved = resolve_item(item)
 
-            if resolved.get("status") == "unsupported":
-                doc_id = resolved.get("doc_id") or _make_doc_id(item.get("feed_id", ""), url)
-                _register_unsupported(item, resolved, doc_id)
-                logger.info(f"Skipped (unsupported): doc_id={doc_id} reason={resolved.get('reason')}")
-                continue
+                if resolved.get("status") == "unsupported":
+                    doc_id = resolved.get("doc_id") or _make_doc_id(item.get("feed_id", ""), url)
+                    _register_unsupported(item, resolved, doc_id)
+                    logger.info(f"Skipped (unsupported): doc_id={doc_id} reason={resolved.get('reason')}")
+                    continue
 
-            doc_id = resolved.get("doc_id") or item.get("doc_id")
-            logger.info(f"Resolved: doc_id={doc_id} url={url[:80]}")
+                doc_id = resolved.get("doc_id") or item.get("doc_id")
+                logger.info(f"Resolved: doc_id={doc_id} url={url[:80]}")
 
-            # Step 3: Archive
-            archived = archive_item(resolved, item)
-            doc_id = archived.get("doc_id", doc_id)
-            logger.info(f"Archived: doc_id={doc_id}")
+                # Step 3: Archive
+                archived = archive_item(resolved, item)
+                doc_id = archived.get("doc_id", doc_id)
+                logger.info(f"Archived: doc_id={doc_id}")
 
-            # Step 4: Ingest
-            ingest_doc(doc_id, run_id)
-            logger.info(f"Ingested: doc_id={doc_id}")
-            succeeded += 1
+                # Step 4: Ingest
+                ingest_doc(doc_id, run_id)
+                logger.info(f"Ingested: doc_id={doc_id}")
+                succeeded += 1
 
-        except Exception as e:
-            logger.error(f"Pipeline failed for url={url[:80]}: {e}")
-            failed += 1
+            except Exception as e:
+                logger.error(f"Pipeline failed for url={url[:80]}: {e}")
+                failed += 1
 
     # Retry previously failed documents for this feed
     failed_doc_ids = get_failed_doc_ids(args.feed_id)
@@ -273,6 +294,11 @@ def main():
             except Exception as e:
                 logger.error(f"Retry failed for doc_id={doc_id}: {e}")
                 failed += 1
+
+    # Recheck not_viable documents due for periodic re-evaluation
+    nv_succeeded = recheck_not_viable_docs(args.feed_id, run_id)
+    if nv_succeeded:
+        succeeded += nv_succeeded
 
     update_run_log(run_id, succeeded, failed)
     logger.info(f"Pipeline complete: feed={args.feed_id} succeeded={succeeded} failed={failed}")

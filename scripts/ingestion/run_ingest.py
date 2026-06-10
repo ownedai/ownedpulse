@@ -247,11 +247,10 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
     try:
         new_hash, is_pdf = _stream_to_file(source_url, dest_tmp)
 
-        # HTML response but doc is expected to be a PDF — scrape for PDF link
-        if not is_pdf and (
-            metadata.get("source_file_format") == "pdf"
-            or metadata.get("content_type") == "pdf"
-        ):
+        # HTML response — scrape for PDF link. Always attempt when force-redownloading
+        # or when the stored format is not PDF (covers not_viable HTML docs where
+        # the upstream page may now have a PDF link that wasn't there originally).
+        if not is_pdf:
             with open(dest_tmp, "rb") as fh:
                 html_bytes = fh.read(2_000_000)
             soup = BeautifulSoup(html_bytes, "html.parser")
@@ -534,6 +533,8 @@ def _resolve_source_path(archive_dir: Path, meta: dict) -> Path:
 
     Prefers source_local_path from metadata (authoritative), falls back to
     source.html then source.pdf (detecting HTML content in PDF-named files).
+    If source.html is missing but source.pdf exists, returns None to signal
+    the caller should skip HTML ingestion (file was re-downloaded as PDF).
     """
     local_path = meta.get("source_local_path")
     if local_path:
@@ -551,7 +552,10 @@ def _resolve_source_path(archive_dir: Path, meta: dict) -> Path:
                 return pdf_source
         except Exception:
             pass
-    raise FileNotFoundError(f"No readable source found in: {archive_dir}")
+        # source.pdf exists but is a real PDF (not HTML-masquerading).
+        # source.html was replaced by redownload — signal caller to skip.
+        return None
+    return None
 
 
 def _is_structured_xml(filepath: Path) -> bool:
@@ -582,6 +586,13 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
             _sys.path.insert(0, _ingestion_dir)
         from html_cleaner import clean_html_content, assess_cleaned_content
         source = _resolve_source_path(archive_dir, meta)
+        if source is None:
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "chunk_count": 0,
+                "detail": "No readable HTML source — file was re-downloaded as PDF",
+            }
         raw_text = source.read_text(encoding="utf-8").strip()
         if not raw_text:
             raise ValueError(f"source.html is empty: {source}")
@@ -754,6 +765,21 @@ def post_inject(doc_id: str, cls: dict, meta: dict, feed_id: str, phase: str) ->
     ).raise_for_status()
     return len(ids)
 
+def _is_not_viable(doc_id: str) -> bool:
+    """Check if document is in not_viable state."""
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "SELECT 1 FROM ingestion_state "
+                    "WHERE document_id = %s AND ingestion_status = 'not_viable'",
+                    (doc_id,)
+                )
+                return c.fetchone() is not None
+    except Exception:
+        return False
+
+
 def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
                   redownload: str = "none") -> dict:
     force = redownload in ("check", "force")
@@ -766,6 +792,14 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
         redownload_source(archive_dir, doc_id, mode="force")
     elif redownload in ("check", "force"):
         redownload_source(archive_dir, doc_id, mode=redownload)
+    elif _is_not_viable(doc_id):
+        # not_viable docs: auto-force redownload to re-scrape the source URL.
+        # The upstream page may have changed since the original fetch (e.g. EMA
+        # added PDF links). Without this, a simple reingest will re-read the old
+        # saved HTML file and fail identically.
+        print(f"  not_viable doc {doc_id}: auto-forcing redownload to re-scrape source",
+              file=sys.stderr)
+        redownload_source(archive_dir, doc_id, mode="force")
     with open(archive_dir / "metadata.json") as f:
         metadata = json.load(f)
     feed_id   = metadata.get("feed_id","")
@@ -830,20 +864,24 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
     if ct == "html":
         try:
             source_path = _resolve_source_path(archive_dir, metadata)
-            # Guard: reject binary files (XLSX/ZIP, PDF) masquerading as HTML.
-            # These cannot be parsed as text and must be skipped.
-            with open(source_path, "rb") as _f:
-                _magic = _f.read(4)
-            if _magic[:2] == b"PK" or _magic[:4] == b"%PDF":
-                ext = "xlsx/zip" if _magic[:2] == b"PK" else "pdf"
-                return {
-                    "status": "skipped",
-                    "doc_id": doc_id,
-                    "chunk_count": 0,
-                    "detail": f"Binary {ext} file — not ingestible as HTML",
-                }
-            if _is_structured_xml(source_path):
+            if source_path is None:
+                # source.html was replaced by source.pdf via redownload —
+                # switch to Docling path for the new PDF
                 use_docling = True
+            else:
+                # Guard: reject binary files (XLSX/ZIP, PDF) masquerading as HTML.
+                with open(source_path, "rb") as _f:
+                    _magic = _f.read(4)
+                if _magic[:2] == b"PK" or _magic[:4] == b"%PDF":
+                    ext = "xlsx/zip" if _magic[:2] == b"PK" else "pdf"
+                    return {
+                        "status": "skipped",
+                        "doc_id": doc_id,
+                        "chunk_count": 0,
+                        "detail": f"Binary {ext} file — not ingestible as HTML",
+                    }
+                if _is_structured_xml(source_path):
+                    use_docling = True
         except FileNotFoundError:
             pass
 
