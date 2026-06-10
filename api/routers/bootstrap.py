@@ -290,6 +290,63 @@ async def bootstrap_run(body: BootstrapRunRequest):
     }
 
 
+def _interleave_docs(docs: list) -> list:
+    """Interleave by issuing body so same-host requests are spaced apart.
+
+    Distributes smaller groups proportionally throughout the largest group rather
+    than exhausting them early (which would leave the tail all-EMA).
+    """
+    from collections import defaultdict
+    import random
+    groups = defaultdict(list)
+    for doc in docs:
+        doc_id = doc["doc_id"]
+        if doc_id.startswith("ema_"):
+            key = "ema"
+        elif doc_id.startswith("fda_"):
+            key = "fda"
+        elif doc_id.startswith("ich_"):
+            key = "ich"
+        else:
+            key = "other"
+        groups[key].append(doc)
+
+    if len(groups) <= 1:
+        return docs
+
+    # Shuffle within each group so consecutive docs aren't from the same sub-feed
+    for g in groups.values():
+        random.shuffle(g)
+
+    # Sort groups largest-first; the largest group forms the backbone
+    sorted_groups = sorted(groups.values(), key=len, reverse=True)
+    largest = sorted_groups[0]
+    smaller = sorted_groups[1:]
+    total_smaller = sum(len(g) for g in smaller)
+
+    interleaved = []
+    if total_smaller == 0:
+        return docs
+
+    # Insert smaller-group docs at regular intervals within the largest group
+    gap = max(1, len(largest) // (total_smaller + 1))
+    small_idx = 0
+    small_flat = [d for g in smaller for d in g]
+
+    for i, doc in enumerate(largest):
+        interleaved.append(doc)
+        # Insert a smaller-group doc every `gap` positions
+        if (i + 1) % gap == 0 and small_idx < len(small_flat):
+            interleaved.append(small_flat[small_idx])
+            small_idx += 1
+
+    # Append any remaining smaller-group docs at the end
+    if small_idx < len(small_flat):
+        interleaved.extend(small_flat[small_idx:])
+
+    return interleaved
+
+
 def _build_doc_list(scope: BootstrapScope) -> list:
     conditions = []
     if scope.fda_guidance:
@@ -316,7 +373,8 @@ def _build_doc_list(scope: BootstrapScope) -> list:
             cur.close()
         finally:
             conn.close()
-        return [{"doc_id": row[0], "phase": "live"} for row in rows]
+        docs = [{"doc_id": row[0], "phase": "live"} for row in rows]
+        return _interleave_docs(docs)
     except Exception:
         return []
 

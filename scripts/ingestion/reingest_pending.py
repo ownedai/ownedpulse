@@ -30,7 +30,7 @@ from ingestion.ingest import ingest_document
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def get_pending_docs(interleave: bool = False) -> list:
+def get_pending_docs(interleave: bool = True) -> list:
     with pg_conn() as conn:
         with conn.cursor() as c:
             c.execute("""
@@ -42,19 +42,33 @@ def get_pending_docs(interleave: bool = False) -> list:
             rows = c.fetchall()
     if not interleave:
         return [(r[0], r[1]) for r in rows]
-    # Round-robin interleave by feed so same-host requests are spaced apart
-    # (e.g. EMA, FDA, ICH, EMA, FDA, ICH, ... instead of all-EMA-then-all-FDA)
+    # Proportional interleave: distribute smaller groups throughout the largest
+    # so same-host requests (especially EMA) are spaced apart for the full run.
     from collections import defaultdict
     groups = defaultdict(list)
     for doc_id, archive_path, feed_id in rows:
         groups[feed_id or "_unknown"].append((doc_id, archive_path))
+    if len(groups) <= 1:
+        return [(r[0], r[1]) for r in rows]
+    # Shuffle within groups, sort largest-first
+    for g in groups.values():
+        random.shuffle(g)
+    sorted_groups = sorted(groups.values(), key=len, reverse=True)
+    largest = sorted_groups[0]
+    smaller_flat = [d for g in sorted_groups[1:] for d in g]
+    total_smaller = len(smaller_flat)
+    if total_smaller == 0:
+        return [(r[0], r[1]) for r in rows]
     interleaved = []
-    group_lists = list(groups.values())
-    max_len = max(len(g) for g in group_lists)
-    for i in range(max_len):
-        for g in group_lists:
-            if i < len(g):
-                interleaved.append(g[i])
+    gap = max(1, len(largest) // (total_smaller + 1))
+    small_idx = 0
+    for i, doc in enumerate(largest):
+        interleaved.append(doc)
+        if (i + 1) % gap == 0 and small_idx < len(smaller_flat):
+            interleaved.append(smaller_flat[small_idx])
+            small_idx += 1
+    if small_idx < len(smaller_flat):
+        interleaved.extend(smaller_flat[small_idx:])
     return interleaved
 
 
