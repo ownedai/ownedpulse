@@ -381,9 +381,12 @@ def _build_doc_list(scope: BootstrapScope) -> list:
 
 def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
     """Runs in a background thread. Updates _sessions[session_id] per doc."""
+    import threading as _threading
     from lib.ingest_documents import ingest_documents  # noqa: PLC0415
 
     session = _sessions[session_id]
+    cancel_event = _threading.Event()
+    session["_cancel_event"] = cancel_event
 
     if not ingestion_lock.acquire("bootstrap", session_id):
         session["status"] = "failed"
@@ -408,6 +411,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                     source="bootstrap_ui",
                     triggered_by="bootstrap_ui",
                     redownload=redownload,
+                    cancel_event=cancel_event,
                 )
                 doc_results = result.get("results", [])
                 dr = doc_results[0] if doc_results else {}
@@ -541,7 +545,7 @@ async def reingest_doc(body: ReingestDocRequest):
 
 @router.post("/sessions/{session_id}/stop")
 async def stop_bootstrap_session(session_id: str):
-    """Signal a running bootstrap session to stop after the current document."""
+    """Signal a running bootstrap session to stop — kills the current subprocess."""
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     session = _sessions[session_id]
@@ -550,6 +554,10 @@ async def stop_bootstrap_session(session_id: str):
     session["cancelled"] = True
     session["status"] = "failed"
     session["completed_at"] = datetime.now(timezone.utc).isoformat()
+    # Kill the currently running subprocess so the worker can exit immediately
+    cancel_event = session.get("_cancel_event")
+    if cancel_event is not None:
+        cancel_event.set()
     return {"session_id": session_id, "message": "Stopped."}
 
 

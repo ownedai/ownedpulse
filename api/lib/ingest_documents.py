@@ -109,8 +109,14 @@ def _subprocess_env(extra: dict = None) -> dict:
 
 
 def _run_one(doc_id: str, trace_id: str, phase: str = "live",
-             timeout: int = 600, redownload: str = "none") -> dict:
-    """Run run_ingest.py for one document. Returns result dict."""
+             timeout: int = 600, redownload: str = "none",
+             cancel_event=None) -> dict:
+    """Run run_ingest.py for one document. Returns result dict.
+
+    If cancel_event is set during execution, sends SIGTERM → SIGKILL to
+    the subprocess and returns a cancelled error so the caller can stop cleanly.
+    """
+    import threading as _threading
     cmd = [
         sys.executable, RUN_INGEST,
         "--doc-id", doc_id,
@@ -119,31 +125,63 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
         "--redownload", redownload,
     ]
     env = _subprocess_env()
+    popen_timeout = timeout
+    proc = None
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             cwd=SCRIPTS_DIR, env=env,
         )
-        if result.stdout.strip():
+        # Poll with cancel check every 2s
+        poll_interval = 2
+        elapsed = 0
+        stdout_data = ""
+        stderr_data = ""
+        while proc.poll() is None:
+            if cancel_event and cancel_event.is_set():
+                _kill_proc(proc)
+                detail = "Cancelled by user"
+                _resolve_stale_spans(doc_id, trace_id, detail)
+                return {"status": "error", "doc_id": doc_id, "detail": detail}
+            if elapsed >= popen_timeout:
+                _kill_proc(proc)
+                detail = f"Timeout ({popen_timeout}s)"
+                _resolve_stale_spans(doc_id, trace_id, detail)
+                return {"status": "error", "doc_id": doc_id, "detail": detail}
+            _threading.Event().wait(min(poll_interval, popen_timeout - elapsed))
+            elapsed += poll_interval
+        stdout_data, stderr_data = proc.communicate(timeout=10)
+        if stdout_data and stdout_data.strip():
             try:
-                parsed = json.loads(result.stdout.strip())
+                parsed = json.loads(stdout_data.strip())
                 if parsed.get("status") not in ("ok", "skipped"):
                     _resolve_stale_spans(doc_id, trace_id, parsed.get("detail", ""))
                 return parsed
             except json.JSONDecodeError:
                 pass
-        err = result.stderr.strip() or "Unknown error"
+        err = (stderr_data or "").strip() or "Unknown error"
         if len(err) > 500:
             err = err[:500] + "..."
         _resolve_stale_spans(doc_id, trace_id, err)
         return {"status": "error", "doc_id": doc_id, "detail": err}
-    except subprocess.TimeoutExpired:
-        detail = f"Timeout ({timeout}s)"
-        _resolve_stale_spans(doc_id, trace_id, detail)
-        return {"status": "error", "doc_id": doc_id, "detail": detail}
     except Exception as e:
+        if proc and proc.poll() is None:
+            _kill_proc(proc)
         _resolve_stale_spans(doc_id, trace_id, str(e))
         return {"status": "error", "doc_id": doc_id, "detail": str(e)}
+
+
+def _kill_proc(proc):
+    """Graceful → force kill a subprocess."""
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+    except Exception:
+        pass
 
 
 # -- Mode A: per-document traces (bulk / bootstrap) --------------------------
@@ -151,7 +189,8 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
 def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
                    workflow_id: str = None,
                    workflow_execution_id: str = None,
-                   redownload: str = "none") -> list:
+                   redownload: str = "none",
+                   cancel_event=None) -> list:
     """Each doc gets its own run_log row. No shared run envelope."""
     results = []
     for i, doc in enumerate(docs):
@@ -169,7 +208,8 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
 
         ok, detail = None, None
         try:
-            r = _run_one(doc_id, trace.trace_id, phase, redownload=redownload)
+            r = _run_one(doc_id, trace.trace_id, phase, redownload=redownload,
+                         cancel_event=cancel_event)
             chunk_count = r.get("chunk_count", r.get("chunks", 0))
             status = r.get("status", "error")
 
@@ -239,7 +279,8 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
 def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
                    workflow_id: str = None,
                    workflow_execution_id: str = None,
-                   redownload: str = "none") -> dict:
+                   redownload: str = "none",
+                   cancel_event=None) -> dict:
     """One run_log row wraps all documents in the batch."""
     trace = start_ingestion_trace(
         source=source,
@@ -258,7 +299,8 @@ def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
 
         ok, detail = None, None
         try:
-            r = _run_one(doc_id, trace.trace_id, phase, redownload=redownload)
+            r = _run_one(doc_id, trace.trace_id, phase, redownload=redownload,
+                         cancel_event=cancel_event)
             chunk_count = r.get("chunk_count", r.get("chunks", 0))
             status = r.get("status", "error")
 
@@ -306,7 +348,8 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
                      workflow_id: str = None,
                      workflow_execution_id: str = None,
                      bulk: bool = False,
-                     redownload: str = "none") -> dict:
+                     redownload: str = "none",
+                     cancel_event=None) -> dict:
     """Unified ingestion entry point — all paths route through here.
 
     Args:
@@ -316,6 +359,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
         workflow_id: n8n workflow ID (nullable, Mode B only).
         workflow_execution_id: n8n execution ID (nullable, Mode B only).
         bulk: Force Mode A (per-document traces). Auto-set for 'bootstrap_ui'.
+        cancel_event: threading.Event — set to cancel running subprocess.
 
     Returns:
         dict with either per-doc results (Mode A) or run-level summary (Mode B).
@@ -333,6 +377,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             workflow_id=workflow_id,
             workflow_execution_id=workflow_execution_id,
             redownload=redownload,
+            cancel_event=cancel_event,
         )
         return {
             "mode": "A",
@@ -350,4 +395,5 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             workflow_id=workflow_id,
             workflow_execution_id=workflow_execution_id,
             redownload=redownload,
+            cancel_event=cancel_event,
         )
