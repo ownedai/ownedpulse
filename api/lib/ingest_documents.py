@@ -46,6 +46,11 @@ from .trace_emitter import (
 SCRIPTS_DIR = "/opt/scripts"
 RUN_INGEST = f"{SCRIPTS_DIR}/ingestion/run_ingest.py"
 
+# Empirically measured: first batch of 1,870 docs took 43,505s wall-clock (23.3s/doc).
+# Steady-state (after ramp-up, excluding failure-heavy first hour): 17.4s/doc.
+# Using 20s/doc for ETA calculations — conservative enough for mixed feeds + embedding.
+SECONDS_PER_DOC = 20
+
 # Intermediate statuses that should never persist after a run ends
 _INTERMEDIATE_DOC_STATUSES = ('parsing', 'chunking', 'embedding', 'uploading', 'running')
 
@@ -154,7 +159,7 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
         if stdout_data and stdout_data.strip():
             try:
                 parsed = json.loads(stdout_data.strip())
-                if parsed.get("status") not in ("ok", "skipped"):
+                if parsed.get("status") not in ("ok", "skipped", "not_viable"):
                     _resolve_stale_spans(doc_id, trace_id, parsed.get("detail", ""))
                 return parsed
             except json.JSONDecodeError:
@@ -172,7 +177,7 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
 
 
 def _kill_proc(proc):
-    """Graceful → force kill a subprocess."""
+    """Graceful → force kill a subprocess. Drains pipes after kill."""
     try:
         proc.terminate()
         try:
@@ -182,6 +187,12 @@ def _kill_proc(proc):
             proc.wait(timeout=5)
     except Exception:
         pass
+    finally:
+        # Drain stdout/stderr to prevent pipe leaks
+        try:
+            proc.communicate(timeout=1)
+        except Exception:
+            pass
 
 
 # -- Mode A: per-document traces (bulk / bootstrap) --------------------------
@@ -190,20 +201,22 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
                    workflow_id: str = None,
                    workflow_execution_id: str = None,
                    redownload: str = "none",
-                   cancel_event=None) -> list:
-    """Each doc gets its own run_log row. No shared run envelope."""
+                   cancel_event=None,
+                   session_id: str = None) -> list:
+    """Each doc gets its own run_log row, all sharing session_id."""
     results = []
     for i, doc in enumerate(docs):
         doc_id = doc["doc_id"]
         phase = doc.get("phase", "live")
 
-        # Per-document trace
+        # Per-document trace — all docs in this batch share session_id
         trace = start_ingestion_trace(
             source=source,
             triggered_by=triggered_by,
             workflow_id=workflow_id,
             workflow_execution_id=workflow_execution_id,
             doc_id=doc_id,
+            session_id=session_id,
         )
 
         ok, detail = None, None
@@ -238,6 +251,16 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
                     doc_count_attempted=1,
                     doc_count_succeeded=0,
                     doc_count_failed=0,
+                )
+            elif status == "not_viable":
+                ok = None
+                detail = r.get("gate_reason") or r.get("detail", "")
+                trace.finalize(
+                    status="skipped",
+                    doc_count_attempted=1,
+                    doc_count_succeeded=0,
+                    doc_count_failed=0,
+                    error_summary=detail,
                 )
             else:
                 ok = False
@@ -280,13 +303,15 @@ def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
                    workflow_id: str = None,
                    workflow_execution_id: str = None,
                    redownload: str = "none",
-                   cancel_event=None) -> dict:
+                   cancel_event=None,
+                   session_id: str = None) -> dict:
     """One run_log row wraps all documents in the batch."""
     trace = start_ingestion_trace(
         source=source,
         triggered_by=triggered_by,
         workflow_id=workflow_id,
         workflow_execution_id=workflow_execution_id,
+        session_id=session_id,
     )
 
     results = []
@@ -349,7 +374,8 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
                      workflow_execution_id: str = None,
                      bulk: bool = False,
                      redownload: str = "none",
-                     cancel_event=None) -> dict:
+                     cancel_event=None,
+                     session_id: str = None) -> dict:
     """Unified ingestion entry point — all paths route through here.
 
     Args:
@@ -359,6 +385,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
         workflow_id: n8n workflow ID (nullable, Mode B only).
         workflow_execution_id: n8n execution ID (nullable, Mode B only).
         bulk: Force Mode A (per-document traces). Auto-set for 'bootstrap_ui'.
+        session_id: Groups all docs in this call into one ingestion run (nullable).
         cancel_event: threading.Event — set to cancel running subprocess.
 
     Returns:
@@ -378,6 +405,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             workflow_execution_id=workflow_execution_id,
             redownload=redownload,
             cancel_event=cancel_event,
+            session_id=session_id,
         )
         return {
             "mode": "A",
@@ -396,4 +424,5 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             workflow_execution_id=workflow_execution_id,
             redownload=redownload,
             cancel_event=cancel_event,
+            session_id=session_id,
         )

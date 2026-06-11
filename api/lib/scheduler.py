@@ -129,10 +129,15 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
             logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
             error_detail = None
             try:
+                env = os.environ.copy()
+                pg_pass = env.get("POSTGRES_PASSWORD", "")
+                env.setdefault("PG_DSN",
+                    f"postgresql://{POSTGRES_USER}:{pg_pass}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    env=env,
                 )
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1800)
                 if proc.returncode == 0:

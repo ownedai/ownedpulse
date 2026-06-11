@@ -12,7 +12,7 @@ Applies all Phase F gap fixes: F1 F2 F3 F4 F6.
 Exit: 0 on success, 1 on error
 """
 
-import os, sys, json, argparse
+import os, sys, json, random, argparse
 
 # Parse args before any risky imports so doc_id is available for error reporting
 # even if the script crashes at import time.
@@ -148,6 +148,12 @@ def get_document_type(doc_type: str) -> str:
     return DOC_TYPE_TO_DOCUMENT_TYPE.get(doc_type, "other")
 
 def get_archive_dir(doc_id: str, force: bool = False) -> Path:
+    """Return archive Path for doc_id, or None if already ingested and not forced.
+
+    Returns None when the document has already been successfully ingested
+    (ingestion_status in 'success'/'indexed') and force=False. This is NOT
+    an error — the document is up-to-date and needs no work.
+    """
     with pg_conn() as conn:
         with conn.cursor() as c:
             c.execute("SELECT archive_path, ingestion_status FROM document_registry_ext "
@@ -156,7 +162,7 @@ def get_archive_dir(doc_id: str, force: bool = False) -> Path:
     if not row:
         raise ValueError(f"Not in registry: {doc_id}")
     if not force and row[1] in ("success", "indexed"):
-        raise SystemExit(json.dumps({"status":"ok","doc_id":doc_id,"note":"already ingested"}))
+        return None
     if not row[0]:
         raise ValueError(f"archive_path is NULL for {doc_id}")
     # Rewrite host-side archive root to container mount path.
@@ -273,7 +279,10 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
         # HTML response — scrape for PDF link. Always attempt when force-redownloading
         # or when the stored format is not PDF (covers not_viable HTML docs where
         # the upstream page may now have a PDF link that wasn't there originally).
+        # Only follow PDFs on the same domain to avoid chasing external broken links.
         if not is_pdf:
+            from urllib.parse import urlparse as _urlparse
+            src_domain = _urlparse(source_url).netloc.lower()
             with open(dest_tmp, "rb") as fh:
                 html_bytes = fh.read(2_000_000)
             soup = BeautifulSoup(html_bytes, "html.parser")
@@ -282,6 +291,7 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
                 _urljoin(source_url, a["href"])
                 for a in soup.find_all("a", href=True)
                 if _urljoin(source_url, a["href"]).lower().split("?")[0].endswith(".pdf")
+                and _urlparse(_urljoin(source_url, a["href"])).netloc.lower() == src_domain
             ]
             if authority.upper() == "EMA" and len(pdf_candidates) > 1:
                 pdf_url = max(pdf_candidates, key=len)
@@ -291,11 +301,16 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
                 pdf_url = None
 
             if pdf_url:
-                new_hash, is_pdf = _stream_to_file(pdf_url, dest_tmp)
-                metadata["source_url"] = pdf_url
-                metadata["source_file_format"] = "pdf"
-                with open(meta_path, "w") as fh:
-                    json.dump(metadata, fh)
+                try:
+                    new_hash, is_pdf = _stream_to_file(pdf_url, dest_tmp)
+                except Exception as e:
+                    print(f"  PDF link failed ({e}), falling back to HTML page", file=sys.stderr)
+                    pdf_url = None
+                else:
+                    metadata["source_url"] = pdf_url
+                    metadata["source_file_format"] = "pdf"
+                    with open(meta_path, "w") as fh:
+                        json.dump(metadata, fh)
 
         # check mode: unchanged — no replacement needed
         if mode == "check" and new_hash == stored_hash:
@@ -641,6 +656,28 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
         now       = datetime.now(timezone.utc).isoformat()
         authority = meta.get("issuing_body","")
         chunks    = chunk_html_text(text)
+
+        # ── Post-chunking quality gate ────────────────────────────────────
+        from ingestion.chunk_quality import evaluate_chunk_quality
+        quality = evaluate_chunk_quality(chunks)
+        if not quality["gate_pass"]:
+            print(f"  [quality-gate] FAILED — {quality['gate_reason']} "
+                  f"bad={quality['bad']}/{quality['total']} flags={quality['by_flag']}",
+                  file=sys.stderr)
+            from ingestion.registry import mark_document_not_viable
+            mark_document_not_viable(doc_id, quality["gate_reason"])
+            return {
+                "status":      "not_viable",
+                "doc_id":      doc_id,
+                "gate_reason": quality["gate_reason"],
+                "chunk_count": quality["total"],
+                "bad_pct":     quality["bad_pct"],
+            }
+        else:
+            print(f"  [quality-gate] PASS — chunks={quality['total']} "
+                  f"bad={quality['bad_pct']}%", file=sys.stderr)
+        # ── End quality gate ──────────────────────────────────────────────
+
         points    = []
         for chunk in chunks:
             chunk_id = make_chunk_id(doc_id, chunk["chunk_index"])
@@ -814,6 +851,8 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
                   redownload: str = "none") -> dict:
     force = redownload in ("check", "force")
     archive_dir = get_archive_dir(doc_id, force=force)
+    if archive_dir is None:
+        return {"status": "ok", "doc_id": doc_id, "note": "already ingested"}
 
     # If archive dir or metadata.json is missing, force a redownload regardless
     # of the requested redownload mode — the file was never fetched.
@@ -823,13 +862,20 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
     elif redownload in ("check", "force"):
         redownload_source(archive_dir, doc_id, mode=redownload)
     elif _is_not_viable(doc_id):
-        # not_viable docs: auto-force redownload to re-scrape the source URL.
-        # The upstream page may have changed since the original fetch (e.g. EMA
-        # added PDF links). Without this, a simple reingest will re-read the old
-        # saved HTML file and fail identically.
-        print(f"  not_viable doc {doc_id}: auto-forcing redownload to re-scrape source",
+        # not_viable docs: check if source changed before re-processing.
+        # If the file hash is unchanged, re-chunking will produce the same
+        # quality gate failure — skip it and avoid wasting compute.
+        changed = redownload_source(archive_dir, doc_id, mode="check")
+        if not changed:
+            print(f"  not_viable doc {doc_id}: source unchanged — skipping",
+                  file=sys.stderr)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "note": "not_viable document — source hash unchanged, skipping",
+            }
+        print(f"  not_viable doc {doc_id}: source changed — re-processing",
               file=sys.stderr)
-        redownload_source(archive_dir, doc_id, mode="force")
     with open(archive_dir / "metadata.json") as f:
         metadata = json.load(f)
     feed_id   = metadata.get("feed_id","")
@@ -929,6 +975,8 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
     else:
         result      = ingest_document(doc_id, chunker_version=CHUNKER_VERSION,
                                       trace_id=run_id or "")
+        if result.get("status") == "not_viable":
+            return result
         chunk_count = result["chunks"]
         n = post_inject(doc_id, cls, meta, feed_id, phase)
         print(f"  Post-inject: {n} points", file=sys.stderr)

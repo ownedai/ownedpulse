@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reingestDoc, openBootstrapProgress } from '../../api/client';
 import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';

@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from lib import ingestion_lock
+from lib.ingest_documents import SECONDS_PER_DOC
 
 router = APIRouter()
 
@@ -297,7 +298,6 @@ def _interleave_docs(docs: list) -> list:
     than exhausting them early (which would leave the tail all-EMA).
     """
     from collections import defaultdict
-    import random
     groups = defaultdict(list)
     for doc in docs:
         body = doc.get("issuing_body", "") or ""
@@ -315,9 +315,8 @@ def _interleave_docs(docs: list) -> list:
     if len(groups) <= 1:
         return docs
 
-    # Shuffle within each group so consecutive docs aren't from the same sub-feed
-    for g in groups.values():
-        random.shuffle(g)
+    # Keep natural ORDER BY document_id within each group — corpus docs
+    # (21-CFR-Part-11, EU-GMP-Annex11, etc.) come first in their group.
 
     # Sort groups largest-first; the largest group forms the backbone
     sorted_groups = sorted(groups.values(), key=len, reverse=True)
@@ -329,21 +328,26 @@ def _interleave_docs(docs: list) -> list:
     if total_smaller == 0:
         return docs
 
+    # Round-robin between smaller groups so FDA/ICH are interleaved too
+    smaller_flat = []
+    max_small = max(len(g) for g in smaller) if smaller else 0
+    for i in range(max_small):
+        for g in smaller:
+            if i < len(g):
+                smaller_flat.append(g[i])
+
     # Insert smaller-group docs at regular intervals within the largest group
     gap = max(1, len(largest) // (total_smaller + 1))
     small_idx = 0
-    small_flat = [d for g in smaller for d in g]
 
     for i, doc in enumerate(largest):
         interleaved.append(doc)
-        # Insert a smaller-group doc every `gap` positions
-        if (i + 1) % gap == 0 and small_idx < len(small_flat):
-            interleaved.append(small_flat[small_idx])
+        if (i + 1) % gap == 0 and small_idx < len(smaller_flat):
+            interleaved.append(smaller_flat[small_idx])
             small_idx += 1
 
-    # Append any remaining smaller-group docs at the end
-    if small_idx < len(small_flat):
-        interleaved.extend(small_flat[small_idx:])
+    if small_idx < len(smaller_flat):
+        interleaved.extend(smaller_flat[small_idx:])
 
     return interleaved
 
@@ -411,6 +415,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                     triggered_by="bootstrap_ui",
                     redownload=redownload,
                     cancel_event=cancel_event,
+                    session_id=session_id,
                 )
                 doc_results = result.get("results", [])
                 dr = doc_results[0] if doc_results else {}
@@ -428,6 +433,14 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                         "doc_id": doc_id,
                         "status": "skipped",
                         "reason": (dr.get("detail") or "Unsupported format")[:200],
+                    })
+                elif dr.get("status") == "not_viable":
+                    session["skipped"] += 1
+                    session["docs"].append({
+                        "doc_id": doc_id,
+                        "status": "not_viable",
+                        "reason": (dr.get("gate_reason") or dr.get("detail", ""))[:200],
+                        "chunks": dr.get("chunk_count", 0),
                     })
                 else:
                     session["failed"] += 1
@@ -451,9 +464,10 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
         else:
             succeeded = session["succeeded"]
             failed = session["failed"]
-            if failed == 0:
+            skipped = session.get("skipped", 0)
+            if succeeded > 0 and failed == 0:
                 final_status = "success"
-            elif succeeded > 0 or session.get("skipped", 0) > 0:
+            elif succeeded > 0 or skipped > 0:
                 final_status = "partial"
             else:
                 final_status = "failed"
@@ -488,7 +502,9 @@ async def bootstrap_progress(session_id: str):
                 sent_doc_idx = len(session["docs"])
 
                 # Overall progress event
-                yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'skipped': session.get('skipped', 0), 'status': session['status']})}\n\n"
+                remaining = session['total'] - session['processed']
+                eta_seconds = max(0, remaining * SECONDS_PER_DOC)
+                yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'skipped': session.get('skipped', 0), 'status': session['status'], 'eta_seconds': eta_seconds})}\n\n"
 
                 if session["status"] not in ("pending", "running"):
                     break

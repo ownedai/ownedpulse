@@ -80,7 +80,8 @@ class IngestionTrace:
 def start_ingestion_trace(*, source: str, triggered_by: str,
                           workflow_id: Optional[str] = None,
                           workflow_execution_id: Optional[str] = None,
-                          doc_id: Optional[str] = None) -> IngestionTrace:
+                          doc_id: Optional[str] = None,
+                          session_id: Optional[str] = None) -> IngestionTrace:
     """Create a run_log row and return an IngestionTrace handle.
 
     Args:
@@ -89,6 +90,7 @@ def start_ingestion_trace(*, source: str, triggered_by: str,
         workflow_id: n8n workflow ID (nullable).
         workflow_execution_id: n8n execution ID (nullable).
         doc_id: document_registry.document_id for per-document traces (nullable).
+        session_id: Ingestion run group ID — shared by all docs in one run (nullable).
 
     Returns:
         IngestionTrace with .trace_id (UUID str) to stamp on every chunk.
@@ -99,9 +101,11 @@ def start_ingestion_trace(*, source: str, triggered_by: str,
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO run_log (run_id, trigger_source, triggered_by,
-                                 workflow_id, n8n_execution_id, doc_id, status)
-            VALUES (%s, %s, %s, %s, %s, %s, 'running')
-        """, (trace_id, source, triggered_by, workflow_id, workflow_execution_id, doc_id))
+                                 workflow_id, n8n_execution_id, doc_id, status,
+                                 session_id)
+            VALUES (%s, %s, %s, %s, %s, %s, 'running', %s::uuid)
+        """, (trace_id, source, triggered_by, workflow_id, workflow_execution_id, doc_id,
+              session_id))
         conn.commit()
         cur.close()
     finally:

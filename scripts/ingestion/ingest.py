@@ -137,6 +137,32 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
         from .subclause_splitter import split_trapped_subclauses
         chunks = split_trapped_subclauses(chunks)
 
+        # ── Post-chunking quality gate ────────────────────────────────────
+        from .chunk_quality import evaluate_chunk_quality
+        quality = evaluate_chunk_quality(chunks)
+        if not quality["gate_pass"]:
+            print(f"  [quality-gate] FAILED — {quality['gate_reason']} "
+                  f"bad={quality['bad']}/{quality['total']} flags={quality['by_flag']}",
+                  file=sys.stderr)
+            from .registry import mark_document_not_viable
+            mark_document_not_viable(doc_id, quality["gate_reason"])
+            if doc_span:
+                doc_span.finalize(
+                    status="skipped", chunk_count=quality["total"],
+                    failure_reason=quality["gate_reason"],
+                )
+            return {
+                'doc_id':      doc_id,
+                'chunks':      quality['total'],
+                'jsonl':       None,
+                'gate_reason': quality['gate_reason'],
+                'status':      'not_viable',
+            }
+        else:
+            print(f"  [quality-gate] PASS — chunks={quality['total']} "
+                  f"bad={quality['bad_pct']}%", file=sys.stderr)
+        # ── End quality gate ──────────────────────────────────────────────
+
     # Carry-forward clause_id for sub-heading chunks (Annex 15 pattern)
         # Sub-sections with text-only headings inherit nearest preceding numbered clause
         last_clause = None

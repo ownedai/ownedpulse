@@ -40,84 +40,6 @@ def _fmt_dt(dt) -> str | None:
 
 # ── GET /ingestions ───────────────────────────────────────────────────────────
 
-SESSION_GAP_SECONDS = 300  # 5 min gap between run_log rows = new session
-
-
-def _ts_key(ts) -> str:
-    """URL-safe timestamp key: replace '+' with 'p', ':' with 'c'."""
-    return ts.isoformat().replace("+", "p").replace(":", "c")
-
-
-def _detect_sessions(rows: list) -> list:
-    """Group consecutive run_log rows into sessions by gap detection.
-
-    Two consecutive rows belong to the same session if:
-      - Same trigger_source
-      - triggered_at gap < SESSION_GAP_SECONDS
-    """
-    if not rows:
-        return []
-    sessions = []
-    cur_source = None
-    cur_start = None
-    cur_end = None
-    cur_rows = 0
-    cur_succeeded = 0
-    cur_failed = 0
-    run_ids = []
-
-    def flush():
-        nonlocal cur_source, cur_start, cur_end, cur_rows, cur_succeeded, cur_failed, run_ids
-        total = cur_succeeded + cur_failed
-        if cur_failed == 0:
-            grp_status = "success"
-        elif cur_succeeded == 0:
-            grp_status = "error"
-        else:
-            grp_status = "partial"
-        sessions.append({
-            "type": "session_group",
-            "run_token": f"{_ts_key(cur_start)}__{_ts_key(cur_end)}__{cur_source}",
-            "source": cur_source,
-            "triggered_at": cur_start.isoformat(),
-            "status": grp_status,
-            "doc_count": cur_rows,
-            "doc_count_succeeded": cur_succeeded,
-            "doc_count_failed": cur_failed,
-            "_run_ids": list(run_ids),
-        })
-        cur_source = None
-        cur_start = None
-        cur_end = None
-        cur_rows = 0
-        cur_succeeded = 0
-        cur_failed = 0
-        run_ids = []
-
-    for row in rows:
-        ts, source, run_id, run_status = row
-        if cur_source is None:
-            cur_source = source
-            cur_start = ts
-            cur_end = ts
-        elif source != cur_source or (ts - cur_end).total_seconds() >= SESSION_GAP_SECONDS:
-            flush()
-            cur_source = source
-            cur_start = ts
-            cur_end = ts
-        else:
-            cur_end = ts
-        cur_rows += 1
-        if run_status == "success":
-            cur_succeeded += 1
-        elif run_status in ("error", "failed"):
-            cur_failed += 1
-        run_ids.append(run_id)
-
-    if cur_source is not None:
-        flush()
-    return sessions
-
 
 @router.get("")
 async def list_ingestions(
@@ -128,14 +50,25 @@ async def list_ingestions(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ):
-    """Unified ingestion list: session groups (bulk) + RSS runs."""
+    """Unified ingestion list: session groups (bulk) + RSS runs.
+
+    Grouped by session_id — all docs in one bootstrap/share the same session UUID.
+    RSS runs and manual CLI use their run_id as the implicit session key.
+    """
     try:
         conn = get_pg_conn()
         cur = conn.cursor()
 
-        # ── Session groups: gap-detection on individual run_log rows ───────
+        # ── Session groups: grouped by COALESCE(session_id, run_id) ─────────
         sg_where = ["trigger_source = ANY(%s)"]
         sg_params: list = [list(SESSION_SOURCES)]
+        if status:
+            # Pre-filter: sessions are a mix — filter post-group
+            pass
+        if source:
+            allowed = SOURCE_CATEGORIES.get(source, (source,))
+            sg_where.append("trigger_source = ANY(%s)")
+            sg_params.append(list(allowed))
         if date_from:
             sg_where.append("triggered_at >= %s::timestamptz")
             sg_params.append(date_from)
@@ -145,25 +78,43 @@ async def list_ingestions(
 
         cur.execute(
             f"""
-            SELECT triggered_at, trigger_source, run_id, status
+            SELECT
+                COALESCE(session_id, run_id)::text AS group_id,
+                MIN(trigger_source) AS trigger_source,
+                MIN(triggered_at) AS triggered_at,
+                COUNT(*) AS doc_count,
+                COUNT(*) FILTER (WHERE status = 'success') AS doc_count_succeeded,
+                COUNT(*) FILTER (WHERE status IN ('error', 'failed')) AS doc_count_failed
             FROM run_log
             WHERE {' AND '.join(sg_where)}
-            ORDER BY trigger_source, triggered_at
+            GROUP BY COALESCE(session_id, run_id)
+            ORDER BY MIN(triggered_at) DESC
             """,
             sg_params
         )
-        raw_rows = cur.fetchall()
-        session_groups = _detect_sessions(raw_rows)
-        # Drop internal _run_ids from response
-        for sg in session_groups:
-            sg.pop("_run_ids", None)
+        session_groups = []
+        for row in cur.fetchall():
+            gid, ts, triggered_at, cnt, succeeded, failed = row
+            if failed == 0:
+                grp_status = "success"
+            elif succeeded == 0:
+                grp_status = "error"
+            else:
+                grp_status = "partial"
+            session_groups.append({
+                "type": "session_group",
+                "run_token": gid,
+                "source": ts,
+                "triggered_at": _fmt_dt(triggered_at),
+                "status": grp_status,
+                "doc_count": cnt,
+                "doc_count_succeeded": succeeded,
+                "doc_count_failed": failed,
+            })
 
-        # Apply status/source filters post-detection
+        # Apply status filter post-grouping
         if status:
             session_groups = [sg for sg in session_groups if sg["status"] == status]
-        if source:
-            allowed = SOURCE_CATEGORIES.get(source, (source,))
-            session_groups = [sg for sg in session_groups if sg["source"] in allowed]
 
         # ── RSS runs: each run_log row for rss/scheduled sources ───────────
         rss_where = ["trigger_source = ANY(%s)"]
@@ -234,173 +185,140 @@ async def session_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
 ):
-    """Documents ingested in a session group (bootstrap/manual bulk)."""
-    # run_token = "{start_ts_key}__{end_ts_key}__{trigger_source}"
-    # where ts_key = isoformat with +→p, :→- (URL-safe)
-    def _parse_ts_key(key: str):
-        return key.replace("p", "+").replace("c", ":")
-    try:
-        from datetime import datetime as _dt
-        parts = run_token.rsplit("__", 2)
-        if len(parts) != 3:
-            raise ValueError("Expected 3 parts")
-        start_ts_str = _parse_ts_key(parts[0])
-        end_ts_str = _parse_ts_key(parts[1])
-        trigger_src = parts[2]
-        start_ts = _dt.fromisoformat(start_ts_str)
-        end_ts = _dt.fromisoformat(end_ts_str)
-    except Exception:
-        # Fallback: old format "YYYY-MM-DD_trigger_source"
-        try:
-            parts = run_token.split("_", 1)
-            grp_date = parts[0]
-            trigger_src = parts[1] if len(parts) > 1 else None
-            if not trigger_src:
-                raise HTTPException(status_code=422, detail="Invalid run_token format")
-            from datetime import datetime as _dt
-            start_ts = _dt.fromisoformat(f"{grp_date}T00:00:00")
-            end_ts = _dt.fromisoformat(f"{grp_date}T23:59:59.999999")
-        except Exception:
-            raise HTTPException(status_code=422, detail="Invalid run_token format")
+    """Documents ingested in a session group (bootstrap/manual bulk).
 
-    try:
-        conn = get_pg_conn()
-        cur = conn.cursor()
+    run_token is the session_id (UUID) or run_id that groups the ingestion run.
+    """
+    conn = get_pg_conn()
+    cur = conn.cursor()
 
-        # Get run_ids for this session group using time bounds
-        cur.execute(
-            """
-            SELECT run_id FROM run_log
-            WHERE trigger_source = %s
-              AND triggered_at >= %s
-              AND triggered_at <= %s
-            """,
-            (trigger_src, start_ts, end_ts)
-        )
-        run_ids = [str(row[0]) for row in cur.fetchall()]
-        if not run_ids:
-            cur.close()
-            conn.close()
-            return {"run_token": run_token, "items": [], "total": 0, "page": page, "page_size": page_size}
-
-        # Count unique docs from ingestion_doc (normal path)
-        cur.execute(
-            "SELECT COUNT(DISTINCT doc_id) FROM ingestion_doc WHERE trace_id::text = ANY(%s)",
-            (run_ids,)
-        )
-        traced_count = cur.fetchone()[0]
-
-        if traced_count > 0:
-            # Normal path — ingestion_doc has rows
-            cur.execute(
-                """
-                SELECT * FROM (
-                    SELECT DISTINCT ON (id.doc_id)
-                        id.doc_id,
-                        COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title', id.doc_id) AS document_title,
-                        COALESCE(dr.issuing_body, '') AS agency,
-                        COALESCE(dr.doc_type, '') AS doc_type,
-                        id.status AS ingestion_status,
-                        id.chunk_count,
-                        id.failure_reason,
-                        id.trace_id::text,
-                        id.source_url,
-                        id.fetched_at,
-                        id.parsed_at,
-                        id.created_at AS ingested_at,
-                        id.embedding_model,
-                        COUNT(*) OVER (PARTITION BY id.doc_id) AS retry_count,
-                        FIRST_VALUE(id.status) OVER (PARTITION BY id.doc_id ORDER BY id.created_at ASC) AS first_attempt_status
-                    FROM ingestion_doc id
-                    LEFT JOIN document_registry dr ON dr.document_id = id.doc_id
-                    WHERE id.trace_id::text = ANY(%s)
-                    ORDER BY id.doc_id, id.created_at DESC
-                ) sub
-                ORDER BY CASE WHEN ingestion_status IN ('error', 'failed') THEN 0 ELSE 1 END ASC, ingested_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (run_ids, page_size, (page - 1) * page_size)
-            )
-            items = []
-            for row in cur.fetchall():
-                (doc_id, document_title, agency, doc_type, ingestion_status,
-                 chunk_count, failure_reason, trace_id, source_url,
-                 fetched_at, parsed_at, ingested_at, embedding_model,
-                 retry_count, first_attempt_status) = row
-                items.append({
-                    "doc_id": doc_id,
-                    "document_title": document_title or doc_id,
-                    "agency": agency,
-                    "doc_type": doc_type,
-                    "ingestion_status": ingestion_status,
-                    "chunk_count": chunk_count or 0,
-                    "failure_reason": failure_reason,
-                    "trace_id": trace_id,
-                    "source_url": source_url,
-                    "fetched_at": _fmt_dt(fetched_at),
-                    "parsed_at": _fmt_dt(parsed_at),
-                    "ingested_at": _fmt_dt(ingested_at),
-                    "embedding_model": embedding_model,
-                    "retry_count": int(retry_count),
-                    "has_retries": int(retry_count) > 1,
-                    "first_attempt_status": first_attempt_status,
-                })
-            total = traced_count
-        else:
-            # Fallback — ingestion_doc has no rows (subprocess crashed before
-            # creating document spans). Synthesize entries from run_log rows.
-            cur.execute(
-                """
-                SELECT rl.run_id, rl.doc_id, rl.status, rl.error_detail,
-                       COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title') AS document_title,
-                       COALESCE(dr.issuing_body, '') AS agency,
-                       COALESCE(dr.doc_type, '') AS doc_type
-                FROM run_log rl
-                LEFT JOIN document_registry dr ON dr.document_id = rl.doc_id
-                WHERE rl.run_id::text = ANY(%s)
-                ORDER BY CASE WHEN rl.status IN ('error', 'failed') THEN 0 ELSE 1 END ASC,
-                         rl.triggered_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (run_ids, page_size, (page - 1) * page_size)
-            )
-            items = []
-            for row in cur.fetchall():
-                rid, doc_id, status, error_detail, title, agency, doc_type = row
-                display_id = doc_id or str(rid)
-                items.append({
-                    "doc_id": display_id,
-                    "document_title": title or display_id,
-                    "agency": agency or "",
-                    "doc_type": doc_type or "",
-                    "ingestion_status": status,
-                    "chunk_count": 0,
-                    "failure_reason": error_detail,
-                    "trace_id": str(rid),
-                    "source_url": None,
-                    "fetched_at": None,
-                    "parsed_at": None,
-                    "ingested_at": None,
-                    "embedding_model": None,
-                    "retry_count": 1,
-                    "has_retries": False,
-                    "first_attempt_status": None,
-                })
-
-            cur.execute(
-                "SELECT COUNT(*) FROM run_log WHERE run_id::text = ANY(%s)",
-                (run_ids,)
-            )
-            total = cur.fetchone()[0]
-
+    # Find all run_log rows sharing this session_id or matching this run_id
+    cur.execute(
+        """
+        SELECT run_id FROM run_log
+        WHERE session_id = %s::uuid OR run_id = %s::uuid
+        """,
+        (run_token, run_token)
+    )
+    run_ids = [str(row[0]) for row in cur.fetchall()]
+    if not run_ids:
         cur.close()
         conn.close()
-        return {"run_token": run_token, "items": items, "total": total, "page": page, "page_size": page_size}
+        return {"run_token": run_token, "items": [], "total": 0, "page": page, "page_size": page_size}
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database error: {e}")
+    # Count unique docs from ingestion_doc (normal path)
+    cur.execute(
+        "SELECT COUNT(DISTINCT doc_id) FROM ingestion_doc WHERE trace_id::text = ANY(%s)",
+        (run_ids,)
+    )
+    traced_count = cur.fetchone()[0]
+
+    if traced_count > 0:
+        # Normal path — ingestion_doc has rows
+        cur.execute(
+            """
+            SELECT * FROM (
+                SELECT DISTINCT ON (id.doc_id)
+                    id.doc_id,
+                    COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title', id.doc_id) AS document_title,
+                    COALESCE(dr.issuing_body, '') AS agency,
+                    COALESCE(dr.doc_type, '') AS doc_type,
+                    id.status AS ingestion_status,
+                    id.chunk_count,
+                    id.failure_reason,
+                    id.trace_id::text,
+                    id.source_url,
+                    id.fetched_at,
+                    id.parsed_at,
+                    id.created_at AS ingested_at,
+                    id.embedding_model,
+                    COUNT(*) OVER (PARTITION BY id.doc_id) AS retry_count,
+                    FIRST_VALUE(id.status) OVER (PARTITION BY id.doc_id ORDER BY id.created_at ASC) AS first_attempt_status
+                FROM ingestion_doc id
+                LEFT JOIN document_registry dr ON dr.document_id = id.doc_id
+                WHERE id.trace_id::text = ANY(%s)
+                ORDER BY id.doc_id, id.created_at DESC
+            ) sub
+            ORDER BY CASE WHEN ingestion_status IN ('error', 'failed') THEN 0 ELSE 1 END ASC, ingested_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            (run_ids, page_size, (page - 1) * page_size)
+        )
+        items = []
+        for row in cur.fetchall():
+            (doc_id, document_title, agency, doc_type, ingestion_status,
+             chunk_count, failure_reason, trace_id, source_url,
+             fetched_at, parsed_at, ingested_at, embedding_model,
+             retry_count, first_attempt_status) = row
+            items.append({
+                "doc_id": doc_id,
+                "document_title": document_title or doc_id,
+                "agency": agency,
+                "doc_type": doc_type,
+                "ingestion_status": ingestion_status,
+                "chunk_count": chunk_count or 0,
+                "failure_reason": failure_reason,
+                "trace_id": trace_id,
+                "source_url": source_url,
+                "fetched_at": _fmt_dt(fetched_at),
+                "parsed_at": _fmt_dt(parsed_at),
+                "ingested_at": _fmt_dt(ingested_at),
+                "embedding_model": embedding_model,
+                "retry_count": int(retry_count),
+                "has_retries": int(retry_count) > 1,
+                "first_attempt_status": first_attempt_status,
+            })
+        total = traced_count
+    else:
+        # Fallback — ingestion_doc has no rows (subprocess crashed before
+        # creating document spans). Synthesize entries from run_log rows.
+        cur.execute(
+            """
+            SELECT rl.run_id, rl.doc_id, rl.status, rl.error_detail,
+                   COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title') AS document_title,
+                   COALESCE(dr.issuing_body, '') AS agency,
+                   COALESCE(dr.doc_type, '') AS doc_type
+            FROM run_log rl
+            LEFT JOIN document_registry dr ON dr.document_id = rl.doc_id
+            WHERE rl.run_id::text = ANY(%s)
+            ORDER BY CASE WHEN rl.status IN ('error', 'failed') THEN 0 ELSE 1 END ASC,
+                     rl.triggered_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            (run_ids, page_size, (page - 1) * page_size)
+        )
+        items = []
+        for row in cur.fetchall():
+            rid, doc_id, status, error_detail, title, agency, doc_type = row
+            display_id = doc_id or str(rid)
+            items.append({
+                "doc_id": display_id,
+                "document_title": title or display_id,
+                "agency": agency or "",
+                "doc_type": doc_type or "",
+                "ingestion_status": status,
+                "chunk_count": 0,
+                "failure_reason": error_detail,
+                "trace_id": str(rid),
+                "source_url": None,
+                "fetched_at": None,
+                "parsed_at": None,
+                "ingested_at": None,
+                "embedding_model": None,
+                "retry_count": 1,
+                "has_retries": False,
+                "first_attempt_status": None,
+            })
+
+        cur.execute(
+            "SELECT COUNT(*) FROM run_log WHERE run_id::text = ANY(%s)",
+            (run_ids,)
+        )
+        total = cur.fetchone()[0]
+
+    cur.close()
+    conn.close()
+    return {"run_token": run_token, "items": items, "total": total, "page": page, "page_size": page_size}
 
 
 # ── GET /ingestions/runs/{run_id} ────────────────────────────────────────────

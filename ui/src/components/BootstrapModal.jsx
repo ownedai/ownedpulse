@@ -106,7 +106,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   // Running / complete state
   const [uiMode, setUiMode]         = useState('config'); // 'config' | 'running' | 'complete'
   const [sessionId, setSessionId]   = useState(null);
-  const [progress, setProgress]     = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending' });
+  const [progress, setProgress]     = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending', eta_seconds: 0 });
   const [docEvents, setDocEvents]   = useState([]);
   const [stopping, setStopping]     = useState(false);
   const [connectionLost, setConnectionLost] = useState(false);
@@ -357,7 +357,12 @@ export default function BootstrapModal({ onClose, onStarted }) {
                     <span style={{ fontSize: 13, color: 'var(--doc-text)' }}>
                       Processing <b>{progress.processed}</b> / {progress.total}
                     </span>
-                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)' }}>{pct}%</span>
+                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--doc-text-2)' }}>
+                      {pct}%
+                      {uiMode === 'running' && progress.eta_seconds > 0 && (
+                        <> &middot; {progress.eta_seconds < 60 ? '<1m' : progress.eta_seconds < 3600 ? `~${Math.round(progress.eta_seconds / 60)}m` : `~${(progress.eta_seconds / 3600).toFixed(1)}h`} left</>
+                      )}
+                    </span>
                   </div>
                   <div style={{ height: 6, borderRadius: 3, background: 'var(--doc-bg)', overflow: 'hidden' }}>
                     <div style={{ height: '100%', borderRadius: 3, background: allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--accent-l)', width: `${pct}%`, transition: 'width 400ms ease' }} />
@@ -524,17 +529,24 @@ export default function BootstrapModal({ onClose, onStarted }) {
                     </div>
 
                     {/* All available warning */}
-                    {dateWindow === 'all' && (
-                      <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', background: 'var(--warn-tint)', border: '1px solid var(--warn-tint-border)', borderRadius: 4 }}>
-                        <WarnIcon />
-                        <span style={{ fontSize: 12, color: 'var(--warn-text)', lineHeight: 1.5 }}>
-                          Fetching all available history may take 30–60 minutes.
-                          {rssEstimate != null && rssEstimate > 0 && (
-                            <> Estimated <b>{rssEstimate.toLocaleString()}</b> documents.</>
-                          )}
-                        </span>
-                      </div>
-                    )}
+                    {dateWindow === 'all' && (() => {
+                      const SEC_PER_DOC = 20;
+                      const estSeconds = (rssEstimate || 0) * SEC_PER_DOC;
+                      const estMin = Math.round(estSeconds / 60);
+                      const estStr = estMin < 60 ? `~${estMin} min` : `~${Math.round(estMin / 60)}h ${estMin % 60}m`;
+                      return (
+                        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', background: 'var(--warn-tint)', border: '1px solid var(--warn-tint-border)', borderRadius: 4 }}>
+                          <WarnIcon />
+                          <span style={{ fontSize: 12, color: 'var(--warn-text)', lineHeight: 1.5 }}>
+                            {rssEstimate != null && rssEstimate > 0 ? (
+                              <>Estimated <b>{rssEstimate.toLocaleString()}</b> documents, {estStr}.</>
+                            ) : (
+                              <>Fetching all available history may take 30–60 minutes.</>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Custom year dropdowns */}
                     {dateWindow === 'custom' && (
