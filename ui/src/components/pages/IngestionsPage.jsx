@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reingestDoc, openBootstrapProgress } from '../../api/client';
+import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reingestDoc, openBootstrapProgress, stopBootstrapSession } from '../../api/client';
+import { startBootstrapTracking, stopBootstrapTracking, useBootstrapProgress } from '../../hooks/useBootstrapProgress';
 import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 import DateInput, { todayISO } from '../common/DateInput';
@@ -11,9 +12,9 @@ const DOCTYPE_LABEL = {
   news_item: 'News Item', other: 'Unclassified',
 };
 
-function deriveSessionStatus(succeeded, failed) {
-  if (failed === 0) return 'success';
-  if (succeeded === 0) return 'error';
+function deriveSessionStatus(succeeded, failed, skipped) {
+  if (failed === 0 && succeeded > 0) return 'success';
+  if (succeeded === 0 && (skipped || 0) === 0) return 'error';
   return 'partial';
 }
 
@@ -26,7 +27,7 @@ function ChevronIcon() {
 }
 
 function G3Status({ status }) {
-  const label = { success: 'Success', partial: 'Partial', error: 'Error', running: 'Running', pending: 'Pending' }[status] || status;
+  const label = { success: 'Success', partial: 'Partial', error: 'Error', failed: 'Failed', running: 'Running', pending: 'Pending' }[status] || status;
   return <span className={`g3-status ${status || 'pending'}${status === 'running' ? ' status-pulse' : ''}`}>{label}</span>;
 }
 
@@ -83,11 +84,27 @@ function RetryProgressModal({ docId, sessionId, onClose }) {
   const [phase, setPhase] = useState('running');
   const [events, setEvents] = useState([]);
   const esRef = useRef(null);
+  const phaseRef = useRef('running');
+
+  // Keep phaseRef in sync so the SSE handler always reads the latest phase
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   useEffect(() => {
+    let closed = false;
     const es = openBootstrapProgress(sessionId);
     esRef.current = es;
+
+    // Hard timeout: if still running after 25 min, auto-close.
+    // Backend timeout is 1200s (20 min) — 25 min gives a safety margin.
+    const hardTimeout = setTimeout(() => {
+      if (!closed && phaseRef.current === 'running') {
+        setPhase('disconnected');
+        es.close();
+      }
+    }, 25 * 60 * 1000);
+
     es.onmessage = (ev) => {
+      if (closed) return;
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'doc') {
@@ -98,17 +115,30 @@ function RetryProgressModal({ docId, sessionId, onClose }) {
           es.close();
         } else if (msg.type === 'progress') {
           if (msg.status !== 'pending' && msg.status !== 'running') {
-            if (phase === 'running') setPhase(msg.status === 'success' ? 'done' : 'failed');
+            setPhase(msg.status === 'success' ? 'done' : 'failed');
             es.close();
           }
         }
       } catch (_) {}
     };
-    es.onerror = () => { setPhase('disconnected'); es.close(); };
-    return () => { if (esRef.current) { esRef.current.close(); esRef.current = null; } };
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+    es.onerror = () => {
+      if (!closed) { setPhase('disconnected'); es.close(); }
+    };
 
-  const canClose = phase !== 'running';
+    return () => {
+      closed = true;
+      clearTimeout(hardTimeout);
+      if (esRef.current) { esRef.current.close(); esRef.current = null; }
+    };
+  }, [sessionId]);
+
+  const handleStop = async () => {
+    stopBootstrapTracking();
+    if (esRef.current) { esRef.current.close(); esRef.current = null; }
+    try { await stopBootstrapSession(sessionId); } catch (_) {}
+    setPhase('failed');
+  };
+
   const phaseStyle = {
     running:      { bg: 'rgba(59,130,246,0.1)', color: 'var(--accent-l)', border: 'rgba(59,130,246,0.3)', label: 'Running…' },
     done:         { bg: 'var(--ok-tint)', color: 'var(--ok-text)', border: 'var(--ok-tint-border)', label: 'Indexed ✓' },
@@ -118,7 +148,7 @@ function RetryProgressModal({ docId, sessionId, onClose }) {
   }[phase] || {};
 
   return createPortal(
-    <div className="rp-modal-backdrop" onClick={canClose ? onClose : undefined}>
+    <div className="rp-modal-backdrop" onClick={onClose}>
       <div className="rp-modal" style={{ width: 540, maxWidth: '92vw' }} onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <div>
@@ -127,7 +157,7 @@ function RetryProgressModal({ docId, sessionId, onClose }) {
               {docId}
             </div>
           </div>
-          <button className={`close ${!canClose ? 'disabled' : ''}`} onClick={canClose ? onClose : undefined}>
+          <button className="close" onClick={onClose}>
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>
           </button>
         </div>
@@ -184,14 +214,24 @@ function RetryProgressModal({ docId, sessionId, onClose }) {
             )}
           </div>
         </div>
-        <div className="mfoot" style={{ justifyContent: 'flex-end' }}>
-          <button
-            className={`rp-mbtn ${canClose ? 'primary' : 'ghost disabled'}`}
-            disabled={!canClose}
-            onClick={canClose ? onClose : undefined}
-          >
-            {phase === 'running' ? 'Running…' : 'Close'}
-          </button>
+        <div className="mfoot" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--doc-text-3)', fontFamily: 'var(--mono)' }}>
+            {phase === 'running' ? 'Progress continues in the status bar' : ''}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {phase === 'running' && (
+              <button
+                className="rp-mbtn ghost"
+                onClick={handleStop}
+                style={{ color: 'var(--err-text)', borderColor: 'var(--err-text)' }}
+              >
+                Stop
+              </button>
+            )}
+            <button className="rp-mbtn primary" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>,
@@ -203,6 +243,8 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
   const [docSort, setDocSort] = useState('errors_first');
   const [reingestStates, setReingestStates] = useState({});
   const [retryModal, setRetryModal] = useState(null);
+  const { uiMode: ingestionRunning } = useBootstrapProgress();
+  const isIngesting = ingestionRunning === 'running';
 
   const handleReingest = useCallback((e, docId) => {
     e.stopPropagation();
@@ -211,6 +253,7 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
       .then(({ session_id }) => {
         setReingestStates((s) => ({ ...s, [docId]: 'idle' }));
         setRetryModal({ docId, sessionId: session_id });
+        startBootstrapTracking(session_id);
       })
       .catch((err) => {
         setReingestStates((s) => ({ ...s, [docId]: 'start_failed' }));
@@ -243,7 +286,7 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
     );
   }
 
-  const isErrorStatus = (s) => s === 'error' || s === 'failed';
+  const isErrorStatus = (s) => s === 'error' || s === 'failed' || s === 'pending';
   const errorCount = docs.filter((d) => isErrorStatus(d.ingestion_status)).length;
   const sorted = docSort === 'errors_first' && errorCount > 0
     ? [...docs].sort((a, b) => {
@@ -329,19 +372,20 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
                   <td onClick={(e) => e.stopPropagation()} style={{ paddingRight: 10, textAlign: 'right' }}>
                     {isError && (
                       <button
-                        disabled={rs === 'starting'}
+                        disabled={rs === 'starting' || isIngesting}
                         onClick={(e) => handleReingest(e, d.doc_id)}
+                        title={isIngesting ? 'Another ingestion is already running' : undefined}
                         style={{
                           fontSize: 11, padding: '2px 7px', borderRadius: 3,
-                          cursor: rs === 'starting' ? 'default' : 'pointer',
+                          cursor: (rs === 'starting' || isIngesting) ? 'default' : 'pointer',
                           fontFamily: 'var(--mono)', fontWeight: 600, whiteSpace: 'nowrap',
                           background: rs === 'start_failed' ? 'var(--err-tint)' : 'transparent',
                           color: rs === 'start_failed' ? 'var(--err-text)' : 'var(--doc-text-2)',
                           border: `1px solid ${rs === 'start_failed' ? 'var(--err-tint-border)' : 'var(--doc-border)'}`,
-                          opacity: rs === 'starting' ? 0.6 : 1,
+                          opacity: (rs === 'starting' || isIngesting) ? 0.6 : 1,
                         }}
                       >
-                        {rs === 'starting' ? '…' : rs === 'start_failed' ? '✗ Failed to start' : '↺ Retry'}
+                        {isIngesting ? '⏳ Running' : rs === 'starting' ? '…' : rs === 'start_failed' ? '✗ Failed to start' : '↺ Retry'}
                       </button>
                     )}
                   </td>
@@ -493,7 +537,7 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
   const handlePage = (p) => { setDocPage(p); fetchDocs(p, docPageSize); };
   const handlePageSize = (s) => { setDocPageSize(s); setDocPage(1); fetchDocs(1, s); };
 
-  const status = deriveSessionStatus(item.doc_count_succeeded, item.doc_count_failed);
+  const status = deriveSessionStatus(item.doc_count_succeeded, item.doc_count_failed, item.doc_count_skipped);
 
   return (
     <div className="g3-row session" data-testid={`ingestion-session-group-${item.run_token}`}>
@@ -504,7 +548,7 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
         <span className="g3-cell"><span className="lbl">Feed</span><span className="g3-feed">—</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={status} /></span>
         <span className="g3-cell num"><span className="lbl">New</span>{(item.doc_count_succeeded ?? 0).toLocaleString()}</span>
-        <span className="g3-cell num"><span className="lbl">Skipped</span>—</span>
+        <span className="g3-cell num"><span className="lbl">Skipped</span>{item.doc_count_skipped > 0 ? item.doc_count_skipped : '—'}</span>
         <span className={`g3-cell num errnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
           <span className="lbl">Errors</span>{item.doc_count_failed ?? 0}
         </span>

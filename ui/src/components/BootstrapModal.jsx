@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { formatDate } from '../dateFormat';
-import { getBootstrapStatus, getBootstrapState, getDateEstimate, postSourcesBootstrap, openBootstrapProgress, stopBootstrapSession } from '../api/client';
+import { getBootstrapStatus, getBootstrapState, getDateEstimate, postSourcesBootstrap } from '../api/client';
+import { useBootstrapProgress } from '../hooks/useBootstrapProgress';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -103,44 +104,27 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const [submitting, setSubmitting]                 = useState(false);
   const [submitError, setSubmitError]               = useState(null);
 
-  // Running / complete state
-  const [uiMode, setUiMode]         = useState('config'); // 'config' | 'running' | 'complete'
-  const [sessionId, setSessionId]   = useState(null);
-  const [progress, setProgress]     = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending', eta_seconds: 0 });
-  const [docEvents, setDocEvents]   = useState([]);
-  const [stopping, setStopping]     = useState(false);
+  // Running / complete state — persisted across modal close via shared hook
+  const {
+    uiMode, sessionId, progress, stopping, docEvents,
+    start: startTracking, stop: stopTracking, dismiss,
+  } = useBootstrapProgress();
+  const [localUiMode, setLocalUiMode]   = useState('config'); // modal-specific: 'config' | 'running' | 'complete'
   const [connectionLost, setConnectionLost] = useState(false);
 
   const estimateAbortRef   = useRef(null);
   const estimateTimeoutRef = useRef(null);
-  const esRef              = useRef(null);
 
-  // Shared SSE subscription — used by both handleSubmit and auto-reconnect
-  const subscribeToSession = useCallback((sid) => {
-    if (esRef.current) { esRef.current.close(); esRef.current = null; }
-    const es = openBootstrapProgress(sid);
-    esRef.current = es;
-    es.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        if (data.type === 'doc') {
-          setDocEvents(prev => [data, ...prev].slice(0, 150));
-        } else if (data.type === 'progress') {
-          setProgress(data);
-          if (data.status !== 'pending' && data.status !== 'running') {
-            es.close();
-            esRef.current = null;
-            setUiMode('complete');
-          }
-        }
-      } catch (_) {}
-    };
-    es.onerror = () => {
-      if (esRef.current) { esRef.current.close(); esRef.current = null; }
-      setConnectionLost(true);
-      setUiMode('complete');
-    };
-  }, []);
+  // Sync modal UI state with the shared tracking state
+  useEffect(() => {
+    if (uiMode === 'running' && localUiMode !== 'running') {
+      setLocalUiMode('running');
+    } else if (uiMode === 'complete' && localUiMode === 'running') {
+      setLocalUiMode('complete');
+    } else if (uiMode === 'idle') {
+      setLocalUiMode('config');
+    }
+  }, [uiMode, localUiMode]);
 
   // Load bootstrap status on mount; auto-reconnect to any active session
   useEffect(() => {
@@ -157,13 +141,13 @@ export default function BootstrapModal({ onClose, onStarted }) {
     getBootstrapState()
       .then(state => {
         if (state.active_session) {
-          setSessionId(state.active_session);
-          setUiMode('running');
-          subscribeToSession(state.active_session);
+          setLocalUiMode('running');
+          startTracking(state.active_session);
+          setLocalUiMode('running');
         }
       })
       .catch(() => {});
-  }, [subscribeToSession]);
+  }, [startTracking]);
 
   // Poll registry-status while discovery is running at startup
   const [registryStatus, setRegistryStatus] = useState(null);
@@ -217,7 +201,6 @@ export default function BootstrapModal({ onClose, onStarted }) {
   useEffect(() => () => {
     if (estimateTimeoutRef.current) clearTimeout(estimateTimeoutRef.current);
     if (estimateAbortRef.current) estimateAbortRef.current.abort();
-    if (esRef.current) { esRef.current.close(); esRef.current = null; }
   }, []);
 
   async function handleSubmit() {
@@ -232,12 +215,10 @@ export default function BootstrapModal({ onClose, onStarted }) {
       };
       const result = await postSourcesBootstrap(payload);
 
-      setSessionId(result.session_id);
-      setProgress({ total: result.total_docs, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'running' });
-      setUiMode('running');
       setSubmitting(false);
+      startTracking(result.session_id);
+      setLocalUiMode('running');
       onStarted?.(result);
-      subscribeToSession(result.session_id);
     } catch (err) {
       setSubmitError(err.message || 'Failed to start bootstrap');
       setSubmitting(false);
@@ -246,17 +227,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
 
   async function handleStop() {
     if (!sessionId || stopping) return;
-    setStopping(true);
-    try {
-      await stopBootstrapSession(sessionId);
-      // Backend confirmed stop — close SSE and transition directly
-      if (esRef.current) { esRef.current.close(); esRef.current = null; }
-      setProgress(prev => ({ ...prev, status: 'failed' }));
-      setUiMode('complete');
-    } catch (_) {
-      // If stop API failed (e.g. session already finished), SSE will still pick up the terminal status
-      setStopping(false);
-    }
+    stopTracking();
+    setLocalUiMode('complete');
   }
 
   // Derive year range for custom dropdowns from actual feed date_min values
@@ -267,7 +239,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const maxYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
 
-  const canSubmit = confirmed && !submitting && !loading;
+  const ingestionRunning = uiMode === 'running';
+  const canSubmit = confirmed && !submitting && !loading && !ingestionRunning;
   const rssEstimate = estimate?.estimated_docs ?? null;
   const totalEstimate = rssEstimate !== null ? rssEstimate + selectedBaseCorpus.length : null;
 
@@ -278,7 +251,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   };
 
   return createPortal(
-    <div className="rp-modal-backdrop" onClick={(!submitting && uiMode !== 'running') ? onClose : undefined}>
+    <div className="rp-modal-backdrop" onClick={(!submitting && localUiMode !== 'running') ? onClose : undefined}>
       <div
         className="rp-modal"
         style={{ width: 680, maxWidth: '95vw' }}
@@ -292,7 +265,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
               Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
             </div>
           </div>
-          <button className={`close ${(submitting || uiMode === 'running') ? 'disabled' : ''}`} onClick={(!submitting && uiMode !== 'running') ? onClose : undefined}>
+          <button className={`close ${(submitting || localUiMode === 'running') ? 'disabled' : ''}`} onClick={(!submitting && localUiMode !== 'running') ? onClose : undefined}>
             <CloseIcon />
           </button>
         </div>
@@ -417,7 +390,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
             );
           })()}
 
-          {!loading && !loadError && bootstrapStatus && uiMode === 'config' && (
+          {!loading && !loadError && bootstrapStatus && localUiMode === 'config' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
               {/* ── Section 1: Base Corpus ── */}
@@ -632,20 +605,25 @@ export default function BootstrapModal({ onClose, onStarted }) {
         {/* ── Footer ── */}
         <div className="mfoot" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)' }}>
-            {uiMode === 'config' && !loading && totalEstimate !== null
+            {localUiMode === 'config' && !loading && totalEstimate !== null
               ? `~${totalEstimate.toLocaleString()} documents selected`
-              : uiMode === 'config' && !loading && selectedBaseCorpus.length > 0
+              : localUiMode === 'config' && !loading && selectedBaseCorpus.length > 0
                 ? `${selectedBaseCorpus.length} base corpus doc${selectedBaseCorpus.length !== 1 ? 's' : ''} + RSS feeds`
-                : uiMode === 'running'
-                  ? 'Ingestion in progress — do not close this window'
+                : localUiMode === 'running'
+                  ? 'You can close this window — progress is shown in the status bar'
                   : ''
             }
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {submitError && uiMode === 'config' && (
+            {ingestionRunning && localUiMode === 'config' && (
+              <span style={{ fontSize: 12, color: '#f59e0b', fontFamily: 'var(--mono)', fontWeight: 600 }}>
+                Ingestion already running — wait for it to finish
+              </span>
+            )}
+            {submitError && localUiMode === 'config' && (
               <span style={{ fontSize: 12, color: 'var(--err-text)', maxWidth: 260 }}>{submitError}</span>
             )}
-            {uiMode === 'config' && (
+            {localUiMode === 'config' && (
               <>
                 <button className="rp-mbtn ghost" onClick={!submitting ? onClose : undefined} disabled={submitting}>
                   Cancel

@@ -78,26 +78,37 @@ async def list_ingestions(
 
         cur.execute(
             f"""
+            WITH latest AS (
+                SELECT DISTINCT ON (COALESCE(session_id, run_id), COALESCE(doc_id, run_id::text))
+                    COALESCE(session_id, run_id) AS group_id,
+                    COALESCE(doc_id, run_id::text) AS doc_key,
+                    status,
+                    trigger_source,
+                    triggered_at
+                FROM run_log
+                WHERE {' AND '.join(sg_where)}
+                ORDER BY COALESCE(session_id, run_id), COALESCE(doc_id, run_id::text), triggered_at DESC
+            )
             SELECT
-                COALESCE(session_id, run_id)::text AS group_id,
+                group_id,
                 MIN(trigger_source) AS trigger_source,
                 MIN(triggered_at) AS triggered_at,
                 COUNT(*) AS doc_count,
                 COUNT(*) FILTER (WHERE status = 'success') AS doc_count_succeeded,
+                COUNT(*) FILTER (WHERE status IN ('skipped', 'not_viable')) AS doc_count_skipped,
                 COUNT(*) FILTER (WHERE status IN ('error', 'failed')) AS doc_count_failed
-            FROM run_log
-            WHERE {' AND '.join(sg_where)}
-            GROUP BY COALESCE(session_id, run_id)
+            FROM latest
+            GROUP BY group_id
             ORDER BY MIN(triggered_at) DESC
             """,
             sg_params
         )
         session_groups = []
         for row in cur.fetchall():
-            gid, ts, triggered_at, cnt, succeeded, failed = row
-            if failed == 0:
+            gid, ts, triggered_at, cnt, succeeded, skipped, failed = row
+            if failed == 0 and succeeded > 0:
                 grp_status = "success"
-            elif succeeded == 0:
+            elif succeeded == 0 and skipped == 0:
                 grp_status = "error"
             else:
                 grp_status = "partial"
@@ -109,6 +120,7 @@ async def list_ingestions(
                 "status": grp_status,
                 "doc_count": cnt,
                 "doc_count_succeeded": succeeded,
+                "doc_count_skipped": skipped,
                 "doc_count_failed": failed,
             })
 

@@ -213,6 +213,7 @@ class BootstrapRequest(BaseModel):
     mode: str = "wipe_and_reload"          # "wipe_and_reload" | "reload_changed_only"
     base_corpus: List[str] = []            # doc_ids to include
     rss_feeds: List[FeedSelection] = []
+    redownload: str = "check"              # "none" | "check" | "force"
 
 
 def _build_doc_list_from_scope(base_corpus: List[str], rss_feeds: List[FeedSelection]) -> list:
@@ -290,7 +291,8 @@ async def sources_bootstrap(body: BootstrapRequest):
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 
     # Map UI mode to redownload strategy (controls source file fetch, not the wipe)
-    redownload = "force" if body.mode == "wipe_and_reload" else "check"
+    # wipe_and_reload always forces full redownload; reload_changed_only respects the selection
+    redownload = "force" if body.mode == "wipe_and_reload" else body.redownload
 
     # When wipe_and_reload: delete archive directories for selected docs
     # so source files are re-downloaded from scratch, not overwritten in place.

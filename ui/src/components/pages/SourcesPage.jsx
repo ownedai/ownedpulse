@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import BootstrapModal from '../BootstrapModal';
+import { startBootstrapTracking, useBootstrapProgress } from '../../hooks/useBootstrapProgress';
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
@@ -164,6 +165,8 @@ function BaseCorpusCard() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState({});
   const [reingesting, setReingesting] = useState(null);
+  const { uiMode } = useBootstrapProgress();
+  const isIngesting = uiMode === 'running';
 
   const load = useCallback(() => {
     setLoading(true);
@@ -181,7 +184,10 @@ function BaseCorpusCard() {
 
   async function handleReingest(docId) {
     setReingesting(docId);
-    try { await reingestDoc(docId); } catch (_) {}
+    try {
+      const { session_id } = await reingestDoc(docId);
+      startBootstrapTracking(session_id);
+    } catch (_) {}
     setTimeout(() => { setReingesting(null); load(); }, 3000);
   }
 
@@ -242,7 +248,7 @@ function BaseCorpusCard() {
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
                   {doc.issuing_body === 'EU-Commission' ? 'EMA' : doc.issuing_body}
                 </td>
-                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version || '—'}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{formatDate(doc.publication_date)}</td>
                 <td><StatusBadge status={doc.ingestion_status} /></td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.chunk_count || '—'}</td>
@@ -250,6 +256,10 @@ function BaseCorpusCard() {
                   <div className="rp-act">
                     {reingesting === doc.document_id ? (
                       <span className="btn busy"><span className="sp" /> Reingesting…</span>
+                    ) : isIngesting ? (
+                      <span className="btn" style={{ opacity: 0.5, cursor: 'default' }} title="Another ingestion is already running">
+                        <RefreshIcon /> Running…
+                      </span>
                     ) : (
                       <button className="btn" onClick={(e) => { e.stopPropagation(); handleReingest(doc.document_id); }}>
                         <RefreshIcon /> Reingest
@@ -276,7 +286,7 @@ function BaseCorpusCard() {
                   <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
                     {sup.issuing_body === 'EU-Commission' ? 'EMA' : sup.issuing_body}
                   </td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{sup.document_version || '—'}</td>
+                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{sup.document_version && sup.document_version !== '1.0' ? sup.document_version : '—'}</td>
                   <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>{formatDate(sup.publication_date)}</td>
                   <td>
                     <span style={{
@@ -700,8 +710,9 @@ const SCOPE_GROUPS = [
 ];
 
 const REDOWNLOAD_OPTIONS = [
-  { value: 'check', label: 'Re-download if changed',  hint: 'Compare hash; fetch only when source differs' },
-  { value: 'force', label: 'Re-download everything',  hint: 'Delete and re-fetch all files from original sources' },
+  { value: 'none',  label: 'Use local files',          hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
+  { value: 'check', label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
+  { value: 'force', label: 'Re-download everything',    hint: 'Delete and re-fetch all files from original sources' },
 ];
 
 function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
@@ -709,7 +720,7 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   const [mode, setMode] = useState('config'); // config | running | complete
   const [confirmed, setConfirmed] = useState(false);
   const [scope, setScope] = useState({ fda_guidance: true, fda_press: true, ema: true, ich: true });
-  const [redownload, setRedownload] = useState('check');
+  const [redownload, setRedownload] = useState('none');
   const [corpusSummary, setCorpusSummary] = useState(null);
   const [progress, setProgress] = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);

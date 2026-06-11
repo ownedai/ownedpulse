@@ -32,6 +32,7 @@ import os
 import sys
 import json
 import time
+import logging
 import subprocess
 from datetime import datetime, timezone
 from typing import Optional
@@ -108,20 +109,29 @@ def _subprocess_env(extra: dict = None) -> dict:
     env.setdefault("DOCLING_HOST", env.get("DOCLING_HOST", "http://docling:5001"))
     if not env.get("ARCHIVE_ROOT"):
         env["ARCHIVE_ROOT"] = "/archive"
+    # Force HuggingFace offline — tokenizer is cached locally. Without this,
+    # HybridChunker makes an outbound hub check that hangs when unreachable.
+    env["HF_HUB_OFFLINE"] = "1"
+    env["TRANSFORMERS_OFFLINE"] = "1"
     if extra:
         env.update(extra)
     return env
 
 
 def _run_one(doc_id: str, trace_id: str, phase: str = "live",
-             timeout: int = 600, redownload: str = "none",
+             timeout: int = 1200, redownload: str = "none",
              cancel_event=None) -> dict:
     """Run run_ingest.py for one document. Returns result dict.
 
     If cancel_event is set during execution, sends SIGTERM → SIGKILL to
     the subprocess and returns a cancelled error so the caller can stop cleanly.
+
+    Stderr is written to a temp file rather than a pipe to prevent the 64 KB
+    pipe buffer deadlock that occurs when the subprocess produces more progress
+    output than the pipe can buffer while the parent is only polling.
     """
     import threading as _threading
+    import tempfile
     cmd = [
         sys.executable, RUN_INGEST,
         "--doc-id", doc_id,
@@ -132,16 +142,23 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
     env = _subprocess_env()
     popen_timeout = timeout
     proc = None
+    stderr_path = None
     try:
+        stderr_file = tempfile.NamedTemporaryFile(
+            mode='w', delete=False,
+            prefix=f'ingest_stderr_{doc_id[:20]}_', suffix='.log',
+            dir='/tmp',
+        )
+        stderr_path = stderr_file.name
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cmd, stdout=subprocess.PIPE, stderr=stderr_file, text=True,
             cwd=SCRIPTS_DIR, env=env,
         )
+        stderr_file.close()
         # Poll with cancel check every 2s
         poll_interval = 2
         elapsed = 0
         stdout_data = ""
-        stderr_data = ""
         while proc.poll() is None:
             if cancel_event and cancel_event.is_set():
                 _kill_proc(proc)
@@ -155,7 +172,10 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
                 return {"status": "error", "doc_id": doc_id, "detail": detail}
             _threading.Event().wait(min(poll_interval, popen_timeout - elapsed))
             elapsed += poll_interval
-        stdout_data, stderr_data = proc.communicate(timeout=10)
+        stdout_data, _ = proc.communicate(timeout=10)
+        rc = proc.returncode
+
+        # Successful JSON output on stdout — normal completion
         if stdout_data and stdout_data.strip():
             try:
                 parsed = json.loads(stdout_data.strip())
@@ -164,9 +184,36 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
                 return parsed
             except json.JSONDecodeError:
                 pass
-        err = (stderr_data or "").strip() or "Unknown error"
+
+        # Process exited without valid JSON — diagnose the failure
+        detail_parts = [f"exit_code={rc}"]
+        if rc < 0:
+            import signal as _signal
+            sig_name = _signal.Signals(-rc).name if hasattr(_signal, 'Signals') else f"signal={-rc}"
+            detail_parts.append(f"killed_by={sig_name}")
+
+        # Get the TAIL of stderr from the temp file for error context
+        err_text = ""
+        if stderr_path:
+            try:
+                import os as _os
+                with open(stderr_path, 'r', errors='replace') as fh:
+                    lines = fh.readlines()
+                tail_lines = lines[-10:] if len(lines) > 10 else lines
+                err_text = "".join(tail_lines).strip()
+                if len(err_text) > 400:
+                    err_text = err_text[-400:]
+            except Exception:
+                pass
+        if err_text:
+            detail_parts.append(err_text)
+        else:
+            detail_parts.append("no stderr output")
+
+        err = " | ".join(detail_parts)
         if len(err) > 500:
-            err = err[:500] + "..."
+            err = err[:497] + "..."
+        logging.warning(f"ingest subprocess exited abnormally: doc_id={doc_id} {err}")
         _resolve_stale_spans(doc_id, trace_id, err)
         return {"status": "error", "doc_id": doc_id, "detail": err}
     except Exception as e:
@@ -174,6 +221,13 @@ def _run_one(doc_id: str, trace_id: str, phase: str = "live",
             _kill_proc(proc)
         _resolve_stale_spans(doc_id, trace_id, str(e))
         return {"status": "error", "doc_id": doc_id, "detail": str(e)}
+    finally:
+        if stderr_path:
+            try:
+                import os as _os
+                _os.unlink(stderr_path)
+            except Exception:
+                pass
 
 
 def _kill_proc(proc):

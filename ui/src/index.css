@@ -229,6 +229,62 @@ body {
   padding-left: 4px;
 }
 
+/* ── Ingestion status indicator (TopNav) ──────────────────────────────────── */
+
+.ingestion-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--accent-l);
+  background: var(--info-tint, rgba(59,130,246,0.08));
+  color: var(--accent-l);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+  user-select: none;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.ingestion-status:hover {
+  background: var(--info-tint, rgba(59,130,246,0.14));
+}
+
+.ingestion-pct {
+  font-variant-numeric: tabular-nums;
+}
+
+.ingestion-context-menu {
+  position: fixed;
+  z-index: 10000;
+  background: var(--doc-bg);
+  border: 1px solid var(--doc-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  overflow: hidden;
+  min-width: 140px;
+}
+
+.ingestion-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--err-text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ingestion-context-menu button:hover {
+  background: var(--err-tint);
+}
+
 /* ── Theme toggle ───────────────────────────────────────────────────────── */
 
 .theme-toggle {
@@ -3703,7 +3759,8 @@ a.ag-row:hover .n {
 .g3-status { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; padding: 2px 0; border-radius: 3px; white-space: nowrap; width: 76px; text-align: center; }
 .g3-status.success { background: var(--ok-tint); color: var(--ok-text); border: 1px solid var(--ok-tint-border); }
 .g3-status.partial { background: var(--warn-tint); color: var(--warn-text); border: 1px solid var(--warn-tint-border); }
-.g3-status.error { background: var(--err-tint); color: var(--err-text); border: 1px solid var(--err-tint-border); }
+.g3-status.error,
+.g3-status.failed { background: var(--err-tint); color: var(--err-text); border: 1px solid var(--err-tint-border); }
 .g3-status.running { background: var(--info-tint); color: var(--accent-l); border: 1px solid var(--info-tint-border); }
 .g3-status.pending { background: var(--doc-bg); color: var(--doc-text-2); border: 1px solid var(--doc-border-strong); }
 
