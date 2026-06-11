@@ -246,6 +246,9 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
   const { uiMode: ingestionRunning } = useBootstrapProgress();
   const isIngesting = ingestionRunning === 'running';
 
+  const [retryAllState, setRetryAllState] = useState('idle'); // 'idle' | 'running' | 'done'
+  const [retryAllCount, setRetryAllCount] = useState({ done: 0, total: 0 });
+
   const handleReingest = useCallback((e, docId) => {
     e.stopPropagation();
     setReingestStates((s) => ({ ...s, [docId]: 'starting' }));
@@ -260,6 +263,22 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
         setTimeout(() => setReingestStates((s) => ({ ...s, [docId]: 'idle' })), 5000);
       });
   }, []);
+
+  const handleRetryAll = useCallback(async () => {
+    const errorDocs = docs.filter((d) => isErrorStatus(d.ingestion_status));
+    if (errorDocs.length === 0 || isIngesting) return;
+    setRetryAllState('running');
+    setRetryAllCount({ done: 0, total: errorDocs.length });
+    for (const d of errorDocs) {
+      try {
+        const { session_id } = await reingestDoc(d.doc_id);
+        startBootstrapTracking(session_id);
+      } catch (_) {}
+      setRetryAllCount((c) => ({ ...c, done: c.done + 1 }));
+    }
+    setRetryAllState('done');
+    setTimeout(() => setRetryAllState('idle'), 5000);
+  }, [docs, isIngesting]);
 
   if (loadingDocs) {
     return (
@@ -318,6 +337,24 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
             }}
           >
             {docSort === 'errors_first' ? '↑ Errors first' : 'Default order'}
+          </button>
+          <button
+            disabled={isIngesting || retryAllState === 'running'}
+            onClick={handleRetryAll}
+            style={{
+              fontSize: 11, padding: '2px 10px', borderRadius: 3, cursor: (isIngesting || retryAllState === 'running') ? 'default' : 'pointer',
+              fontFamily: 'var(--mono)', fontWeight: 600, whiteSpace: 'nowrap',
+              background: 'var(--err-text)', color: '#fff', border: 'none',
+              opacity: (isIngesting || retryAllState === 'running') ? 0.5 : 1,
+            }}
+          >
+            {retryAllState === 'running'
+              ? `Retrying… ${retryAllCount.done}/${retryAllCount.total}`
+              : retryAllState === 'done'
+                ? 'Done'
+                : isIngesting
+                  ? '⏳ Ingestion running'
+                  : `↺ Retry all ${errorCount} errors`}
           </button>
         </div>
       )}

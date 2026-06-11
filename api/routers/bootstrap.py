@@ -61,6 +61,7 @@ class BootstrapRunRequest(BaseModel):
 
 class ReingestDocRequest(BaseModel):
     doc_id: str
+    redownload: str = "none"  # "none" | "check" | "force"
 
 
 # ── GET /bootstrap/state ─────────────────────────────────────────────────────
@@ -528,10 +529,54 @@ async def bootstrap_progress(session_id: str):
 
 @router.post("/reingest-doc")
 async def reingest_doc(body: ReingestDocRequest):
-    """Reingest a single document by doc_id. Returns immediately; runs in background."""
+    """Reingest a single document by doc_id. Returns immediately; runs in background.
+
+    Auto-upgrades redownload to 'force' when the source file is missing from the archive,
+    so the UI retry button works correctly for FileNotFoundError failures without requiring
+    the caller to know about archive state.
+    """
     doc_id = body.doc_id.strip()
     if not doc_id:
         raise HTTPException(status_code=422, detail="doc_id required")
+
+    redownload = body.redownload if body.redownload in ("none", "check", "force") else "none"
+
+    # Auto-detect missing source file and upgrade to force-redownload.
+    # This handles the case where the archive directory exists but the PDF/HTML was
+    # never downloaded (e.g. landing-page-only registration with no pdf_url stored).
+    if redownload == "none":
+        try:
+            import os as _os
+            conn = get_pg_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT archive_path, metadata_json->>'source_local_path', "
+                "       metadata_json->>'source_file_format' "
+                "FROM document_registry WHERE document_id = %s",
+                (doc_id,),
+            )
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                archive_path, local_path, fmt = row
+                # Rewrite /mnt/data/regulatory_archive → /archive
+                def _resolve(p):
+                    if p:
+                        return p.replace("/mnt/data/regulatory_archive", "/archive")
+                    return None
+                # Prefer explicit source_local_path, fall back to conventional names
+                candidates = [_resolve(local_path)]
+                if archive_path:
+                    ap = _resolve(archive_path)
+                    candidates += [f"{ap}/source.pdf", f"{ap}/source.html"]
+                source_exists = any(
+                    c and _os.path.isfile(c) for c in candidates if c
+                )
+                if not source_exists:
+                    redownload = "force"
+        except Exception:
+            pass  # best-effort — fall through with original redownload value
 
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
@@ -548,12 +593,12 @@ async def reingest_doc(body: ReingestDocRequest):
 
     t = threading.Thread(
         target=_bootstrap_worker,
-        args=(session_id, [{"doc_id": doc_id, "phase": "live"}]),
+        args=(session_id, [{"doc_id": doc_id, "phase": "live"}], redownload),
         daemon=True,
     )
     t.start()
 
-    return {"session_id": session_id, "doc_id": doc_id, "state": "running"}
+    return {"session_id": session_id, "doc_id": doc_id, "state": "running", "redownload": redownload}
 
 
 # ── POST /bootstrap/sessions/{session_id}/stop ───────────────────────────────

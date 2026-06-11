@@ -98,7 +98,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const [dateWindow, setDateWindow]                 = useState('3years');
   const [customFromYear, setCustomFromYear]         = useState(new Date().getFullYear() - 5);
   const [customToYear, setCustomToYear]             = useState(new Date().getFullYear());
-  const [sourceMode, setSourceMode]                 = useState('changed_only');
+  const [sourceMode, setSourceMode]                 = useState('local_files');
   const [confirmed, setConfirmed]                   = useState(false);
   const [estimate, setEstimate]                     = useState(null);
   const [submitting, setSubmitting]                 = useState(false);
@@ -109,8 +109,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
     uiMode, sessionId, progress, stopping, docEvents,
     start: startTracking, stop: stopTracking, dismiss,
   } = useBootstrapProgress();
-  const [localUiMode, setLocalUiMode]   = useState('config'); // modal-specific: 'config' | 'running' | 'complete'
-  const [connectionLost, setConnectionLost] = useState(false);
+  const [localUiMode, setLocalUiMode] = useState('config'); // modal-specific: 'config' | 'running' | 'complete'
+  const connectionLost = progress.status === 'disconnected' || progress.status === 'session_lost';
 
   const estimateAbortRef   = useRef(null);
   const estimateTimeoutRef = useRef(null);
@@ -208,8 +208,11 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setSubmitError(null);
     try {
       const { date_from, date_to } = getDateRange(dateWindow, customFromYear, customToYear);
+      const mode = sourceMode === 'full_redownload' ? 'wipe_and_reload' : 'reload_changed_only';
+      const redownload = sourceMode === 'local_files' ? 'none' : sourceMode === 'full_redownload' ? 'force' : 'check';
       const payload = {
-        mode: sourceMode === 'changed_only' ? 'reload_changed_only' : 'wipe_and_reload',
+        mode,
+        redownload,
         base_corpus: selectedBaseCorpus,
         rss_feeds: selectedFeeds.map(feed_id => ({ feed_id, date_from, date_to })),
       };
@@ -251,7 +254,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   };
 
   return createPortal(
-    <div className="rp-modal-backdrop" onClick={(!submitting && localUiMode !== 'running') ? onClose : undefined}>
+    <div className="rp-modal-backdrop" onClick={!submitting ? onClose : undefined}>
       <div
         className="rp-modal"
         style={{ width: 680, maxWidth: '95vw' }}
@@ -265,7 +268,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
               Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
             </div>
           </div>
-          <button className={`close ${(submitting || localUiMode === 'running') ? 'disabled' : ''}`} onClick={(!submitting && localUiMode !== 'running') ? onClose : undefined}>
+          <button className={`close ${submitting ? 'disabled' : ''}`} onClick={!submitting ? onClose : undefined}>
             <CloseIcon />
           </button>
         </div>
@@ -296,13 +299,13 @@ export default function BootstrapModal({ onClose, onStarted }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Status badge + session id + stop button */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {uiMode === 'running' ? (
+                  {uiMode === 'running' && !connectionLost ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--info-tint, #eff6ff)', color: 'var(--accent-l)', border: '1px solid var(--info-tint-border, #bfdbfe)', animation: 'pulse 1.5s ease-in-out infinite' }}>
                       {stopping ? 'Stopping…' : 'Running'}
                     </span>
-                  ) : wasDisconnected ? (
+                  ) : connectionLost ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--warn-tint)', color: 'var(--warn-text)', border: '1px solid var(--warn-tint-border)' }}>
-                      Connection lost
+                      {uiMode === 'running' ? 'Reconnecting…' : 'Connection lost'}
                     </span>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
@@ -375,10 +378,16 @@ export default function BootstrapModal({ onClose, onStarted }) {
                   </div>
                 )}
 
+                {uiMode === 'running' && connectionLost && (
+                  <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: 'var(--warn-tint)', color: 'var(--warn-text)', border: '1px solid var(--warn-tint-border)' }}>
+                    Connection to the server was lost — reconnecting. The background job is still running.
+                  </div>
+                )}
+
                 {uiMode === 'complete' && (
                   <div style={{ padding: '10px 12px', borderRadius: 4, fontSize: 12.5, background: wasDisconnected ? 'var(--warn-tint)' : wasStopped ? 'var(--warn-tint)' : allFailed ? 'var(--err-tint)' : partial ? 'var(--warn-tint)' : 'var(--ok-tint)', color: wasDisconnected ? 'var(--warn-text)' : wasStopped ? 'var(--warn-text)' : allFailed ? 'var(--err-text)' : partial ? 'var(--warn-text)' : 'var(--ok-text)', border: `1px solid ${wasDisconnected ? 'var(--warn-tint-border)' : wasStopped ? 'var(--warn-tint-border)' : allFailed ? 'var(--err-tint-border)' : partial ? 'var(--warn-tint-border)' : 'var(--ok-tint-border)'}` }}>
                     {wasDisconnected
-                      ? `Connection to the server was lost at ${progress.processed} / ${progress.total} — the background job is still running. Close this dialog and re-open to resume tracking, or check Run Log.`
+                      ? `Connection to the server was lost — the background job may still be running. Check Run Log for final status.`
                       : wasStopped
                       ? `Stopped after ${progress.processed} / ${progress.total} documents — ${progress.succeeded} succeeded · ${progress.failed} failed${progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}`
                       : `${progress.succeeded} succeeded · ${progress.failed} failed${progress.skipped > 0 ? ` · ${progress.skipped} skipped` : ''}`
@@ -553,8 +562,9 @@ export default function BootstrapModal({ onClose, onStarted }) {
                 <SectionLabel>Source files</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {[
-                    { value: 'changed_only',   label: 'Re-download if changed',  hint: 'Compare hash; fetch only when source differs' },
-                    { value: 'full_redownload', label: 'Re-download everything',  hint: 'Delete and re-fetch all files from original sources' },
+                    { value: 'local_files',      label: 'Use local files',          hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
+                    { value: 'changed_only',     label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
+                    { value: 'full_redownload',  label: 'Re-download everything',    hint: 'Delete and re-fetch all files from original sources' },
                   ].map(opt => {
                     const active = sourceMode === opt.value;
                     return (

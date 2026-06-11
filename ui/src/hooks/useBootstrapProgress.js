@@ -36,8 +36,12 @@ function closeSSE() {
   }
 }
 
+let _errorCount = 0;
+const MAX_RECONNECT_ERRORS = 8; // give up after ~16s of consecutive failures
+
 export function startBootstrapTracking(sessionId) {
   closeSSE();
+  _errorCount = 0;
   _state = {
     sessionId,
     uiMode: 'running',
@@ -50,10 +54,15 @@ export function startBootstrapTracking(sessionId) {
   const es = openBootstrapProgress(sessionId);
   _esRef = es;
   es.onmessage = (evt) => {
+    _errorCount = 0; // successful message resets error streak
     try {
       const msg = JSON.parse(evt.data);
       if (msg.type === 'doc') {
         _state.docEvents = [msg, ..._state.docEvents].slice(0, 150);
+        // Clear disconnected status on first successful doc event
+        if (_state.progress.status === 'disconnected') {
+          _state.progress = { ..._state.progress, status: 'running' };
+        }
         notify();
       } else if (msg.type === 'progress') {
         _state.progress = {
@@ -70,13 +79,27 @@ export function startBootstrapTracking(sessionId) {
           closeSSE();
         }
         notify();
+      } else if (msg.type === 'error') {
+        // Server-sent error (e.g. session not found after API restart)
+        _state.uiMode = 'complete';
+        _state.progress = { ..._state.progress, status: 'session_lost' };
+        closeSSE();
+        notify();
       }
     } catch (_) {}
   };
   es.onerror = () => {
-    _state.uiMode = 'complete';
-    _state.progress = { ..._state.progress, status: 'disconnected' };
-    closeSSE();
+    _errorCount += 1;
+    if (_errorCount >= MAX_RECONNECT_ERRORS) {
+      // Too many consecutive failures — session is likely gone
+      _state.uiMode = 'complete';
+      _state.progress = { ..._state.progress, status: 'disconnected' };
+      closeSSE();
+    } else {
+      // Transient drop — mark disconnected but keep uiMode running so the
+      // spinner stays visible and EventSource auto-reconnects.
+      _state.progress = { ..._state.progress, status: 'disconnected' };
+    }
     notify();
   };
 }
