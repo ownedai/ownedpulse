@@ -597,7 +597,7 @@ function RssFeedsCard() {
             {schedLine}
           </span>
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <button
             onClick={() => setShowSchedule(true)}
             style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
@@ -608,15 +608,7 @@ function RssFeedsCard() {
             onClick={handleRunNow}
             disabled={runState === 'running' || enabledFeeds.length === 0}
             title="Checks last 30 days across all enabled sources"
-            style={{
-              padding: '4px 12px', borderRadius: 4, border: '1px solid',
-              fontSize: 12, fontFamily: 'var(--mono)',
-              cursor: runState === 'running' ? 'default' : 'pointer',
-              borderColor: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : runState === 'conflict' ? 'var(--warn-text)' : 'var(--accent-l)',
-              background: runState === 'error' ? 'var(--err-tint)' : runState === 'ok' ? 'var(--ok-tint)' : runState === 'conflict' ? 'var(--warn-tint)' : 'transparent',
-              color: runState === 'error' ? 'var(--err-text)' : runState === 'ok' ? 'var(--ok-text)' : runState === 'conflict' ? 'var(--warn-text)' : 'var(--accent-l)',
-              transition: 'all 150ms ease',
-            }}
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: runState === 'running' ? 'default' : 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
           >
             {runBtnLabel}
           </button>
