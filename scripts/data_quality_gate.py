@@ -70,7 +70,7 @@ def get_pg_conn():
         port=int(os.environ.get("POSTGRES_PORT", 5432)),
         database=os.environ.get("POSTGRES_DB", "knowledge_base"),
         user=os.environ.get("POSTGRES_USER", "postgres"),
-        password=os.environ["POSTGRES_PASSWORD"]
+        password=os.environ.get("POSTGRES_PASSWORD", "")
     )
 
 def scroll_all(client, filt=None):
