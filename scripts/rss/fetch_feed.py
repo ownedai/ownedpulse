@@ -424,6 +424,7 @@ def fetch_fda_press(feed: dict, months_override: int | None = None) -> tuple:
             break
 
         stop = False
+        new_on_page = 0
         for item in page_items:
             dt = item.pop('date_obj', None)
             if cutoff and dt and dt < cutoff:
@@ -431,8 +432,16 @@ def fetch_fda_press(feed: dict, months_override: int | None = None) -> tuple:
                 break
             if not is_ingested(item['url']):
                 items.append(item)
+                new_on_page += 1
 
         if stop:
+            break
+
+        # Stop early if every item on this page was already ingested.
+        # FDA orders reverse-chronologically — remaining pages are all older.
+        if page > 0 and new_on_page == 0:
+            logger.info("All %d items on FDA page %d already ingested — stopping pagination early",
+                        len(page_items), page)
             break
 
         page += 1
