@@ -208,8 +208,9 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setSubmitError(null);
     try {
       const { date_from, date_to } = getDateRange(dateWindow, customFromYear, customToYear);
-      const mode = sourceMode === 'full_redownload' ? 'wipe_and_reload' : 'reload_changed_only';
-      const redownload = sourceMode === 'local_files' ? 'none' : sourceMode === 'full_redownload' ? 'force' : 'check';
+      const isWipe = sourceMode === 'full_redownload' || sourceMode === 'full_reset';
+      const mode = isWipe ? 'wipe_and_reload' : 'reload_changed_only';
+      const redownload = sourceMode === 'local_files' ? 'none' : isWipe ? 'force' : 'check';
       const payload = {
         mode,
         redownload,
@@ -564,7 +565,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
                   {[
                     { value: 'local_files',      label: 'Use local files',          hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
                     { value: 'changed_only',     label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
-                    { value: 'full_redownload',  label: 'Re-download everything',    hint: 'Delete and re-fetch all files from original sources' },
+                    { value: 'full_redownload',  label: 'Delete and re-fetch all selected files from original sources', hint: 'Wipe selected archives and re-download from source URLs' },
+                    { value: 'full_reset',       label: 'Delete all files and re-download selected files', hint: 'Complete reset — wipe everything and start fresh' },
                   ].map(opt => {
                     const active = sourceMode === opt.value;
                     return (
