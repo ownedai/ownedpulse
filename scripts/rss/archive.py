@@ -54,10 +54,21 @@ def get_kb():
     return conn
 
 
+FEED_ID_TO_ISSUING_BODY = {
+    "ema_sci_guidelines": "EMA",
+    "ema_reg_guidance": "EU-Commission",
+    "fda_drugs": "FDA",
+    "fda_press_releases": "FDA",
+    "ich_guidelines": "ICH",
+}
+
+
 def register(item: dict, archive_dir: Path, content_type: str):
-    meta     = item.get('extracted_metadata', {})
-    raw_date = meta.get('pub_date') or item.get('pub_date') or None
-    pub_date = _parse_date(raw_date) or _date_from_url(item.get('url', ''))
+    meta      = item.get('extracted_metadata', {})
+    raw_date  = meta.get('pub_date') or item.get('pub_date') or None
+    pub_date  = _parse_date(raw_date) or _date_from_url(item.get('url', ''))
+    feed_id   = item.get('feed_id', '')
+    authority = item.get('authority', '') or FEED_ID_TO_ISSUING_BODY.get(feed_id, '')
     conn = get_kb()
     with conn.cursor() as c:
         # GATE3b: identity-only upsert — state columns removed
@@ -71,15 +82,16 @@ def register(item: dict, archive_dir: Path, content_type: str):
             'ON CONFLICT (document_id) DO UPDATE SET '
             'source_url=EXCLUDED.source_url, source_hash=EXCLUDED.source_hash, '
             'source_fetched_at=EXCLUDED.source_fetched_at, archive_path=EXCLUDED.archive_path, '
+            'issuing_body=COALESCE(NULLIF(EXCLUDED.issuing_body, ''), document_registry.issuing_body), '
             'publication_date=COALESCE(EXCLUDED.publication_date, document_registry.publication_date), '
             'updated_at=NOW()',
             (
                 item['doc_id'], item.get('pdf_url') or item.get('url',''), item.get('sha256',''),
                 datetime.now(timezone.utc), str(archive_dir),
-                item.get('authority',''), item.get('feed_id',''),
+                authority, feed_id,
                 'regulatory', content_type, 'active',
                 meta.get('version',''),
-                json.dumps({'doc_id': item['doc_id'], 'feed_id': item.get('feed_id','')}),
+                json.dumps({'doc_id': item['doc_id'], 'feed_id': feed_id}),
                 pub_date,
             )
         )
