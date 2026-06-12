@@ -316,6 +316,15 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
             </div>
           )}
 
+          {autoSubmit && localUiMode === 'config' && !submitError && (
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 16, border: '3px solid var(--doc-border)', borderTopColor: 'var(--accent-l)', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+              <div style={{ marginTop: 16, fontSize: 13, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)' }}>
+                Starting ingestion…
+              </div>
+            </div>
+          )}
+
           {autoSubmit && submitError && (
             <div style={{ padding: '16px', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', borderRadius: 4, color: 'var(--err-text)', fontSize: 13 }}>
               {submitError}
