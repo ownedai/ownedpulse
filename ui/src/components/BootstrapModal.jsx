@@ -151,6 +151,13 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
       .catch(() => {});
   }, [startTracking]);
 
+  // Sync selectedSources from enabledSources prop (arrives after first render)
+  useEffect(() => {
+    if (enabledSources && enabledSources.length > 0) {
+      setSelectedSources(Object.fromEntries(enabledSources.map(id => [id, true])));
+    }
+  }, [enabledSources]);
+
   // Auto-submit: skip config and start bootstrap immediately with defaults
   const autoSubmittedRef = useRef(false);
   useEffect(() => {
