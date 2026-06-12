@@ -116,9 +116,13 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
             error_detail = None
             try:
                 env = os.environ.copy()
+                pg_host = env.get("POSTGRES_HOST", "postgres")
+                pg_port = env.get("POSTGRES_PORT", "5432")
+                pg_user = env.get("POSTGRES_USER", "postgres")
                 pg_pass = env.get("POSTGRES_PASSWORD", "")
+                pg_db   = env.get("POSTGRES_DB", "knowledge_base")
                 env.setdefault("PG_DSN",
-                    f"postgresql://{POSTGRES_USER}:{pg_pass}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
+                    f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}")
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     stdout=asyncio.subprocess.PIPE,
