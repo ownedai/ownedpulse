@@ -82,7 +82,7 @@ def register(item: dict, archive_dir: Path, content_type: str):
             'ON CONFLICT (document_id) DO UPDATE SET '
             'source_url=EXCLUDED.source_url, source_hash=EXCLUDED.source_hash, '
             'source_fetched_at=EXCLUDED.source_fetched_at, archive_path=EXCLUDED.archive_path, '
-            'issuing_body=COALESCE(NULLIF(EXCLUDED.issuing_body, ''), document_registry.issuing_body), '
+            "issuing_body=COALESCE(NULLIF(EXCLUDED.issuing_body, ''), document_registry.issuing_body), "
             'publication_date=COALESCE(EXCLUDED.publication_date, document_registry.publication_date), '
             'updated_at=NOW()',
             (
