@@ -316,6 +316,12 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
             </div>
           )}
 
+          {autoSubmit && submitError && (
+            <div style={{ padding: '16px', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', borderRadius: 4, color: 'var(--err-text)', fontSize: 13 }}>
+              {submitError}
+            </div>
+          )}
+
           {/* ── Running / complete view ── */}
           {(uiMode === 'running' || uiMode === 'complete') && (() => {
             const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
