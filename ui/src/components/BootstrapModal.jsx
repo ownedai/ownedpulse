@@ -122,6 +122,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
 
   const estimateAbortRef   = useRef(null);
   const estimateTimeoutRef = useRef(null);
+  const autoSubmittedRef   = useRef(false);
 
   // Sync modal UI state with the shared tracking state
   useEffect(() => {
@@ -136,12 +137,19 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
 
   // Load bootstrap status on mount; auto-reconnect to any active session
   useEffect(() => {
+    let cancelled = false;
     getBootstrapStatus()
       .then(data => {
+        if (cancelled) return;
         setBootstrapStatus(data);
+        // Auto-submit: fire immediately once data is loaded
+        if (autoSubmit && !autoSubmittedRef.current) {
+          autoSubmittedRef.current = true;
+          handleSubmit();
+        }
       })
-      .catch(err => setLoadError(err.message || 'Failed to load corpus status'))
-      .finally(() => setLoading(false));
+      .catch(err => { if (!cancelled) setLoadError(err.message || 'Failed to load corpus status'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
 
     // Check for an active session and reconnect to it
     getBootstrapState()
@@ -161,17 +169,6 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
       setSelectedSources(Object.fromEntries(enabledSources.map(id => [id, true])));
     }
   }, [enabledSources]);
-
-  // Auto-submit: skip config and fire immediately once data is loaded
-  const autoSubmittedRef = useRef(false);
-  useEffect(() => {
-    if (!autoSubmit || loading || !bootstrapStatus || autoSubmittedRef.current) return;
-    autoSubmittedRef.current = true;
-    // Use a short timeout to ensure React has finished rendering before
-    // calling handleSubmit (avoids stale closure issues with state)
-    const t = setTimeout(() => handleSubmit(), 100);
-    return () => clearTimeout(t);
-  }, [autoSubmit, loading, bootstrapStatus]);
 
   // Poll registry-status while discovery is running at startup
   const [registryStatus, setRegistryStatus] = useState(null);
