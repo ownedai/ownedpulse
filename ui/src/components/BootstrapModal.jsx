@@ -304,7 +304,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
 
         {/* ── Body ── */}
         <div className="mbody">
-          {loading && (
+          {!autoSubmit && loading && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>
               Loading corpus status…
             </div>
@@ -427,14 +427,6 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
               </div>
             );
           })()}
-
-          {autoSubmit && localUiMode === 'config' && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 13 }}>
-              {submitError
-                ? `Error: ${submitError}`
-                : submitting ? 'Starting ingestion…' : 'Preparing…'}
-            </div>
-          )}
 
           {!autoSubmit && !loading && !loadError && bootstrapStatus && localUiMode === 'config' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
