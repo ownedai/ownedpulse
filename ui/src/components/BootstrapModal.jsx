@@ -92,7 +92,7 @@ function getDateRange(dateWindow, customFromYear, customToYear) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BootstrapModal({ onClose, onStarted, autoSubmit = false, enabledSources = null, title = "Initial Load / Corpus Reload" }) {
+export default function BootstrapModal({ onClose, onStarted, autoSubmit = false, enabledSources = null }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [bootstrapStatus, setBootstrapStatus] = useState(null);
@@ -292,7 +292,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
         {/* ── Header ── */}
         <div className="mh">
           <div>
-            <h3>{title}</h3>
+            <h3>Initial Load / Corpus Reload</h3>
             <div style={{ fontSize: 12, color: 'var(--doc-text-2)', marginTop: 3, maxWidth: 520 }}>
               Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
             </div>
