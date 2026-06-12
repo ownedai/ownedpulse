@@ -597,11 +597,6 @@ function RssFeedsCard() {
             {schedLine}
           </span>
         )}
-        {schedLine && (
-          <span style={{ display: 'block', marginTop: 2, marginLeft: 12, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
-            Fetches documents published in the last 30 days not yet in the knowledge base
-          </span>
-        )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => setShowSchedule(true)}
@@ -627,6 +622,10 @@ function RssFeedsCard() {
           </button>
         </div>
       </div>
+
+      <span style={{ fontSize: 11, color: 'var(--doc-text-3)', marginBottom: 8, display: 'block' }}>
+        Fetches documents published in the last 30 days not yet in the knowledge base
+      </span>
 
       <table className="rp-table" style={{ fontSize: 12.5 }}>
         <thead>
