@@ -1033,7 +1033,7 @@ function BootstrapToast({ result, onClose }) {
 
 export default function SourcesPage() {
   const [showBootstrapModal, setShowBootstrapModal] = useState(false);
-  const [bootstrapDelta, setBootstrapDelta] = useState(false);
+  const [bootstrapAutoSubmit, setBootstrapAutoSubmit] = useState(false);
   const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
 
   const refreshState = useCallback(() => {
@@ -1046,7 +1046,7 @@ export default function SourcesPage() {
 
   const handleModalClose = useCallback(() => {
     setShowBootstrapModal(false);
-    setBootstrapDelta(false);
+    setBootstrapAutoSubmit(false);
     refreshState();
   }, [refreshState]);
 
@@ -1054,7 +1054,7 @@ export default function SourcesPage() {
     <div className="rp-sources-page">
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
-        <RssFeedsCard onOpenModal={() => { setBootstrapDelta(true); setShowBootstrapModal(true); }} />
+        <RssFeedsCard onOpenModal={() => { setBootstrapAutoSubmit(true); setShowBootstrapModal(true); }} />
         <BaseCorpusCard />
         <InitialLoadCard
           onOpenModal={() => setShowBootstrapModal(true)}
@@ -1066,7 +1066,7 @@ export default function SourcesPage() {
       {showBootstrapModal && (
         <BootstrapModal
           onClose={handleModalClose}
-          delta={bootstrapDelta}
+          autoSubmit={bootstrapAutoSubmit}
         />
       )}
     </div>

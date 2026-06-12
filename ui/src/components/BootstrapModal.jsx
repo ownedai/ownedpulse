@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { formatDate } from '../dateFormat';
-import { getBootstrapStatus, getBootstrapState, getDateEstimate, postSourcesBootstrap, triggerFeedRun } from '../api/client';
+import { getBootstrapStatus, getBootstrapState, getDateEstimate, postSourcesBootstrap } from '../api/client';
 import { useBootstrapProgress } from '../hooks/useBootstrapProgress';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -88,14 +88,12 @@ function getDateRange(dateWindow, customFromYear, customToYear) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BootstrapModal({ onClose, onStarted, delta = false }) {
+export default function BootstrapModal({ onClose, onStarted, autoSubmit = false }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [bootstrapStatus, setBootstrapStatus] = useState(null);
 
-  const [deltaRunning, setDeltaRunning] = useState(false);
-  const [deltaDone, setDeltaDone] = useState(false);
-  const [includeBaseCorpus, setIncludeBaseCorpus] = useState(!delta);
+  const [includeBaseCorpus, setIncludeBaseCorpus] = useState(!autoSubmit);
   const [selectedSources, setSelectedSources]     = useState({
     fda_press_releases: true, ema_reg_guidance: true,
     ema_sci_guidelines: true, ich_guidelines: true,
@@ -153,17 +151,14 @@ export default function BootstrapModal({ onClose, onStarted, delta = false }) {
       .catch(() => {});
   }, [startTracking]);
 
-  // Delta mode: auto-trigger RSS ingestion on mount (non-destructive, 30-day fetch)
-  const deltaTriggeredRef = useRef(false);
+  // Auto-submit: skip config and start bootstrap immediately with defaults
+  const autoSubmittedRef = useRef(false);
   useEffect(() => {
-    if (delta && !loading && bootstrapStatus && !deltaTriggeredRef.current) {
-      deltaTriggeredRef.current = true;
-      setDeltaRunning(true);
-      const feeds = (bootstrapStatus?.sources || []).filter(f => selectedSources[f.feed_id] !== false);
-      Promise.allSettled(feeds.map(f => triggerFeedRun(f.feed_id)))
-        .finally(() => { setDeltaRunning(false); setDeltaDone(true); });
+    if (autoSubmit && !loading && bootstrapStatus && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      handleSubmit();
     }
-  }, [delta, loading, bootstrapStatus]);
+  }, [autoSubmit, loading, bootstrapStatus]);
 
   // Poll registry-status while discovery is running at startup
   const [registryStatus, setRegistryStatus] = useState(null);
@@ -305,31 +300,6 @@ export default function BootstrapModal({ onClose, onStarted, delta = false }) {
           {loadError && (
             <div style={{ padding: '16px', background: 'var(--err-tint)', border: '1px solid var(--err-tint-border)', borderRadius: 4, color: 'var(--err-text)', fontSize: 13 }}>
               {loadError}
-            </div>
-          )}
-
-          {/* ── Delta running / complete view (Run now) ── */}
-          {(deltaRunning || deltaDone) && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {deltaRunning ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--info-tint, #eff6ff)', color: 'var(--accent-l)', border: '1px solid var(--info-tint-border, #bfdbfe)', animation: 'pulse 1.5s ease-in-out infinite' }}>
-                    Running
-                  </span>
-                ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, padding: '2px 8px', borderRadius: 2, background: 'var(--ok-tint)', color: 'var(--ok-text)', border: '1px solid var(--ok-tint-border)' }}>
-                    Complete
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--doc-text)' }}>
-                {deltaRunning
-                  ? 'Fetching new documents from the last 30 days across all enabled sources. Progress is shown in the status bar.'
-                  : 'Delta ingestion triggered. Check the status bar for final counts.'}
-              </div>
-              {deltaDone && (
-                <button className="rp-mbtn primary" onClick={onClose}>Close</button>
-              )}
             </div>
           )}
 
