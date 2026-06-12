@@ -20,7 +20,7 @@ const DOCTYPE_LABEL = {
 };
 
 const INGESTION_SOURCE_LABELS = {
-  manual_cli: 'Manual (CLI)', bootstrap_ui: 'Bootstrap (Initial load)', n8n_rss: 'Scheduled',
+  manual_cli: 'Manual (CLI)', bootstrap_ui: 'Bootstrap (Initial load)', scheduled: 'Scheduled',
 };
 
 // ── SVG Icons ──────────────────────────────────────────────────────────────

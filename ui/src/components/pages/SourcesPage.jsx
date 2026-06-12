@@ -5,7 +5,7 @@ import BootstrapModal from '../BootstrapModal';
 import { startBootstrapTracking, useBootstrapProgress } from '../../hooks/useBootstrapProgress';
 import {
   getCorpusSummary, getBootstrapState,
-  startBootstrapRun, activateRss,
+  startBootstrapRun,
   getAdminFeeds, toggleFeed,
   getSchedulerStatus, pauseScheduler, resumeScheduler,
   getSchedulerConfig, updateSchedulerConfig,
@@ -699,7 +699,6 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
   const [corpusSummary, setCorpusSummary] = useState(null);
   const [progress, setProgress] = useState({ total: 0, processed: 0, succeeded: 0, failed: 0, status: 'pending' });
   const [docEvents, setDocEvents] = useState([]);
-  const [rssActivated, setRssActivated] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const esRef = useRef(null);
 
@@ -733,10 +732,6 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
               es.close();
               esRef.current = null;
               setMode('complete');
-              // Try to activate RSS
-              activateRss().then((r) => {
-                if (r.activated || r.already_active) setRssActivated(true);
-              }).catch(() => {});
             }
           }
         } catch (_) {}
@@ -934,11 +929,6 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
                 <div className={`rp-prog-summary ${hasAllFailed || hasPartial ? 'warn' : ''}`}>
                   {progress.succeeded} succeeded · {progress.failed} failed
                   {(hasAllFailed || hasPartial) && ' — check Run Log for details'}
-                  {rssActivated && (
-                    <div className="auto">
-                      <span style={{ color: 'var(--ok-text)' }}>●</span> Automation: active
-                    </div>
-                  )}
                 </div>
               )}
             </>

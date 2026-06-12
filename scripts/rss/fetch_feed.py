@@ -12,7 +12,7 @@ Exit:   0 on success, 1 on error
 """
 
 import os, sys, json, time, hashlib, argparse, uuid, logging
-import feedparser, psycopg2, requests
+import psycopg2, requests
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -43,8 +43,6 @@ from ingestion.config import PG_DSN
 NOCO_DSN = PG_DSN.replace('/knowledge_base', '/nocodb')
 
 # Then replace all:
-
-
 def get_kb():
     conn = psycopg2.connect(PG_DSN)
     conn.autocommit = True
@@ -71,8 +69,6 @@ def load_feed_config(feed_id: str) -> dict:
     if not row:
         raise ValueError(f"feed_id not found: {feed_id}")
     return dict(zip(cols, row))
-
-
 def is_ingested(url: str) -> bool:
     conn = get_kb()
     with conn.cursor() as c:
@@ -87,8 +83,6 @@ def is_ingested(url: str) -> bool:
         found = c.fetchone() is not None
     conn.close()
     return found
-
-
 def get_ich_hashes(feed_id: str) -> dict:
     conn = get_noco()
     with conn.cursor() as c:
@@ -105,45 +99,6 @@ def update_ich_hashes(feed_id: str, hashes: dict):
             (json.dumps(hashes), feed_id)
         )
     conn.close()
-
-def fetch_rss(feed: dict, cutoff_date=None) -> tuple:
-    r = requests.get(feed["feed_url"], headers=HEADERS, timeout=30)
-    r.raise_for_status()
-    parsed = feedparser.parse(r.text)
-    items = []
-    total_fetched = 0
-    total_skipped = 0
-    for entry in parsed.entries:
-        url = entry.get("link", "")
-        if not url:
-            continue
-        total_fetched += 1
-        pub_date_raw = entry.get("published", "")
-        pub_date = None
-        if pub_date_raw:
-            try:
-                pub_date = dateparser.parse(pub_date_raw, tzinfos=TZINFOS)
-                if pub_date and pub_date.tzinfo is None:
-                    pub_date = pub_date.replace(tzinfo=timezone.utc)
-            except Exception:
-                pass
-        if cutoff_date and pub_date and pub_date < cutoff_date:
-            total_skipped += 1
-            continue
-        if is_ingested(url):
-            total_skipped += 1
-            continue
-        items.append({
-            "url":            url,
-            "title":          entry.get("title", ""),
-            "pub_date":       pub_date.date().isoformat() if pub_date else "",
-            "authority":      feed["authority"],
-            "feed_id":        feed["feed_id"],
-            "rss_body":       entry.get("summary", ""),
-            "feed_item_guid": entry.get("id", ""),
-        })
-    return items, {"items_fetched": total_fetched, "items_new": len(items),
-                   "items_skipped": total_skipped}
 
 def _extract_ich_items(data: dict) -> list:
     items = []
@@ -234,21 +189,11 @@ def fetch_ich(feed: dict) -> tuple:
     update_ich_hashes(feed["feed_id"], new_hashes)
     return items, {"items_fetched": total_fetched, "items_new": len(items),
                    "items_skipped": total_skipped}
-
-
 # ── EMA bulk JSON scraper ──────────────────────────────────────────────────
 
 EMA_JSON_URL = (
     'https://www.ema.europa.eu/en/documents/report/general-json-report_en.json'
 )
-
-RSS_FEED_URLS = {
-    "fda_press_releases": "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml",
-    "ema_sci_guidelines": "https://www.ema.europa.eu/en/scientific-guidelines.xml",
-    "ema_reg_guidance":  "https://www.ema.europa.eu/en/regulatory-and-procedural-guideline.xml",
-    # ich_guidelines has no RSS XML feed — uses JSON API instead
-}
-
 
 def _classify_ema_record(rec: dict) -> str | None:
     """Classify an EMA JSON report record as sci or reg guideline.
@@ -282,8 +227,6 @@ def _classify_ema_record(rec: dict) -> str | None:
     elif is_reg:
         return 'ema_reg_guidance'
     return None
-
-
 def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cutoff_date=None) -> list:
     """Download EMA bulk JSON, classify and filter for the target feed.
     Single-file download — 2,046 total records. Each record is classified
@@ -347,22 +290,16 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
 
     logger.info("EMA JSON: %d new items for %s", len(items), target_feed_id)
     return items
-
-
 def fetch_ema_sci(feed: dict, months_override: int | None = None, cutoff_date=None) -> tuple:
     """Fetch EMA Scientific Guidelines via bulk JSON download."""
     items = _fetch_ema_json('ema_sci_guidelines', months_override=months_override, cutoff_date=cutoff_date)
     return items, {"items_fetched": len(items), "items_new": len(items),
                    "items_skipped": 0}
-
-
 def fetch_ema_reg(feed: dict, months_override: int | None = None, cutoff_date=None) -> tuple:
     """Fetch EMA Regulatory Guidance via bulk JSON download."""
     items = _fetch_ema_json('ema_reg_guidance', months_override=months_override, cutoff_date=cutoff_date)
     return items, {"items_fetched": len(items), "items_new": len(items),
                    "items_skipped": 0}
-
-
 # ── FDA press releases scraper ──────────────────────────────────────────────
 
 def fetch_fda_press(feed: dict, months_override: int | None = None, cutoff_date=None) -> tuple:
@@ -469,8 +406,6 @@ def fetch_fda_press(feed: dict, months_override: int | None = None, cutoff_date=
     logger.info("FDA press scrape complete: %d new items", len(items))
     return items, {"items_fetched": len(items), "items_new": len(items),
                    "items_skipped": 0}
-
-
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
 def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None,
@@ -498,7 +433,6 @@ def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None,
             return fetch_fda_press(feed, months_override=months_override, cutoff_date=cutoff)
         logger.warning("Unknown html_pagination feed_id: %s", feed_id)
         return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
-    return fetch_rss(feed, cutoff_date=cutoff)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -506,13 +440,11 @@ def main():
     parser.add_argument("--mode", default="live", choices=["live","backfill"])
     parser.add_argument("--months-override", type=int, default=None)
     parser.add_argument("--trigger-source", default="scheduled",
-                        choices=["scheduled","manual","n8n_rss","manual_cli","bootstrap_ui"])
+                        choices=["scheduled","manual","manual_cli","bootstrap_ui"])
     parser.add_argument("--triggered-by", default=None)
     parser.add_argument("--workflow-id", default=None)
     parser.add_argument("--n8n-execution-id", default=None)
     parser.add_argument("--run-id", default=None)
-    parser.add_argument("--rss-only", action="store_true",
-                        help="Use RSS XML feeds only (lightweight), skip bulk scrapers")
     parser.add_argument("--max-age-days", type=int, default=None,
                         help="In live mode, only fetch items published within this many days")
     args = parser.parse_args()
@@ -549,28 +481,11 @@ def main():
         max_age_cutoff = datetime.now(timezone.utc) - timedelta(days=args.max_age_days)
 
     try:
-        if args.rss_only:
-            if args.feed_id in RSS_FEED_URLS:
-                feed = load_feed_config(args.feed_id)
-                feed["feed_url"] = RSS_FEED_URLS[args.feed_id]
-                cutoff = None
-                if args.mode == "backfill":
-                    months = args.months_override or feed.get("backfill_months", 24)
-                    cutoff = datetime.now(timezone.utc) - relativedelta(months=months)
-                elif max_age_cutoff:
-                    cutoff = max_age_cutoff
-                items, stats = fetch_rss(feed, cutoff_date=cutoff)
-            elif args.feed_id == "ich_guidelines":
-                items, stats = fetch_feed(args.feed_id, args.mode, args.months_override)
-            else:
-                logger.error("No RSS feed URL configured for feed_id=%s", args.feed_id)
-                sys.exit(1)
+        if max_age_cutoff:
+            items, stats = fetch_feed(args.feed_id, args.mode, args.months_override,
+                                      cutoff_date=max_age_cutoff)
         else:
-            if max_age_cutoff:
-                items, stats = fetch_feed(args.feed_id, args.mode, args.months_override,
-                                          cutoff_date=max_age_cutoff)
-            else:
-                items, stats = fetch_feed(args.feed_id, args.mode, args.months_override)
+            items, stats = fetch_feed(args.feed_id, args.mode, args.months_override)
         duration_ms = int((time.time() - start_time) * 1000)
 
         conn = psycopg2.connect(PG_DSN)

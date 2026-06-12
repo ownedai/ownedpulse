@@ -50,7 +50,7 @@ def run(cmd, stdin_data=None, timeout=120):
 
 
 def fetch_items(feed_id: str, run_id: str, mode: str, trigger_source: str, triggered_by: str,
-                 months_override: int = None, max_age_days: int = None, rss_only: bool = False):
+                 months_override: int = None, max_age_days: int = None):
     """Call fetch_feed.py. Returns list of items. run_log row created internally."""
     cmd = [PYTHON, FETCH_FEED,
            "--feed-id", feed_id,
@@ -62,8 +62,6 @@ def fetch_items(feed_id: str, run_id: str, mode: str, trigger_source: str, trigg
         cmd.extend(["--months-override", str(months_override)])
     if mode == "live" and max_age_days is not None:
         cmd.extend(["--max-age-days", str(max_age_days)])
-    if rss_only:
-        cmd.append("--rss-only")
     rc, stdout, stderr = run(cmd, timeout=120)
     if rc != 0:
         raise RuntimeError(f"fetch_feed failed rc={rc}: {stderr.decode()[:400]}")
@@ -240,8 +238,6 @@ def main():
                         help="Override backfill depth in months (forwarded to fetch_feed.py)")
     parser.add_argument("--max-age-days", type=int, default=30,
                         help="In live mode, only fetch items within this many days (default: 30)")
-    parser.add_argument("--rss-only", action="store_true",
-                        help="Use RSS XML feeds only (lightweight), skip bulk scrapers")
     args = parser.parse_args()
 
     run_id = args.run_id or str(uuid.uuid4())
@@ -250,8 +246,7 @@ def main():
     # Step 1: Fetch — creates run_log row, returns new items
     try:
         items = fetch_items(args.feed_id, run_id, args.mode, args.trigger_source, args.triggered_by,
-                            months_override=args.months_override, max_age_days=args.max_age_days,
-                            rss_only=args.rss_only)
+                            months_override=args.months_override, max_age_days=args.max_age_days)
     except Exception as e:
         logger.error(f"Fetch failed: {e}")
         sys.exit(1)

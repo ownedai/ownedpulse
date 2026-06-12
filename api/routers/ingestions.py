@@ -120,55 +120,11 @@ async def list_ingestions(
         if status:
             session_groups = [sg for sg in session_groups if sg["status"] == status]
 
-        # ── RSS runs: each run_log row for rss/scheduled sources ───────────
-        rss_where = ["trigger_source = ANY(%s)"]
-        rss_params: list = [list(RSS_SOURCES)]
-        if date_from:
-            rss_where.append("triggered_at >= %s::timestamptz")
-            rss_params.append(date_from)
-        if date_to:
-            rss_where.append("triggered_at <= %s::timestamptz + INTERVAL '1 day'")
-            rss_params.append(date_to)
-        if status:
-            rss_where.append("status = %s")
-            rss_params.append(status)
-        if source:
-            allowed = SOURCE_CATEGORIES.get(source, (source,))
-            rss_where.append("trigger_source = ANY(%s)")
-            rss_params.append(list(allowed))
-
-        cur.execute(
-            f"""
-            SELECT run_id, trigger_source, triggered_at, feed_source,
-                   status, items_new, items_skipped, error_count, duration_ms, error_detail
-            FROM run_log
-            WHERE {' AND '.join(rss_where)}
-            ORDER BY triggered_at DESC
-            """,
-            rss_params
-        )
-        rss_runs = []
-        for row in cur.fetchall():
-            run_id, ts, triggered_at, feed_source, run_status, items_new, items_skipped, error_count, duration_ms, error_detail = row
-            rss_runs.append({
-                "type": "rss_run",
-                "run_id": str(run_id),
-                "source": ts,
-                "triggered_at": _fmt_dt(triggered_at),
-                "feed_name": feed_source or "—",
-                "status": run_status,
-                "doc_count_new": items_new or 0,
-                "doc_count_skipped": items_skipped or 0,
-                "doc_count_errors": error_count or 0,
-                "duration_seconds": round(duration_ms / 1000, 1) if duration_ms else None,
-                "error_detail": error_detail or None,
-            })
-
         cur.close()
         conn.close()
 
-        # Merge and sort by triggered_at desc
-        all_items = session_groups + rss_runs
+        # Sort by triggered_at desc
+        all_items = session_groups
         all_items.sort(key=lambda x: x["triggered_at"] or "", reverse=True)
 
         total = len(all_items)
@@ -506,90 +462,6 @@ async def run_documents(
 
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database error: {e}")
-
-
-# ── GET /ingestions/runs/{run_id}/progress (SSE) ──────────────────────────────
-
-@router.get("/runs/{run_id}/progress")
-async def rss_run_progress(run_id: str):
-    """SSE stream polling run_log + ingestion_doc for live RSS ingestion progress.
-
-    Yields two event types:
-      {type: "progress", total, processed, succeeded, failed, status, eta_seconds}
-      {type: "doc", doc_id, document_title, status, chunks, reason}
-    Stops when run_log.status reaches a terminal value.
-    """
-    import asyncio
-    from fastapi.responses import StreamingResponse
-
-    async def event_stream():
-        sent_doc_created_at = None
-        try:
-            while True:
-                conn = get_pg_conn()
-                try:
-                    cur = conn.cursor()
-
-                    # Run-level status
-                    cur.execute(
-                        "SELECT status, items_new, error_count FROM run_log WHERE run_id = %s",
-                        (run_id,),
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        yield f"data: {json.dumps({'type': 'error', 'message': 'run not found'})}\n\n"
-                        break
-
-                    run_status, items_new, error_count = row
-
-                    # Aggregate doc counts
-                    cur.execute(
-                        """SELECT COUNT(*) as total,
-                                  COUNT(*) FILTER (WHERE status = 'success') as succeeded,
-                                  COUNT(*) FILTER (WHERE status IN ('error','failed')) as failed
-                           FROM ingestion_doc WHERE trace_id::text = %s""",
-                        (run_id,),
-                    )
-                    total, succeeded, failed = cur.fetchone()
-                    processed = succeeded + failed
-
-                    # Per-doc events (new since last poll)
-                    cursor_clause = (
-                        "AND created_at > %s" if sent_doc_created_at else ""
-                    )
-                    cur.execute(
-                        f"""SELECT id.doc_id, id.status, id.chunk_count, id.failure_reason,
-                                   id.created_at,
-                                   COALESCE(dr.metadata_json->>'document_title', id.doc_id) as title
-                            FROM ingestion_doc id
-                            LEFT JOIN document_registry dr ON dr.document_id = id.doc_id
-                            WHERE id.trace_id::text = %s {cursor_clause}
-                            ORDER BY id.created_at ASC""",
-                        (run_id, sent_doc_created_at) if sent_doc_created_at else (run_id,),
-                    )
-                    for doc_row in cur.fetchall():
-                        sent_doc_created_at = doc_row[4]
-                        yield f"data: {json.dumps({'type': 'doc', 'doc_id': doc_row[0], 'status': doc_row[1], 'chunks': doc_row[2] or 0, 'reason': doc_row[3], 'document_title': doc_row[5]})}\n\n"
-
-                    cur.close()
-                finally:
-                    conn.close()
-
-                effective_total = max(total, items_new or 0)
-                yield f"data: {json.dumps({'type': 'progress', 'total': effective_total, 'processed': processed, 'succeeded': succeeded, 'failed': failed, 'status': run_status, 'eta_seconds': max(0, (effective_total - processed) * 20)})}\n\n"
-
-                if run_status not in ("running", "pending"):
-                    break
-
-                await asyncio.sleep(2)
-        except asyncio.CancelledError:
-            pass
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
-    )
 
 
 # ── GET /ingestions/spans/{doc_id} ───────────────────────────────────────────
