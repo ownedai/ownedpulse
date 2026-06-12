@@ -69,6 +69,7 @@ function StatusDot({ status }) {
 // ── Date window helpers ───────────────────────────────────────────────────────
 
 const DATE_WINDOW_OPTIONS = [
+  { value: '30days', label: '30 days' },
   { value: '1year',  label: '1 year' },
   { value: '3years', label: '3 years' },
   { value: '5years', label: '5 years' },
@@ -77,7 +78,12 @@ const DATE_WINDOW_OPTIONS = [
 ];
 
 function getDateRange(dateWindow, customFromYear, customToYear) {
-  const thisYear = new Date().getFullYear();
+  const now = new Date();
+  if (dateWindow === '30days') {
+    const d = new Date(now); d.setDate(d.getDate() - 30);
+    return { date_from: d.toISOString().slice(0, 10), date_to: null };
+  }
+  const thisYear = now.getFullYear();
   if (dateWindow === '1year')  return { date_from: `${thisYear - 1}-01-01`, date_to: null };
   if (dateWindow === '3years') return { date_from: `${thisYear - 3}-01-01`, date_to: null };
   if (dateWindow === '5years') return { date_from: `${thisYear - 5}-01-01`, date_to: null };
@@ -98,7 +104,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     : { fda_press_releases: true, ema_reg_guidance: true, ema_sci_guidelines: true, ich_guidelines: true };
   const [includeBaseCorpus, setIncludeBaseCorpus] = useState(!autoSubmit);
   const [selectedSources, setSelectedSources]     = useState(defaultSources);
-  const [depth, setDepth]                         = useState('1year');
+  const [depth, setDepth]                         = useState(autoSubmit ? '30days' : '1year');
   const [customFromYear, setCustomFromYear]       = useState(new Date().getFullYear() - 5);
   const [customToYear, setCustomToYear]           = useState(new Date().getFullYear());
   const [fileStrategy, setFileStrategy]           = useState('use_local');
