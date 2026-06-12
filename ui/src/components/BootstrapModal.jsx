@@ -237,7 +237,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
   }
 
   // Derive year range for custom dropdowns from actual feed date_min values
-  const feedDateMin = bootstrapStatus?.rss_feeds
+  const feedDateMin = bootstrapStatus?.sources
     ?.filter(f => selectedFeeds.includes(f.feed_id) && f.date_min)
     ?.reduce((min, f) => (!min || f.date_min < min ? f.date_min : min), null);
   const minYear = feedDateMin ? parseInt(feedDateMin.slice(0, 4)) : new Date().getFullYear() - 30;
