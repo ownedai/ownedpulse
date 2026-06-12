@@ -289,10 +289,12 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
         {/* ── Header ── */}
         <div className="mh">
           <div>
-            <h3>Initial Load / Corpus Reload</h3>
-            <div style={{ fontSize: 12, color: 'var(--doc-text-2)', marginTop: 3, maxWidth: 520 }}>
-              Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
-            </div>
+            <h3>{autoSubmit ? 'Updating Sources' : 'Initial Load / Corpus Reload'}</h3>
+            {!autoSubmit && (
+              <div style={{ fontSize: 12, color: 'var(--doc-text-2)', marginTop: 3, maxWidth: 520 }}>
+                Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
+              </div>
+            )}
           </div>
           <button className={`close ${submitting ? 'disabled' : ''}`} onClick={!submitting ? onClose : undefined}>
             <CloseIcon />
