@@ -88,7 +88,7 @@ function getDateRange(dateWindow, customFromYear, customToYear) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function BootstrapModal({ onClose, onStarted }) {
+export default function BootstrapModal({ onClose, onStarted, autoSubmit = false }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [bootstrapStatus, setBootstrapStatus] = useState(null);
@@ -150,6 +150,15 @@ export default function BootstrapModal({ onClose, onStarted }) {
       })
       .catch(() => {});
   }, [startTracking]);
+
+  // Auto-submit when opened from "Run now" — skip config, start immediately
+  const autoSubmittedRef = useRef(false);
+  useEffect(() => {
+    if (autoSubmit && !loading && bootstrapStatus && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      handleSubmit();
+    }
+  }, [autoSubmit, loading, bootstrapStatus]);
 
   // Poll registry-status while discovery is running at startup
   const [registryStatus, setRegistryStatus] = useState(null);
