@@ -83,14 +83,6 @@ def register(item: dict, archive_dir: Path, content_type: str):
                 pub_date,
             )
         )
-        # GATE3b: seed ingestion_state separately — DO NOTHING preserves
-        # existing state if this doc was already indexed
-        c.execute(
-            "INSERT INTO ingestion_state (document_id, ingestion_status, updated_at) "
-            "VALUES (%s, 'pending', NOW()) "
-            "ON CONFLICT (document_id) DO NOTHING",
-            (item['doc_id'],)
-        )
     conn.close()
 
 
