@@ -406,7 +406,7 @@ function ScheduleModal({ schedStatus, onClose, onSaved }) {
     <div className="rp-modal-backdrop" onClick={onClose}>
       <div className="rp-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="mh">
-          <h3>RSS Schedule</h3>
+          <h3>Schedule</h3>
           <button className="close" onClick={onClose}><CloseIcon /></button>
         </div>
 
@@ -584,7 +584,7 @@ function RssFeedsCard() {
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
-        <span>RSS Feeds</span>
+        <span>Sources</span>
         <button
           onClick={fetchData}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center', marginLeft: 6 }}
@@ -961,7 +961,7 @@ function InitialLoadModal({ onClose, lastBootstrap, docCount }) {
                   {(hasAllFailed || hasPartial) && ' — check Run Log for details'}
                   {rssActivated && (
                     <div className="auto">
-                      <span style={{ color: 'var(--ok-text)' }}>●</span> RSS automation: active
+                      <span style={{ color: 'var(--ok-text)' }}>●</span> Automation: active
                     </div>
                   )}
                 </div>

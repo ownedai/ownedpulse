@@ -113,9 +113,9 @@ async def admin_health():
     return result
 
 
-# ── GET /admin/feeds ──────────────────────────────────────────────────────────
+# ── GET /admin/sources ────────────────────────────────────────────────────────
 
-@router.get("/feeds")
+@router.get("/sources")
 async def admin_feeds():
     conn = get_pg_conn()
     try:
@@ -143,9 +143,9 @@ async def admin_feeds():
         conn.close()
 
 
-# ── PATCH /admin/feeds/{feed_id} ──────────────────────────────────────────────
+# ── PATCH /admin/sources/{feed_id} ────────────────────────────────────────────
 
-@router.patch("/feeds/{feed_id}")
+@router.patch("/sources/{feed_id}")
 async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
     conn = get_pg_conn()
     try:
@@ -176,9 +176,9 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
         conn.close()
 
 
-# ── POST /admin/feeds/{feed_id}/trigger ──────────────────────────────────────
+# ── POST /admin/sources/{feed_id}/trigger ────────────────────────────────────
 
-@router.post("/feeds/{feed_id}/trigger")
+@router.post("/sources/{feed_id}/trigger")
 async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks, mode: str = "rss"):
     """Trigger a single feed run via APScheduler background task.
 
@@ -537,7 +537,7 @@ async def trigger_scheduler_now(background_tasks: BackgroundTasks):
     """Manual trigger — fires RSS ingestion for all enabled feeds as a background task."""
     from lib.scheduler import run_rss_ingestion_job
     background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
-    return {"status": "triggered", "message": "RSS ingestion started in background"}
+    return {"status": "triggered", "message": "Source ingestion started in background"}
 
 
 # ── POST /admin/scheduler/pause ──────────────────────────────────────────────

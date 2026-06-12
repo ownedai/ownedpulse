@@ -132,11 +132,11 @@ export function getFeedRuns(params) {
   Object.entries(params).forEach(([k, v]) => {
     if (v !== null && v !== undefined && v !== '') qs.set(k, v);
   });
-  return request(`/api/corpus/feed-runs?${qs.toString()}`);
+  return request(`/api/corpus/source-runs?${qs.toString()}`);
 }
 
 export function getFeedRunDetail(runId) {
-  return request(`/api/corpus/feed-runs/${encodeURIComponent(runId)}`);
+  return request(`/api/corpus/source-runs/${encodeURIComponent(runId)}`);
 }
 
 export function getSupersedeChain(familyId) {
@@ -164,11 +164,11 @@ export function getAdminHealth() {
 }
 
 export function getAdminFeeds() {
-  return request('/api/admin/feeds');
+  return request('/api/admin/sources');
 }
 
 export function toggleFeed(feedId, enabled) {
-  return request(`/api/admin/feeds/${encodeURIComponent(feedId)}`, {
+  return request(`/api/admin/sources/${encodeURIComponent(feedId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ enabled }),
   });
@@ -207,7 +207,7 @@ export function updateSchedulerConfig(hour, minute, timezone) {
 }
 
 export function triggerFeedRun(feedId, mode = 'rss') {
-  return request(`/api/admin/feeds/${encodeURIComponent(feedId)}/trigger?mode=${mode}`, { method: 'POST' });
+  return request(`/api/admin/sources/${encodeURIComponent(feedId)}/trigger?mode=${mode}`, { method: 'POST' });
 }
 
 export function getAdminModels() {

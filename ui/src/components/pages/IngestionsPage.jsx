@@ -34,7 +34,7 @@ function G3Status({ status }) {
 
 function SrcPill({ src }) {
   const map = {
-    n8n_rss: ['n8n', 'n8n RSS'],
+    n8n_rss: ['n8n', 'n8n'],
     scheduled: ['n8n', 'Scheduled'],
     bootstrap_ui: ['bootstrap', 'Bootstrap'],
     manual_cli: ['manual', 'Manual'],
@@ -583,7 +583,7 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
         <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
-        <span className="g3-cell"><span className="lbl">Feed</span><span className="g3-feed">—</span></span>
+        <span className="g3-cell"><span className="lbl">Source</span><span className="g3-feed">—</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={status} /></span>
         <span className="g3-cell num"><span className="lbl">New</span>{(item.doc_count_succeeded ?? 0).toLocaleString()}</span>
         <span className="g3-cell num"><span className="lbl">Skipped</span>{item.doc_count_skipped > 0 ? item.doc_count_skipped : '—'}</span>
@@ -678,7 +678,7 @@ function RssRunRow({ item, isOpen, onToggle }) {
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
         <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
-        <span className="g3-cell"><span className="lbl">Feed</span><span className="g3-feed">{item.feed_name || '—'}</span></span>
+        <span className="g3-cell"><span className="lbl">Source</span><span className="g3-feed">{item.feed_name || '—'}</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={displayStatus} /></span>
         <span className="g3-cell num"><span className="lbl">New</span>{displayNew ?? '—'}</span>
         <span className="g3-cell num"><span className="lbl">Skipped</span>{item.doc_count_skipped ?? '—'}</span>

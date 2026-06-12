@@ -253,7 +253,7 @@ export default function DocumentDetailPage() {
             ) : formatDate(doc.publication_date)}
           </MetaRow>
           <MetaRow label="Status"><StatusBadge status={doc.ingestion_status} /></MetaRow>
-          <MetaRow label="Feed">{doc.feed_id || (doc.corpus_doc ? 'Base corpus' : '—')}</MetaRow>
+          <MetaRow label="Source">{doc.feed_id || (doc.corpus_doc ? 'Base corpus' : '—')}</MetaRow>
           <MetaRow label="Run ID">
             <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.run_id || '—'}</span>
           </MetaRow>

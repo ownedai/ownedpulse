@@ -139,10 +139,7 @@ async def corpus_documents(
             conditions.append("ingestion_status = %s")
             params.append(ingestion_status)
         else:
-            # Show all docs touched by ingestion — indexed, superseded,
-            # and in-progress (parsing, chunking, etc.). Exclude only
-            # docs that were registered but never ingested.
-            conditions.append("ingestion_status IS NOT NULL")
+            conditions.append("ingestion_status IN ('indexed', 'superseded')")
 
         if date_from:
             conditions.append("publication_date >= %s::date")
@@ -357,12 +354,12 @@ async def document_chunks(
         raise HTTPException(status_code=500, detail=f"Qdrant error: {str(e)}")
 
 
-# ── GET /api/corpus/feed-runs ─────────────────────────────────────────────────
+# ── GET /api/corpus/source-runs ───────────────────────────────────────────────
 
 STALE_RUN_MINUTES = 30
 
 
-@router.get("/feed-runs")
+@router.get("/source-runs")
 async def feed_runs(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=200),
@@ -435,9 +432,9 @@ async def feed_runs(
         conn.close()
 
 
-# ── GET /api/corpus/feed-runs/{run_id} ────────────────────────────────────────
+# ── GET /api/corpus/source-runs/{run_id} ──────────────────────────────────────
 
-@router.get("/feed-runs/{run_id}")
+@router.get("/source-runs/{run_id}")
 async def feed_run_detail(run_id: str):
     conn = get_pg_conn()
     try:

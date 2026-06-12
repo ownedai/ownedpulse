@@ -139,7 +139,7 @@ export default function RunLogPage() {
 
   const totalPages = Math.ceil(total / pageSize);
   const uniqueFeeds = [...new Set(runs.map((r) => r.feed_source).filter(Boolean))].sort();
-  const feedOptions = [{ label: 'All feeds', value: null }, ...uniqueFeeds.map((f) => ({ label: f, value: f }))];
+  const feedOptions = [{ label: 'All sources', value: null }, ...uniqueFeeds.map((f) => ({ label: f, value: f }))];
   const statusOptions = [
     { label: 'All statuses', value: null },
     { label: 'Success', value: 'success' },
@@ -151,7 +151,7 @@ export default function RunLogPage() {
     <>
       <div className="rp-page-head">
         <div>
-          <h1>Feed Run Log</h1>
+          <h1>Ingestion Log</h1>
         </div>
       </div>
 
@@ -193,7 +193,7 @@ export default function RunLogPage() {
               <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>Loading...</td></tr>
             )}
             {!loading && runs.length === 0 && (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>No feed runs found.</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)' }}>No source runs found.</td></tr>
             )}
             {runs.map((run) => (
               <>

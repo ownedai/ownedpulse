@@ -132,7 +132,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
       .then(data => {
         setBootstrapStatus(data);
         setSelectedBaseCorpus(data.base_corpus.map(d => d.document_id));
-        setSelectedFeeds(data.rss_feeds.map(f => f.feed_id));
+        setSelectedFeeds(data.sources.map(f => f.feed_id));
       })
       .catch(err => setLoadError(err.message || 'Failed to load corpus status'))
       .finally(() => setLoading(false));
@@ -438,14 +438,14 @@ export default function BootstrapModal({ onClose, onStarted }) {
                 </div>
               </section>
 
-              {/* ── Section 2: RSS History ── */}
+              {/* ── Section 2: Sources ── */}
               <section>
-                <SectionLabel badge={`${selectedFeeds.length} / ${bootstrapStatus.rss_feeds.length}`}>
-                  RSS History
+                <SectionLabel badge={`${selectedFeeds.length} / ${bootstrapStatus.sources.length}`}>
+                  Sources
                 </SectionLabel>
 
                 {['FDA', 'EMA', 'ICH'].map(agency => {
-                  const feeds = bootstrapStatus.rss_feeds.filter(f => f.agency === agency);
+                  const feeds = bootstrapStatus.sources.filter(f => f.agency === agency);
                   if (feeds.length === 0) return null;
                   return (
                     <div key={agency} className="rp-scope-group">
@@ -552,7 +552,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
                         ? 'Calculating estimate…'
                         : estimate.estimated_docs == null
                           ? `Estimate unavailable — ${estimate.note}`
-                          : `~${estimate.estimated_docs.toLocaleString()} RSS documents in this date range`
+                          : `~${estimate.estimated_docs.toLocaleString()} documents in this date range`
                       }
                     </div>
                   </div>
@@ -621,7 +621,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
             {localUiMode === 'config' && !loading && totalEstimate !== null
               ? `~${totalEstimate.toLocaleString()} documents selected`
               : localUiMode === 'config' && !loading && selectedBaseCorpus.length > 0
-                ? `${selectedBaseCorpus.length} base corpus doc${selectedBaseCorpus.length !== 1 ? 's' : ''} + RSS feeds`
+                ? `${selectedBaseCorpus.length} base corpus doc${selectedBaseCorpus.length !== 1 ? 's' : ''} + sources`
                 : localUiMode === 'running'
                   ? 'You can close this window — progress is shown in the status bar'
                   : ''

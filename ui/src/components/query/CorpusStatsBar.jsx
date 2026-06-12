@@ -99,17 +99,17 @@ export default function CorpusStatsBar() {
             onContextMenu={handleContext}
             title={uiMode === 'running'
               ? `Bootstrap: ${progress.processed} / ${progress.total} docs — ETA: ${eta}`
-              : `RSS ingestion running — ${stats?.ingestion_detail || ''}`}
+              : `Source ingestion running — ${stats?.ingestion_detail || ''}`}
           >
             <SpinnerIcon />
             {uiMode === 'running' ? (
               <span className="ingestion-pct">{pct}%</span>
             ) : (
-              <span className="ingestion-label">RSS</span>
+              <span className="ingestion-label">ING</span>
             )}
           </div>
         )}
-        <Tooltip tip="Last time new regulatory documents were automatically checked and ingested via the RSS feed pipeline.">
+        <Tooltip tip="Last time new regulatory documents were automatically checked and ingested via the source pipeline.">
           <span className="stat" style={{ cursor: 'help' }}>
             <span className="k">KB last updated</span>
             <span className="v" data-testid="last-pipeline-run">{lastRun}</span>

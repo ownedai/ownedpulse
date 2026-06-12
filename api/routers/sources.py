@@ -125,7 +125,7 @@ async def bootstrap_status():
     return {
         "initialized": initialized,
         "base_corpus": base_corpus,
-        "rss_feeds": rss_feeds,
+        "sources": rss_feeds,
     }
 
 

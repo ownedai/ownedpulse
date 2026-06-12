@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
 
-# Access canonical trace emitter from API tree
+# Access canonical trace emitter from API tree (host + Docker paths)
 sys.path.insert(0, "/opt/projects/regpulse/api")
+sys.path.insert(0, "/app")
 from lib.trace_emitter import start_document_span
 
 from .config import QDRANT_COLLECTION
