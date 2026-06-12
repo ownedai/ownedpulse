@@ -99,6 +99,8 @@ export default function BootstrapModal({ onClose, onStarted }) {
     ema_sci_guidelines: true, ich_guidelines: true,
   });
   const [depth, setDepth]                         = useState('1year');
+  const [customFromYear, setCustomFromYear]       = useState(new Date().getFullYear() - 5);
+  const [customToYear, setCustomToYear]           = useState(new Date().getFullYear());
   const [fileStrategy, setFileStrategy]           = useState('use_local');
   const [confirmed, setConfirmed]                 = useState(false);
   const [nuclearConfirmed, setNuclearConfirmed]   = useState(false);
@@ -184,16 +186,16 @@ export default function BootstrapModal({ onClose, onStarted }) {
       }
       const ctrl = new AbortController();
       estimateAbortRef.current = ctrl;
-      const { date_from, date_to } = getDateRange(depth, new Date().getFullYear() - 5, new Date().getFullYear());
+      const { date_from, date_to } = getDateRange(depth, customFromYear, customToYear);
       getDateEstimate(activeSources, date_from, date_to, ctrl.signal)
         .then(data => { if (!ctrl.signal.aborted) setEstimate(data); })
         .catch(() => {});
     }, 300);
-  }, [activeSources, depth]);
+  }, [activeSources, depth, customFromYear, customToYear]);
 
   useEffect(() => {
     if (!loading) refreshEstimate();
-  }, [activeSources, depth, loading, refreshEstimate]);
+  }, [activeSources, depth, customFromYear, customToYear, loading, refreshEstimate]);
 
   // Notify other pages when bootstrap completes (e.g. CorpusPage auto-refresh)
   useEffect(() => {
@@ -210,7 +212,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const { date_from, date_to } = getDateRange(depth, new Date().getFullYear() - 5, new Date().getFullYear());
+      const { date_from, date_to } = getDateRange(depth, customFromYear, customToYear);
       const mode = fileStrategy === 'nuclear' ? 'full_reset' : 'wipe_and_reload';
       const redownload = fileStrategy === 'use_local' ? 'none' : 'force';
       const baseCorpusIds = includeBaseCorpus ? (bootstrapStatus?.base_corpus || []).map(d => d.document_id) : [];
@@ -239,6 +241,19 @@ export default function BootstrapModal({ onClose, onStarted }) {
   }
 
   const ingestionRunning = uiMode === 'running';
+
+  const feedDateMin = bootstrapStatus?.sources
+    ?.filter(f => f.date_min)
+    ?.reduce((min, f) => (!min || f.date_min < min ? f.date_min : min), null);
+  const minYear = feedDateMin ? parseInt(feedDateMin.slice(0, 4)) : new Date().getFullYear() - 30;
+  const maxYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
+
+  const selectStyle = {
+    padding: '4px 8px', borderRadius: 4, border: '1px solid var(--doc-border)',
+    background: 'var(--doc-surface)', color: 'var(--doc-text)',
+    fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
+  };
   const hasSelection = includeBaseCorpus || activeSources.length > 0;
   const canSubmit = confirmed && !submitting && !loading && !ingestionRunning && hasSelection && (fileStrategy !== 'nuclear' || nuclearConfirmed);
   const rssEstimate = estimate?.estimated_docs ?? null;
@@ -457,7 +472,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
               <section>
                 <SectionLabel>Historical Depth</SectionLabel>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {DATE_WINDOW_OPTIONS.filter(o => o.value !== 'custom').map(opt => {
+                  {DATE_WINDOW_OPTIONS.map(opt => {
                     const active = depth === opt.value;
                     return (
                       <button
@@ -477,6 +492,18 @@ export default function BootstrapModal({ onClose, onStarted }) {
                     );
                   })}
                 </div>
+                {depth === 'custom' && (
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                    <span style={{ color: 'var(--doc-text-2)', fontSize: 12 }}>From</span>
+                    <select value={customFromYear} onChange={e => setCustomFromYear(parseInt(e.target.value))} style={selectStyle}>
+                      {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <span style={{ color: 'var(--doc-text-2)', fontSize: 12 }}>to</span>
+                    <select value={customToYear} onChange={e => setCustomToYear(parseInt(e.target.value))} style={selectStyle}>
+                      {yearOptions.filter(y => y >= customFromYear).map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={{ marginTop: 8, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
                   {estimate == null
                     ? 'Calculating estimate…'
