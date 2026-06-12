@@ -623,7 +623,7 @@ function RssFeedsCard() {
         </div>
       </div>
 
-      <span style={{ fontSize: 11, color: 'var(--doc-text-3)', marginBottom: 8, display: 'block' }}>
+      <span style={{ fontSize: 11, color: 'var(--doc-text-3)', marginTop: 2, marginBottom: 8, display: 'block' }}>
         Fetches documents published in the last 30 days not yet in the knowledge base
       </span>
 
