@@ -1070,6 +1070,7 @@ export default function SourcesPage() {
           onClose={handleModalClose}
           autoSubmit={bootstrapAutoSubmit}
           enabledSources={bootstrapEnabledSources}
+          title={bootstrapAutoSubmit ? "Updating Sources" : "Corpus Loading"}
         />
       )}
     </div>
