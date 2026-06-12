@@ -2,6 +2,7 @@ import sys as _sys
 _sys.path = [p for p in _sys.path if not p.endswith("/ingestion")]
 _sys.path.insert(0, "/opt/scripts")
 _sys.path.insert(0, "/opt/projects/regpulse/api")
+_sys.path.insert(0, "/app")
 """
 run_ingest.py — F5b: Phase F ingestion orchestrator
 Location: /opt/scripts/ingestion/run_ingest.py
@@ -89,6 +90,14 @@ PROMPT_PATH       = os.environ.get("CLASSIFIER_PROMPT_PATH",
 CHUNKER_VERSION   = os.environ.get("CHUNKER_VERSION", "f-phase-v1")
 CONF_THRESHOLD    = 0.70
 EMBED_MODEL       = "mxbai-embed-large"
+
+FEED_ID_TO_DEFAULT_DOC_TYPE = {
+    "ema_reg_guidance": "guidance",
+    "ema_sci_guidelines": "guidance",
+    "fda_drugs": "guidance",
+    "fda_press_releases": "press_release",
+    "ich_guidelines": "guidance",
+}
 
 CANONICAL_DOC_TYPES = {
     "guidance", "reflection_paper", "press_release",
@@ -570,7 +579,7 @@ def classify(title: str, excerpt: str, feed_id: str, authority: str) -> dict:
     cf = float(result.get("confidence",0.0))
     dt = validate_doc_type(dt)
     if cf < CONF_THRESHOLD:
-        dt = "other"
+        dt = FEED_ID_TO_DEFAULT_DOC_TYPE.get(feed_id, "other")
     return {"doc_type":dt,"classifier_confidence":cf,"classified_by":"llm",
             "doc_type_classified_at":datetime.now(timezone.utc).isoformat()}
 
