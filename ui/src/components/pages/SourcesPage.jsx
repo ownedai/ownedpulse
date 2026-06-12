@@ -626,7 +626,7 @@ function RssFeedsCard() {
       <table className="rp-table" style={{ fontSize: 12.5 }}>
         <thead>
           <tr>
-            <th>Feed</th>
+            <th>Source</th>
             <th style={{ width: 65, textAlign: 'center' }}>Enabled</th>
             <th style={{ width: 140 }}>Last Fetch</th>
           </tr>
