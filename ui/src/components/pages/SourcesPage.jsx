@@ -6,7 +6,7 @@ import { startBootstrapTracking, useBootstrapProgress } from '../../hooks/useBoo
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
-  getAdminFeeds, toggleFeed, triggerFeedRun,
+  getAdminFeeds, toggleFeed,
   getSchedulerStatus, pauseScheduler, resumeScheduler,
   getSchedulerConfig, updateSchedulerConfig,
   getCorpusDocumentsV2, reingestDoc,
@@ -511,11 +511,10 @@ function ScheduleModal({ schedStatus, onClose, onSaved }) {
 
 // ── RSS Feeds Card ────────────────────────────────────────────────────────────
 
-function RssFeedsCard() {
+function RssFeedsCard({ onOpenModal }) {
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(null);
-  const [runState, setRunState] = useState(null); // null | 'running' | 'ok' | 'error'
   const [schedStatus, setSchedStatus] = useState(null);
   const [showSchedule, setShowSchedule] = useState(false);
 
@@ -543,21 +542,8 @@ function RssFeedsCard() {
     setToggling(null);
   }
 
-  async function handleRunNow() {
-    if (runState === 'running' || enabledFeeds.length === 0) return;
-    setRunState('running');
-    const results = await Promise.allSettled(enabledFeeds.map((f) => triggerFeedRun(f.feed_id)));
-    const anyOk = results.some((r) => r.status === 'fulfilled');
-    const allConflict = results.every(
-      (r) => r.status === 'rejected' && r.reason?.message?.includes('already running')
-    );
-    if (anyOk || allConflict) {
-      setRunState(allConflict ? 'conflict' : 'ok');
-      setTimeout(() => { setRunState(null); fetchData(); }, 3000);
-    } else {
-      setRunState('error');
-      setTimeout(() => setRunState(null), 4000);
-    }
+  function handleRunNow() {
+    onOpenModal();
   }
 
   function formatNextRun(isoStr) {
@@ -575,11 +561,7 @@ function RssFeedsCard() {
     : 'Next run not scheduled';
   const schedOk = schedStatus?.scheduler_running && !!nextRunFormatted;
 
-  const runBtnLabel = runState === 'running' ? 'Running…'
-    : runState === 'ok' ? '✓ Triggered'
-    : runState === 'conflict' ? '↻ Already running'
-    : runState === 'error' ? '✕ Failed'
-    : 'Run now';
+  const runBtnLabel = 'Run now';
 
   return (
     <div className="rp-src-card">
@@ -606,11 +588,11 @@ function RssFeedsCard() {
           </button>
           <button
             onClick={handleRunNow}
-            disabled={runState === 'running' || enabledFeeds.length === 0}
-            title="Checks last 30 days across all enabled sources"
-            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: runState === 'running' ? 'default' : 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
+            disabled={enabledFeeds.length === 0}
+            title="Open Initial Load / Corpus Reload modal"
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
           >
-            {runBtnLabel}
+            Run now
           </button>
         </div>
       </div>
@@ -1069,7 +1051,7 @@ export default function SourcesPage() {
     <div className="rp-sources-page">
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
-        <RssFeedsCard />
+        <RssFeedsCard onOpenModal={() => setShowBootstrapModal(true)} />
         <BaseCorpusCard />
         <InitialLoadCard
           onOpenModal={() => setShowBootstrapModal(true)}
