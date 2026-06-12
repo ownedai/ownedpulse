@@ -162,13 +162,15 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     }
   }, [enabledSources]);
 
-  // Auto-submit: skip config and start bootstrap immediately with defaults
+  // Auto-submit: skip config and fire immediately once data is loaded
   const autoSubmittedRef = useRef(false);
   useEffect(() => {
-    if (autoSubmit && !loading && bootstrapStatus && !autoSubmittedRef.current) {
-      autoSubmittedRef.current = true;
-      handleSubmit();
-    }
+    if (!autoSubmit || loading || !bootstrapStatus || autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    // Use a short timeout to ensure React has finished rendering before
+    // calling handleSubmit (avoids stale closure issues with state)
+    const t = setTimeout(() => handleSubmit(), 100);
+    return () => clearTimeout(t);
   }, [autoSubmit, loading, bootstrapStatus]);
 
   // Poll registry-status while discovery is running at startup
@@ -428,7 +430,9 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
 
           {autoSubmit && localUiMode === 'config' && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 13 }}>
-              {submitting ? 'Starting ingestion…' : 'Preparing…'}
+              {submitError
+                ? `Error: ${submitError}`
+                : submitting ? 'Starting ingestion…' : 'Preparing…'}
             </div>
           )}
 
