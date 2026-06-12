@@ -306,7 +306,7 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
     );
   }
 
-  const isErrorStatus = (s) => s === 'error' || s === 'failed' || s === 'pending';
+  const isErrorStatus = (s) => s === 'error' || s === 'failed';
   const errorCount = docs.filter((d) => isErrorStatus(d.ingestion_status)).length;
   const sorted = docSort === 'errors_first' && errorCount > 0
     ? [...docs].sort((a, b) => {
