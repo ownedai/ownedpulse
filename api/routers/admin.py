@@ -120,17 +120,17 @@ async def admin_feeds():
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT feed_id, name, url, feed_type, enabled, last_run_at, created_at, updated_at FROM feed_config ORDER BY feed_id")
+        cur.execute("SELECT feed_id, name, feed_url, feed_type, enabled, last_run_at, created_at, updated_at FROM feed_config ORDER BY feed_id")
         rows = cur.fetchall()
         cur.close()
 
         feeds = []
         for row in rows:
-            feed_id, name, url, feed_type, enabled, last_run_at, created_at, updated_at = row
+            feed_id, name, feed_url, feed_type, enabled, last_run_at, created_at, updated_at = row
             feeds.append({
                 "feed_id": feed_id,
                 "name": name,
-                "url": url,
+                "url": feed_url,
                 "feed_type": feed_type,
                 "enabled": enabled,
                 "last_run_at": last_run_at.isoformat() if hasattr(last_run_at, 'isoformat') and last_run_at else None,
@@ -151,21 +151,21 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
     try:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE feed_config SET enabled = %s, updated_at = NOW() WHERE feed_id = %s RETURNING feed_id, name, url, feed_type, enabled, last_run_at, created_at, updated_at",
+            "UPDATE feed_config SET enabled = %s, updated_at = NOW() WHERE feed_id = %s RETURNING feed_id, name, feed_url, feed_type, enabled, last_run_at, created_at, updated_at",
             (body.enabled, feed_id)
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Feed not found")
 
-        (fid, name, url, feed_type, enabled, last_run_at, created_at, updated_at) = row
+        (fid, name, feed_url, feed_type, enabled, last_run_at, created_at, updated_at) = row
 
         cur.close()
         conn.commit()
         return {
             "feed_id": fid,
             "name": name,
-            "url": url,
+            "url": feed_url,
             "feed_type": feed_type,
             "enabled": enabled,
             "last_run_at": last_run_at.isoformat() if hasattr(last_run_at, 'isoformat') and last_run_at else None,
@@ -216,6 +216,19 @@ async def admin_trigger_run(background_tasks: BackgroundTasks):
     from lib.scheduler import run_rss_ingestion_job
     background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
     return {"status": "triggered"}
+
+
+# ── POST /admin/stop-ingestion ────────────────────────────────────────────────
+
+@router.post("/stop-ingestion")
+async def admin_stop_ingestion():
+    """Stop the currently running RSS ingestion subprocess."""
+    from lib.scheduler import stop_active_rss
+    killed = stop_active_rss()
+    if killed:
+        ingestion_lock.release()
+        return {"status": "stopped"}
+    return {"status": "nothing_to_stop"}
 
 
 # ── GET /admin/models ─────────────────────────────────────────────────────────

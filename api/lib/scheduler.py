@@ -70,12 +70,29 @@ def _get_enabled_feeds() -> list[str]:
         conn.close()
 
 
+_active_proc = None
+_active_run_id = None
+
+
+def stop_active_rss() -> bool:
+    """Kill the currently running RSS subprocess. Returns True if killed."""
+    global _active_proc
+    if _active_proc and _active_proc.returncode is None:
+        try:
+            _active_proc.kill()
+            return True
+        except Exception:
+            pass
+    return False
+
+
 async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = "scheduler"):
     """Run RSS ingestion for all enabled feeds (or a single feed_id).
 
     Calls fetch_feed.py as a subprocess per feed — same execution path as
     the n8n Execute Command node used previously.
     """
+    global _active_proc, _active_run_id
     detail = feed_id or "all-feeds"
     if not ingestion_lock.acquire("rss", detail):
         run_date = datetime.now(timezone.utc) + timedelta(minutes=30)
@@ -129,7 +146,11 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
                 )
+                _active_proc = proc
+                _active_run_id = run_id
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1800)
+                _active_proc = None
+                _active_run_id = None
                 if proc.returncode == 0:
                     logger.info(f"RSS ingestion: feed={fid} run_id={run_id} complete")
                     continue

@@ -24,10 +24,14 @@ export default function CorpusStatsBar() {
     setContextMenu({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const handleStop = useCallback(() => {
-    stopBootstrapTracking();
+  const handleStop = useCallback(async () => {
+    if (uiMode === 'running') {
+      stopBootstrapTracking();
+    } else if (stats?.ingestion_active) {
+      try { await fetch('/api/admin/stop-ingestion', { method: 'POST' }); } catch (_) {}
+    }
     setContextMenu(null);
-  }, []);
+  }, [uiMode, stats?.ingestion_active]);
 
   const closeMenu = useCallback(() => setContextMenu(null), []);
 
