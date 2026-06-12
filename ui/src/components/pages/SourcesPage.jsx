@@ -1067,6 +1067,7 @@ export default function SourcesPage() {
 
       {showBootstrapModal && (
         <BootstrapModal
+          key={bootstrapAutoSubmit ? `delta-${(bootstrapEnabledSources||[]).join(',')}` : 'manual'}
           onClose={handleModalClose}
           autoSubmit={bootstrapAutoSubmit}
           enabledSources={bootstrapEnabledSources}
