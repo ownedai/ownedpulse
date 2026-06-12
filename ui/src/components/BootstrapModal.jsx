@@ -93,16 +93,18 @@ export default function BootstrapModal({ onClose, onStarted }) {
   const [loadError, setLoadError] = useState(null);
   const [bootstrapStatus, setBootstrapStatus] = useState(null);
 
-  const [selectedBaseCorpus, setSelectedBaseCorpus] = useState([]);
-  const [selectedFeeds, setSelectedFeeds]           = useState([]);
-  const [dateWindow, setDateWindow]                 = useState('3years');
-  const [customFromYear, setCustomFromYear]         = useState(new Date().getFullYear() - 5);
-  const [customToYear, setCustomToYear]             = useState(new Date().getFullYear());
-  const [sourceMode, setSourceMode]                 = useState('local_files');
-  const [confirmed, setConfirmed]                   = useState(false);
-  const [estimate, setEstimate]                     = useState(null);
-  const [submitting, setSubmitting]                 = useState(false);
-  const [submitError, setSubmitError]               = useState(null);
+  const [includeBaseCorpus, setIncludeBaseCorpus] = useState(true);
+  const [selectedSources, setSelectedSources]     = useState({
+    fda_press_releases: true, ema_reg_guidance: true,
+    ema_sci_guidelines: true, ich_guidelines: true,
+  });
+  const [depth, setDepth]                         = useState('1year');
+  const [fileStrategy, setFileStrategy]           = useState('use_local');
+  const [confirmed, setConfirmed]                 = useState(false);
+  const [nuclearConfirmed, setNuclearConfirmed]   = useState(false);
+  const [estimate, setEstimate]                   = useState(null);
+  const [submitting, setSubmitting]               = useState(false);
+  const [submitError, setSubmitError]             = useState(null);
 
   // Running / complete state — persisted across modal close via shared hook
   const {
@@ -131,8 +133,6 @@ export default function BootstrapModal({ onClose, onStarted }) {
     getBootstrapStatus()
       .then(data => {
         setBootstrapStatus(data);
-        setSelectedBaseCorpus(data.base_corpus.map(d => d.document_id));
-        setSelectedFeeds(data.sources.map(f => f.feed_id));
       })
       .catch(err => setLoadError(err.message || 'Failed to load corpus status'))
       .finally(() => setLoading(false));
@@ -171,26 +171,29 @@ export default function BootstrapModal({ onClose, onStarted }) {
   }, []);
 
   // Refresh estimate whenever selection or date window changes
+  const activeSources = Object.entries(selectedSources).filter(([,v]) => v).map(([k]) => k);
+  const sourceCount = activeSources.length + (includeBaseCorpus ? 1 : 0);
+
   const refreshEstimate = useCallback(() => {
     if (estimateTimeoutRef.current) clearTimeout(estimateTimeoutRef.current);
     estimateTimeoutRef.current = setTimeout(() => {
       if (estimateAbortRef.current) estimateAbortRef.current.abort();
-      if (selectedFeeds.length === 0) {
+      if (activeSources.length === 0) {
         setEstimate({ estimated_docs: 0, estimated_chunks: 0, note: '' });
         return;
       }
       const ctrl = new AbortController();
       estimateAbortRef.current = ctrl;
-      const { date_from, date_to } = getDateRange(dateWindow, customFromYear, customToYear);
-      getDateEstimate(selectedFeeds, date_from, date_to, ctrl.signal)
+      const { date_from, date_to } = getDateRange(depth, new Date().getFullYear() - 5, new Date().getFullYear());
+      getDateEstimate(activeSources, date_from, date_to, ctrl.signal)
         .then(data => { if (!ctrl.signal.aborted) setEstimate(data); })
         .catch(() => {});
     }, 300);
-  }, [selectedFeeds, dateWindow, customFromYear, customToYear]);
+  }, [activeSources, depth]);
 
   useEffect(() => {
     if (!loading) refreshEstimate();
-  }, [selectedFeeds, dateWindow, customFromYear, customToYear, loading, refreshEstimate]);
+  }, [activeSources, depth, loading, refreshEstimate]);
 
   // Notify other pages when bootstrap completes (e.g. CorpusPage auto-refresh)
   useEffect(() => {
@@ -207,16 +210,15 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const { date_from, date_to } = getDateRange(dateWindow, customFromYear, customToYear);
-      const mode = sourceMode === 'full_reset' ? 'full_reset'
-        : sourceMode === 'full_redownload' ? 'wipe_and_reload'
-        : 'reload_changed_only';
-      const redownload = sourceMode === 'local_files' ? 'none' : sourceMode === 'changed_only' ? 'check' : 'force';
+      const { date_from, date_to } = getDateRange(depth, new Date().getFullYear() - 5, new Date().getFullYear());
+      const mode = fileStrategy === 'nuclear' ? 'full_reset' : 'wipe_and_reload';
+      const redownload = fileStrategy === 'use_local' ? 'none' : 'force';
+      const baseCorpusIds = includeBaseCorpus ? (bootstrapStatus?.base_corpus || []).map(d => d.document_id) : [];
       const payload = {
         mode,
         redownload,
-        base_corpus: selectedBaseCorpus,
-        rss_feeds: selectedFeeds.map(feed_id => ({ feed_id, date_from, date_to })),
+        base_corpus: baseCorpusIds,
+        rss_feeds: activeSources.map(feed_id => ({ feed_id, date_from, date_to })),
       };
       const result = await postSourcesBootstrap(payload);
 
@@ -236,24 +238,12 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setLocalUiMode('complete');
   }
 
-  // Derive year range for custom dropdowns from actual feed date_min values
-  const feedDateMin = bootstrapStatus?.sources
-    ?.filter(f => selectedFeeds.includes(f.feed_id) && f.date_min)
-    ?.reduce((min, f) => (!min || f.date_min < min ? f.date_min : min), null);
-  const minYear = feedDateMin ? parseInt(feedDateMin.slice(0, 4)) : new Date().getFullYear() - 30;
-  const maxYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
-
   const ingestionRunning = uiMode === 'running';
-  const canSubmit = confirmed && !submitting && !loading && !ingestionRunning;
+  const hasSelection = includeBaseCorpus || activeSources.length > 0;
+  const canSubmit = confirmed && !submitting && !loading && !ingestionRunning && hasSelection && (fileStrategy !== 'nuclear' || nuclearConfirmed);
   const rssEstimate = estimate?.estimated_docs ?? null;
-  const totalEstimate = rssEstimate !== null ? rssEstimate + selectedBaseCorpus.length : null;
-
-  const selectStyle = {
-    padding: '4px 8px', borderRadius: 4, border: '1px solid var(--doc-border)',
-    background: 'var(--doc-surface)', color: 'var(--doc-text)',
-    fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
-  };
+  const baseCount = includeBaseCorpus ? (bootstrapStatus?.base_corpus?.length || 9) : 0;
+  const totalEstimate = rssEstimate !== null ? rssEstimate + baseCount : (hasSelection ? baseCount + 30 : null);
 
   return createPortal(
     <div className="rp-modal-backdrop" onClick={!submitting ? onClose : undefined}>
@@ -406,59 +396,39 @@ export default function BootstrapModal({ onClose, onStarted }) {
 
               {/* ── Section 1: Base Corpus ── */}
               <section>
-                <SectionLabel badge={`${selectedBaseCorpus.length} / ${bootstrapStatus.base_corpus.length}`}>
-                  Base Corpus
-                </SectionLabel>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {bootstrapStatus.base_corpus.map(doc => {
-                    const checked = selectedBaseCorpus.includes(doc.document_id);
-                    return (
-                      <div
-                        key={doc.document_id}
-                        className="rp-check-row"
-                        onClick={() => setSelectedBaseCorpus(prev =>
-                          checked ? prev.filter(id => id !== doc.document_id) : [...prev, doc.document_id]
-                        )}
-                      >
-                        <span className={`rp-check ${checked ? 'on' : ''}`}>
-                          {checked && <CheckIcon />}
-                        </span>
-                        <StatusDot status={doc.ingestion_status} />
-                        <span className="cls" style={{ flex: 1 }}>{doc.document_title}</span>
-                        <AgencyBadge agency={doc.issuing_body} />
-                        <span className="cnt" style={{ width: 76, textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                          {doc.chunk_count > 0 ? `${doc.chunk_count} chunks` : '—'}
-                        </span>
-                        <span className="cnt" style={{ width: 80, textAlign: 'right', flexShrink: 0 }} title="Publication date">
-                          {doc.publication_date ? formatDate(doc.publication_date) : '—'}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <SectionLabel>Base Corpus</SectionLabel>
+                <div
+                  className="rp-check-row"
+                  onClick={() => setIncludeBaseCorpus(p => !p)}
+                >
+                  <span className={`rp-check ${includeBaseCorpus ? 'on' : ''}`}>
+                    {includeBaseCorpus && <CheckIcon />}
+                  </span>
+                  <span className="cls" style={{ flex: 1 }}>
+                    Include base corpus ({bootstrapStatus.base_corpus.length} curated regulatory documents)
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', marginTop: 4, marginLeft: 26 }}>
+                  Annex 11, 21 CFR Part 11, ICH Q10, EU GMP Annex 15 & 22 — always fast
                 </div>
               </section>
 
               {/* ── Section 2: Sources ── */}
               <section>
-                <SectionLabel badge={`${selectedFeeds.length} / ${bootstrapStatus.sources.length}`}>
-                  Sources
-                </SectionLabel>
-
+                <SectionLabel>Sources</SectionLabel>
                 {['FDA', 'EMA', 'ICH'].map(agency => {
-                  const feeds = bootstrapStatus.sources.filter(f => f.agency === agency);
+                  const feeds = (bootstrapStatus.sources || []).filter(f => f.agency === agency);
                   if (feeds.length === 0) return null;
                   return (
                     <div key={agency} className="rp-scope-group">
                       <div className="grp-name">{agency}</div>
                       {feeds.map(feed => {
-                        const checked = selectedFeeds.includes(feed.feed_id);
+                        const checked = selectedSources[feed.feed_id] !== false;
                         return (
                           <div
                             key={feed.feed_id}
                             className="rp-check-row"
-                            onClick={() => setSelectedFeeds(prev =>
-                              checked ? prev.filter(id => id !== feed.feed_id) : [...prev, feed.feed_id]
-                            )}
+                            onClick={() => setSelectedSources(prev => ({ ...prev, [feed.feed_id]: !prev[feed.feed_id] }))}
                           >
                             <span className={`rp-check ${checked ? 'on' : ''}`}>
                               {checked && <CheckIcon />}
@@ -467,11 +437,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
                             <span className="cnt" style={{ fontStyle: 'italic', marginRight: 6 }}>{feed.description}</span>
                             <span className="cnt">
                               {(() => {
-                                const rsFeed = registryStatus?.feeds?.find(f => f.feed_id === feed.feed_id);
-                                if (rsFeed?.discovering) {
-                                  return <span style={{ color: 'var(--accent-l)', fontStyle: 'italic' }}>Discovering…</span>;
-                                }
-                                const count = rsFeed?.doc_count ?? feed.doc_count;
+                                const count = feed.doc_count;
                                 if (count > 0) return `${count.toLocaleString()} docs`;
                                 return '— docs';
                               })()}
@@ -485,115 +451,77 @@ export default function BootstrapModal({ onClose, onStarted }) {
                     </div>
                   );
                 })}
-
-                {/* Historical depth control */}
-                {selectedFeeds.length > 0 && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--doc-border)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--doc-text-2)', marginBottom: 8 }}>Historical depth</div>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {DATE_WINDOW_OPTIONS.map(opt => {
-                        const active = dateWindow === opt.value;
-                        return (
-                          <button
-                            key={opt.value}
-                            onClick={() => setDateWindow(opt.value)}
-                            style={{
-                              padding: '5px 12px', borderRadius: 4, fontSize: 12,
-                              fontFamily: 'var(--mono)', cursor: 'pointer',
-                              background: active ? 'var(--accent-l, #2563eb)' : 'transparent',
-                              color: active ? '#fff' : 'var(--doc-text-2)',
-                              border: `1px solid ${active ? 'var(--accent-l, #2563eb)' : 'var(--doc-border)'}`,
-                              transition: 'all 100ms ease',
-                            }}
-                          >
-                            {opt.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* All available warning */}
-                    {dateWindow === 'all' && (() => {
-                      const SEC_PER_DOC = 20;
-                      const estSeconds = (rssEstimate || 0) * SEC_PER_DOC;
-                      const estMin = Math.round(estSeconds / 60);
-                      const estStr = estMin < 60 ? `~${estMin} min` : `~${Math.round(estMin / 60)}h ${estMin % 60}m`;
-                      return (
-                        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', background: 'var(--warn-tint)', border: '1px solid var(--warn-tint-border)', borderRadius: 4 }}>
-                          <WarnIcon />
-                          <span style={{ fontSize: 12, color: 'var(--warn-text)', lineHeight: 1.5 }}>
-                            {rssEstimate != null && rssEstimate > 0 ? (
-                              <>Estimated <b>{rssEstimate.toLocaleString()}</b> documents, {estStr}.</>
-                            ) : (
-                              <>Fetching all available history may take 30–60 minutes.</>
-                            )}
-                          </span>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Custom year dropdowns */}
-                    {dateWindow === 'custom' && (
-                      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-                        <span style={{ color: 'var(--doc-text-2)', fontSize: 12 }}>From</span>
-                        <select value={customFromYear} onChange={e => setCustomFromYear(parseInt(e.target.value))} style={selectStyle}>
-                          {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-                        </select>
-                        <span style={{ color: 'var(--doc-text-2)', fontSize: 12 }}>to</span>
-                        <select value={customToYear} onChange={e => setCustomToYear(parseInt(e.target.value))} style={selectStyle}>
-                          {yearOptions.filter(y => y >= customFromYear).map(y => <option key={y} value={y}>{y}</option>)}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Live estimate */}
-                    <div style={{ marginTop: 8, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
-                      {estimate == null
-                        ? 'Calculating estimate…'
-                        : estimate.estimated_docs == null
-                          ? `Estimate unavailable — ${estimate.note}`
-                          : `~${estimate.estimated_docs.toLocaleString()} documents in this date range`
-                      }
-                    </div>
-                  </div>
-                )}
               </section>
 
-              {/* ── Section 3: Source files ── */}
+              {/* ── Section 3: Historical Depth ── */}
               <section>
-                <SectionLabel>Source files</SectionLabel>
+                <SectionLabel>Historical Depth</SectionLabel>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {DATE_WINDOW_OPTIONS.filter(o => o.value !== 'custom').map(opt => {
+                    const active = depth === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setDepth(opt.value)}
+                        style={{
+                          padding: '5px 12px', borderRadius: 4, fontSize: 12,
+                          fontFamily: 'var(--mono)', cursor: 'pointer',
+                          background: active ? 'var(--accent-l, #2563eb)' : 'transparent',
+                          color: active ? '#fff' : 'var(--doc-text-2)',
+                          border: `1px solid ${active ? 'var(--accent-l, #2563eb)' : 'var(--doc-border)'}`,
+                          transition: 'all 100ms ease',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
+                  {estimate == null
+                    ? 'Calculating estimate…'
+                    : estimate.estimated_docs == null
+                      ? `Estimate unavailable — ${estimate.note}`
+                      : `~${estimate.estimated_docs.toLocaleString()} documents in this date range`
+                  }
+                </div>
+              </section>
+
+              {/* ── Section 4: File Strategy ── */}
+              <section>
+                <SectionLabel>File Strategy</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {[
-                    { value: 'local_files',      label: 'Use local files',          hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
-                    { value: 'changed_only',     label: 'Re-download if changed',   hint: 'Compare hash; fetch only when source differs' },
-                    { value: 'full_redownload',  label: 'Delete and re-fetch all selected files from original sources', hint: 'Wipe selected archives and re-download from source URLs' },
-                    { value: 'full_reset',       label: 'Delete all files and re-download selected files', hint: 'Complete reset — wipe everything and start fresh' },
+                    { value: 'use_local',   label: 'Use local files where available', hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
+                    { value: 'redownload',  label: 'Re-download selected sources',    hint: 'Re-fetch files even if local copies exist' },
+                    { value: 'nuclear',     label: '☢ Nuclear reset',                  hint: 'Wipes ALL cached files including unselected sources, then re-downloads selected. Cannot be undone.' },
                   ].map(opt => {
-                    const active = sourceMode === opt.value;
+                    const active = fileStrategy === opt.value;
+                    const isNuclear = opt.value === 'nuclear';
                     return (
                       <label
                         key={opt.value}
-                        onClick={() => setSourceMode(opt.value)}
+                        onClick={() => setFileStrategy(opt.value)}
                         style={{
                           display: 'flex', alignItems: 'flex-start', gap: 10,
                           padding: '8px 10px', borderRadius: 4, cursor: 'pointer',
-                          background: active ? 'rgba(96,165,250,0.10)' : 'transparent',
+                          background: active ? (isNuclear ? 'rgba(245,158,11,0.10)' : 'rgba(96,165,250,0.10)') : 'transparent',
                           border: '1px solid var(--doc-border)',
-                          borderLeft: active ? '3px solid var(--accent-l, #60a5fa)' : '1px solid var(--doc-border)',
+                          borderLeft: active ? `3px solid ${isNuclear ? 'var(--warn, #f59e0b)' : 'var(--accent-l, #60a5fa)'}` : '1px solid var(--doc-border)',
                           transition: 'all 120ms ease',
                         }}
                       >
                         <span style={{
                           width: 14, height: 14, borderRadius: 7, flexShrink: 0, marginTop: 1,
-                          border: `2px solid ${active ? 'var(--accent-l, #60a5fa)' : 'var(--doc-border)'}`,
+                          border: `2px solid ${active ? (isNuclear ? 'var(--warn, #f59e0b)' : 'var(--accent-l, #60a5fa)') : 'var(--doc-border)'}`,
                           background: 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}>
-                          {active && <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--accent-l, #60a5fa)' }} />}
+                          {active && <span style={{ width: 6, height: 6, borderRadius: 3, background: isNuclear ? 'var(--warn, #f59e0b)' : 'var(--accent-l, #60a5fa)' }} />}
                         </span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, color: 'var(--doc-text)', fontWeight: active ? 500 : 400 }}>{opt.label}</div>
-                          <div style={{ fontSize: 11, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', marginTop: 2 }}>{opt.hint}</div>
+                          <div style={{ fontSize: 13, color: active && isNuclear ? 'var(--warn-text)' : 'var(--doc-text)', fontWeight: active ? 500 : 400 }}>{opt.label}</div>
+                          <div style={{ fontSize: 11, color: active && isNuclear ? 'var(--warn-text)' : 'var(--doc-text-2)', fontFamily: 'var(--mono)', marginTop: 2 }}>{opt.hint}</div>
                         </div>
                       </label>
                     );
@@ -601,7 +529,7 @@ export default function BootstrapModal({ onClose, onStarted }) {
                 </div>
               </section>
 
-              {/* ── Section 4: Confirmation ── */}
+              {/* ── Section 5: Confirmation ── */}
               <div style={{ borderTop: '1px solid var(--doc-border)', paddingTop: 16 }}>
                 <label className="rp-wipe-check" onClick={() => setConfirmed(c => !c)}>
                   <span className={`rp-check warn ${confirmed ? 'on' : ''}`}>
@@ -609,6 +537,14 @@ export default function BootstrapModal({ onClose, onStarted }) {
                   </span>
                   <span className="ctxt">I understand this will wipe and re-ingest the selected corpus</span>
                 </label>
+                {fileStrategy === 'nuclear' && (
+                  <label className="rp-wipe-check" onClick={() => setNuclearConfirmed(c => !c)} style={{ marginTop: 8 }}>
+                    <span className={`rp-check warn ${nuclearConfirmed ? 'on' : ''}`} style={{ borderColor: 'var(--warn, #f59e0b)' }}>
+                      {nuclearConfirmed && <CheckIcon />}
+                    </span>
+                    <span className="ctxt" style={{ color: 'var(--warn-text)' }}>I understand Nuclear will delete ALL cached files</span>
+                  </label>
+                )}
               </div>
 
             </div>
@@ -618,13 +554,11 @@ export default function BootstrapModal({ onClose, onStarted }) {
         {/* ── Footer ── */}
         <div className="mfoot" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)' }}>
-            {localUiMode === 'config' && !loading && totalEstimate !== null
+            {localUiMode === 'config' && !loading
               ? `~${totalEstimate.toLocaleString()} documents selected`
-              : localUiMode === 'config' && !loading && selectedBaseCorpus.length > 0
-                ? `${selectedBaseCorpus.length} base corpus doc${selectedBaseCorpus.length !== 1 ? 's' : ''} + sources`
-                : localUiMode === 'running'
-                  ? 'You can close this window — progress is shown in the status bar'
-                  : ''
+              : localUiMode === 'running'
+                ? 'You can close this window — progress is shown in the status bar'
+                : ''
             }
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
