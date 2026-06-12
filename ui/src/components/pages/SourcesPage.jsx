@@ -584,7 +584,7 @@ function RssFeedsCard() {
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
-        <span>Sources</span>
+        <span>Update Sources</span>
         <button
           onClick={fetchData}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center', marginLeft: 6 }}
@@ -597,6 +597,11 @@ function RssFeedsCard() {
             {schedLine}
           </span>
         )}
+        {schedLine && (
+          <span style={{ display: 'block', marginTop: 2, marginLeft: 12, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--doc-text-3)' }}>
+            Fetches documents published in the last 30 days not yet in the knowledge base
+          </span>
+        )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => setShowSchedule(true)}
@@ -607,7 +612,7 @@ function RssFeedsCard() {
           <button
             onClick={handleRunNow}
             disabled={runState === 'running' || enabledFeeds.length === 0}
-            title="Run all enabled feeds now"
+            title="Checks last 30 days across all enabled sources"
             style={{
               padding: '4px 12px', borderRadius: 4, border: '1px solid',
               fontSize: 12, fontFamily: 'var(--mono)',
