@@ -85,7 +85,8 @@ async def list_ingestions(
                 COUNT(*) AS doc_count,
                 COUNT(*) FILTER (WHERE status = 'success') AS doc_count_succeeded,
                 COUNT(*) FILTER (WHERE status IN ('skipped', 'not_viable')) AS doc_count_skipped,
-                COUNT(*) FILTER (WHERE status IN ('error', 'failed')) AS doc_count_failed
+                COUNT(*) FILTER (WHERE status IN ('error', 'failed')) AS doc_count_failed,
+                COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'parsing', 'chunking', 'embedding', 'uploading')) AS doc_count_inflight
             FROM latest
             GROUP BY group_id
             ORDER BY MIN(triggered_at) DESC
@@ -94,8 +95,10 @@ async def list_ingestions(
         )
         session_groups = []
         for row in cur.fetchall():
-            gid, ts, triggered_at, cnt, succeeded, skipped, failed = row
-            if failed == 0 and succeeded > 0:
+            gid, ts, triggered_at, cnt, succeeded, skipped, failed, inflight = row
+            if inflight > 0:
+                grp_status = "running"
+            elif failed == 0 and succeeded > 0:
                 grp_status = "success"
             elif succeeded == 0 and skipped == 0:
                 grp_status = "error"
@@ -111,6 +114,7 @@ async def list_ingestions(
                 "doc_count_succeeded": succeeded,
                 "doc_count_skipped": skipped,
                 "doc_count_failed": failed,
+                "doc_count_inflight": inflight,
             })
 
         # Apply status filter post-grouping

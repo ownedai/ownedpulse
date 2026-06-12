@@ -12,7 +12,8 @@ const DOCTYPE_LABEL = {
   news_item: 'News Item', other: 'Unclassified',
 };
 
-function deriveSessionStatus(succeeded, failed, skipped) {
+function deriveSessionStatus(succeeded, failed, skipped, inflight) {
+  if ((inflight || 0) > 0) return 'running';
   if (failed === 0 && succeeded > 0) return 'success';
   if (succeeded === 0 && (skipped || 0) === 0) return 'error';
   return 'partial';
@@ -574,7 +575,7 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
   const handlePage = (p) => { setDocPage(p); fetchDocs(p, docPageSize); };
   const handlePageSize = (s) => { setDocPageSize(s); setDocPage(1); fetchDocs(1, s); };
 
-  const status = deriveSessionStatus(item.doc_count_succeeded, item.doc_count_failed, item.doc_count_skipped);
+  const status = item.status || deriveSessionStatus(item.doc_count_succeeded, item.doc_count_failed, item.doc_count_skipped, item.doc_count_inflight);
 
   return (
     <div className="g3-row session" data-testid={`ingestion-session-group-${item.run_token}`}>
