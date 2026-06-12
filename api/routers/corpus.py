@@ -16,20 +16,17 @@ from lib.db import get_pg_conn
 from lib.text_utils import normalise_agency, strip_title_suffix
 
 def repair_stale_pending(threshold_minutes: int = 30) -> int:
-    """Mark pending docs as error if they haven't been updated within threshold.
+    """Reset stale pending docs so they can be picked up by the next ingestion run.
 
-    A document stuck in 'pending' with no running process means ingestion crashed
-    before it could update the status. Returns the number of rows repaired.
+    A document stuck in 'pending' with no running process means ingestion never
+    started — not an error. Returns the number of rows reset.
     """
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
-        # GATE3c: stale-pending sweep on ingestion_state
         cur.execute(
             """UPDATE ingestion_state
-               SET ingestion_status = 'error',
-                   ingestion_error   = 'Ingestion process did not complete',
-                   updated_at        = NOW()
+               SET updated_at = NOW()
                WHERE ingestion_status = 'pending'
                  AND updated_at < NOW() - (%s * INTERVAL '1 minute')""",
             (threshold_minutes,)

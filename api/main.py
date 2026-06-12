@@ -208,7 +208,7 @@ def _cleanup_abandoned_state():
                SET ingestion_status = 'error',
                    ingestion_error   = 'Process was killed before ingestion completed',
                    updated_at        = NOW()
-               WHERE ingestion_status IN ('pending', 'parsing', 'chunking', 'embedding', 'uploading', 'running')
+               WHERE ingestion_status IN ('parsing', 'chunking', 'embedding', 'uploading', 'running')
                  AND updated_at < NOW() - INTERVAL '10 minutes'"""
         )
         docs = cur.rowcount
