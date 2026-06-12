@@ -2,7 +2,12 @@
 
 import os
 
-os.environ.setdefault('PG_DSN', 'postgresql://postgres:@postgres:5432/knowledge_base')
+_pg_host = os.environ.get("POSTGRES_HOST", "postgres")
+_pg_port = os.environ.get("POSTGRES_PORT", "5432")
+_pg_user = os.environ.get("POSTGRES_USER", "postgres")
+_pg_pass = os.environ.get("POSTGRES_PASSWORD", "")
+_pg_db   = os.environ.get("POSTGRES_DB", "knowledge_base")
+os.environ.setdefault("PG_DSN", f"postgresql://{_pg_user}:{_pg_pass}@{_pg_host}:{_pg_port}/{_pg_db}")
 
 ARCHIVE_ROOT      = os.environ.get('ARCHIVE_ROOT', '/mnt/data/regulatory_archive')
 INTERNAL_ARCHIVE  = os.environ.get('INTERNAL_ARCHIVE', '/mnt/data/internal_archive')
