@@ -584,7 +584,7 @@ function RssFeedsCard() {
   return (
     <div className="rp-src-card">
       <div className="rp-src-card-lbl">
-        <span>Update Sources</span>
+        <span>Update Sources — Last 30 Days</span>
         <button
           onClick={fetchData}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--doc-text-2)', display: 'flex', alignItems: 'center', marginLeft: 6 }}
@@ -622,10 +622,6 @@ function RssFeedsCard() {
           </button>
         </div>
       </div>
-
-      <span style={{ fontSize: 11, color: 'var(--doc-text-3)', marginTop: 2, marginBottom: 8, display: 'block' }}>
-        Fetches documents published in the last 30 days not yet in the knowledge base
-      </span>
 
       <table className="rp-table" style={{ fontSize: 12.5 }}>
         <thead>
