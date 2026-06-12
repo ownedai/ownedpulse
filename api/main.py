@@ -28,7 +28,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.9.41"
+APP_VERSION = "0.9.42"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
