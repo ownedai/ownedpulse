@@ -210,18 +210,16 @@ def collect_ich_archive() -> list[dict]:
             r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
             r.raise_for_status()
             data = r.json()
-            # Navigate to accordion items through page node
+            # Navigate to guideline items through page node
             page_node = (data.get("items") or [{}])[0]
             main_widgets = page_node.get("mainWidgets") or {}
-            for widget_row in main_widgets.get("items", []):
-                # widget_row is a list of widgets in this row
-                row_items = widget_row if isinstance(widget_row, list) else [widget_row]
-                for widget in row_items:
-                    for accordion_group in widget.get("widgets", {}).get("items", []):
-                        for accordion in accordion_group.get("accordions", {}).get("items", []):
-                            for g in accordion.get("items", []):
-                                if g.get("entityInfo", {}).get("bundle") != "accordion_group":
-                                    continue
+            # mainWidgets.items is a list of widget dicts (1D, not 2D)
+            for widget in main_widgets.get("items", []):
+                for accordion_group in widget.get("widgets", {}).get("items", []):
+                    if "accordions" not in accordion_group:
+                        continue
+                    for accordion in accordion_group["accordions"].get("items", []):
+                        for g in accordion.get("items", []):
                                 title_parts = []
                                 code = g.get("code", "")
                                 if code:
