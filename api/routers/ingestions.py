@@ -6,11 +6,6 @@ from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter()
 
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 SESSION_SOURCES = ("bootstrap_ui", "manual_cli")
 RSS_SOURCES = ("n8n_rss", "scheduled", "manual")
 
@@ -21,13 +16,7 @@ SOURCE_CATEGORIES = {
 }
 
 
-def get_pg_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
+from lib.db import get_pg_conn
 
 
 def _fmt_dt(dt) -> str | None:

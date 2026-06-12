@@ -19,24 +19,10 @@ QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
 
-
-def get_pg_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
-
+from lib.db import get_pg_conn
 
 # ── PATCH /admin/feeds/{feed_id} request model ────────────────────────────────
 
@@ -444,23 +430,12 @@ async def admin_reset_corpus(body: ResetCorpusRequest):
         "seed_registry_ok": False,
     }
 
-    # 1. Wipe Qdrant collection
-    try:
-        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        client.delete_collection(QDRANT_COLLECTION)
-        result["qdrant_wiped"] = True
-        logger.info("Qdrant collection '%s' deleted", QDRANT_COLLECTION)
-    except Exception as e:
-        logger.error("Qdrant wipe failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Qdrant wipe failed: {e}")
-
-    # 2. Truncate trace tables and ingestion_state
+    # 1. Truncate trace tables and ingestion_state — PG first so Qdrant is not orphaned on failure
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
-        for table in ["run_log", "ingestion_doc", "ingestion_state"]:
-            cur.execute(f"TRUNCATE TABLE {table}")
-            result["tables_truncated"].append(table)
+        cur.execute("TRUNCATE TABLE ingestion_doc, ingestion_state, run_log CASCADE")
+        result["tables_truncated"] = ["ingestion_doc", "ingestion_state", "run_log"]
         conn.commit()
         cur.close()
     except Exception as e:
@@ -469,6 +444,16 @@ async def admin_reset_corpus(body: ResetCorpusRequest):
     finally:
         if not conn.closed:
             conn.close()
+
+    # 2. Wipe Qdrant collection
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        client.delete_collection(QDRANT_COLLECTION)
+        result["qdrant_wiped"] = True
+        logger.info("Qdrant collection '%s' deleted", QDRANT_COLLECTION)
+    except Exception as e:
+        logger.error("Qdrant wipe failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Qdrant wipe failed: {e}")
 
     # 3. Re-seed document_registry from archive metadata
     try:

@@ -14,35 +14,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from lib import ingestion_lock
 from lib.ingest_documents import SECONDS_PER_DOC
+from lib.db import get_pg_conn
+from lib.text_utils import normalise_agency
 
 router = APIRouter()
 
 # In-memory session state — single-worker container, survives per-process
 _sessions: dict = {}
-
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-
-N8N_HOST = os.getenv("N8N_HOST", "n8n")
-N8N_PORT = int(os.getenv("N8N_PORT", "5678"))
-N8N_API_KEY = os.getenv("N8N_API_KEY", "")
-
-
-def get_pg_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
-
-
-def normalise_agency(a: str) -> str:
-    return "EMA" if a == "EU-Commission" else a
-
 
 # ── Request/response models ───────────────────────────────────────────────────
 
@@ -69,7 +47,7 @@ class ReingestDocRequest(BaseModel):
 @router.get("/state")
 async def bootstrap_state():
     doc_count = 0
-    n8n_active = False
+    scheduler_active = False
     last_bootstrap = None
 
     bootstrap_doc_count = 0
@@ -125,7 +103,7 @@ async def bootstrap_state():
         "state": "initialized" if doc_count > 0 else "fresh",
         "doc_count": doc_count,
         "bootstrap_doc_count": bootstrap_doc_count,
-        "n8n_active": scheduler_active,
+        "scheduler_active": scheduler_active,
         "last_bootstrap": last_bootstrap,
         "active_session": active_session,
     }

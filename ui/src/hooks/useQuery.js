@@ -14,6 +14,7 @@ export default function useQuery() {
     setQueryText(query);
 
     const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
     try {
       const data = await submitQuery(
         {
@@ -31,6 +32,7 @@ export default function useQuery() {
         setError(err.message);
       }
     } finally {
+      clearTimeout(timer);
       setLoading(false);
     }
   }, []);

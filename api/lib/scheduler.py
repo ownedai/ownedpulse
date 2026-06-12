@@ -5,9 +5,9 @@ import asyncio
 import logging
 import subprocess
 import uuid
-import psycopg2
 from datetime import datetime, timezone, timedelta
 from lib import ingestion_lock
+from lib.db import get_pg_conn
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -19,12 +19,6 @@ RSS_SCHEDULE_HOUR = int(os.environ.get("RSS_SCHEDULE_HOUR", "9"))
 RSS_SCHEDULE_MINUTE = int(os.environ.get("RSS_SCHEDULE_MINUTE", "0"))
 RSS_SCHEDULE_TIMEZONE = os.environ.get("RSS_SCHEDULE_TIMEZONE", "Europe/Berlin")
 
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-
 PIPELINE_SCRIPT = os.environ.get("PIPELINE_SCRIPT", "/opt/scripts/rss/run_pipeline.py")
 
 scheduler = AsyncIOScheduler()
@@ -34,20 +28,12 @@ def get_scheduler() -> AsyncIOScheduler:
     return scheduler
 
 
-def _get_pg_conn():
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10,
-    )
-
-
 def _write_run_log_error_or_insert(
     run_id: str, trigger_source: str, triggered_by: str, feed_id: str, detail: str
 ):
     """Update existing run_log row to error, or insert a new one if fetch_feed.py never ran."""
     try:
-        conn = _get_pg_conn()
+        conn = get_pg_conn()
         try:
             with conn.cursor() as c:
                 c.execute(
@@ -75,7 +61,7 @@ def _write_run_log_error_or_insert(
 
 
 def _get_enabled_feeds() -> list[str]:
-    conn = _get_pg_conn()
+    conn = get_pg_conn()
     try:
         with conn.cursor() as c:
             c.execute("SELECT feed_id FROM feed_config WHERE enabled = TRUE ORDER BY feed_id")

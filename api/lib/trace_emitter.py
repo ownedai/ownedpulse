@@ -152,7 +152,11 @@ class DocumentSpan:
 
 def start_document_span(trace_id: str, *, doc_id: str,
                         source_url: str = "") -> DocumentSpan:
-    """Create an ingestion_doc row and return a DocumentSpan handle.
+    """Create or reset an ingestion_doc row and return a DocumentSpan handle.
+
+    One row per document — upserted in place. No history accumulation.
+    For public regulatory documents, current state is all that matters.
+    (SOPs in Project 2 will use a separate audit trail mechanism.)
 
     Args:
         trace_id: The ingestion trace (run_log.run_id) this document belongs to.
@@ -168,8 +172,18 @@ def start_document_span(trace_id: str, *, doc_id: str,
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO ingestion_doc (span_id, trace_id, doc_id, source_url,
-                                       fetched_at, status)
-            VALUES (%s, %s, %s, %s, NOW(), 'pending')
+                                       fetched_at, status, chunk_count,
+                                       failure_reason, created_at)
+            VALUES (%s, %s, %s, %s, NOW(), 'pending', 0, NULL, NOW())
+            ON CONFLICT (doc_id) DO UPDATE SET
+                span_id        = EXCLUDED.span_id,
+                trace_id       = EXCLUDED.trace_id,
+                source_url     = COALESCE(EXCLUDED.source_url, ingestion_doc.source_url),
+                fetched_at     = NOW(),
+                status         = 'pending',
+                chunk_count    = 0,
+                failure_reason = NULL,
+                created_at     = ingestion_doc.created_at
         """, (span_id, trace_id, doc_id, source_url or None))
         conn.commit()
         cur.close()

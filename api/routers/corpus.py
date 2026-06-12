@@ -12,30 +12,8 @@ QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-
-
-NOCO_DB = os.getenv("NOCO_DB", "nocodb")
-
-def get_pg_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
-
-def get_noco_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=NOCO_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
+from lib.db import get_pg_conn
+from lib.text_utils import normalise_agency, strip_title_suffix
 
 def repair_stale_pending(threshold_minutes: int = 30) -> int:
     """Mark pending docs as error if they haven't been updated within threshold.
@@ -67,7 +45,7 @@ def repair_stale_pending(threshold_minutes: int = 30) -> int:
 def get_feed_default_doc_types() -> dict:
     """Return {feed_id: default_doc_type} from feed_config."""
     try:
-        conn = get_noco_conn()
+        conn = get_pg_conn()
         try:
             cur = conn.cursor()
             cur.execute("SELECT feed_id, default_doc_type FROM feed_config")
@@ -80,27 +58,6 @@ def get_feed_default_doc_types() -> dict:
         return {}
 
 
-def normalise_agency(agency: str) -> str:
-    if agency == "EU-Commission":
-        return "EMA"
-    return agency
-
-
-_TITLE_SUFFIXES = (
-    " | European Medicines Agency (EMA)",
-    " | European Medicines Agency",
-    " | EMA",
-    " | FDA",
-    " | ICH",
-)
-
-def strip_title(title: str | None) -> str | None:
-    if not title:
-        return title
-    for s in _TITLE_SUFFIXES:
-        if title.endswith(s):
-            return title[: -len(s)].rstrip()
-    return title
 
 
 # ── GET /api/corpus/stats ─────────────────────────────────────────────────────
@@ -224,7 +181,7 @@ async def corpus_documents(
             doc_id, ib, dt, status, chunk_count, li, run_id, title, pub_date, version, reg_type, source_url, fam_id, cdoc = row
             items.append({
                 "document_id": doc_id,
-                "document_title": strip_title(title) or "Untitled",
+                "document_title": strip_title_suffix(title) or "Untitled",
                 "document_type": reg_type or None,
                 "doc_type": dt,
                 "document_version": version,
@@ -571,7 +528,7 @@ async def feed_run_detail(run_id: str):
 
             documents.append({
                 "document_id": doc_id,
-                "document_title": strip_title(title) or source_url or "Untitled",
+                "document_title": strip_title_suffix(title) or source_url or "Untitled",
                 "document_type": doc_type,
                 "publication_date": pub_date,
                 "chunk_count": chunk_count or 0,
@@ -617,7 +574,7 @@ async def supersede_chain(document_family_id: str):
             is_superseded = status == "superseded"
             chain.append({
                 "document_id": doc_id,
-                "document_title": strip_title(title) or "Untitled",
+                "document_title": strip_title_suffix(title) or "Untitled",
                 "document_version": version,
                 "publication_date": pub_date,
                 "document_type": doc_type,

@@ -93,6 +93,7 @@ EMBED_MODEL       = "mxbai-embed-large"
 CANONICAL_DOC_TYPES = {
     "guidance", "reflection_paper", "press_release",
     "safety_alert", "drug_approval", "news_item", "other",
+    "training_material", "concept_paper",
 }
 DOC_TYPES_ALLOWED = CANONICAL_DOC_TYPES  # backward-compat alias
 
@@ -137,6 +138,7 @@ DOC_TYPE_TO_DOCUMENT_TYPE = {
     "guidance":"guidance","reflection_paper":"reflection-paper",
     "press_release":"press-release","safety_alert":"safety-communication",
     "drug_approval":"regulatory-decision","news_item":"news","other":"other",
+    "training_material":"training_material","concept_paper":"concept_paper",
 }
 
 
@@ -484,12 +486,28 @@ def update_registry_phase_f(doc_id: str, cls: dict, run_id: str = None):
                     (run_id, doc_id),
                 )
 
+FEED_ID_TO_ISSUING_BODY = {
+    "ema_sci_guidelines": "EMA",
+    "ema_reg_guidance": "EU-Commission",
+    "fda_drugs": "FDA",
+    "ich_guidelines": "ICH",
+}
+
+
+def _resolve_issuing_body(metadata: dict, feed_id: str) -> str:
+    """Resolve issuing_body from metadata or derive from feed_id prefix."""
+    explicit = metadata.get("issuing_body", "") or metadata.get("authority", "")
+    if explicit:
+        return explicit
+    return FEED_ID_TO_ISSUING_BODY.get(feed_id, "")
+
+
 def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) -> dict:
     # Support both old key names (bulk reingestion) and new key names (fetch_feed.py incremental)
     ct   = metadata.get("source_file_format") or metadata.get("content_type","pdf")
     ext  = ".pdf" if ct == "pdf" else ".html"
-    auth = metadata.get("issuing_body","") or metadata.get("authority","")
     feed_id = metadata.get("feed_source","") or metadata.get("feed_id","")
+    auth = _resolve_issuing_body(metadata, feed_id)
     pub_date = metadata.get("publication_date","") or metadata.get("pub_date","")
     if not pub_date:
         _d = _date_from_url(metadata.get("source_url",""))
@@ -724,6 +742,8 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
             }
             points.append(PointStruct(id=chunk_id, vector=vector, payload=payload))
         get_client().upsert(collection_name=QDRANT_COLLECTION, points=points)
+        from ingestion.chunk_archive import upsert_chunks_pg
+        upsert_chunks_pg(points)
         chunks_dir = archive_dir / "chunks"
         chunks_dir.mkdir(parents=True, exist_ok=True)
         jsonl_path = chunks_dir / f"chunks_{CHUNKER_VERSION}.jsonl"

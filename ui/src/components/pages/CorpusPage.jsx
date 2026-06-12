@@ -16,7 +16,6 @@ const AGENCY_OPTS = [
 const DOC_TYPES = [
   { label: 'All types', value: null },
   { label: 'Guidance', value: 'guidance' },
-  { label: 'Drug Approval', value: 'drug_approval' },
   { label: 'Press Release', value: 'press_release' },
   { label: 'Reflection Paper', value: 'reflection_paper' },
   { label: 'Safety Alert', value: 'safety_alert' },
@@ -35,7 +34,7 @@ const STATUS_OPTS = [
 const DOC_TYPE_LABELS = {
   guidance_pdf: 'Guidance', guidance: 'Guidance',
   press_release: 'Press Release', reflection_paper: 'Reflection Paper',
-  drug_approval: 'Drug Approval', safety_alert: 'Safety Alert',
+  safety_alert: 'Safety Alert',
   news_item: 'News', other: 'Other',
 };
 

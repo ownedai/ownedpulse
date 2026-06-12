@@ -1,6 +1,6 @@
 """
 regpulse API — FastAPI backend for regulatory intelligence queries.
-Phase G: Query UI v2.
+Phase H: Query UI v3.
 """
 
 import os
@@ -28,7 +28,7 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.9.35"
+APP_VERSION = "0.9.38"
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
@@ -65,6 +65,7 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
 OLLAMA_GEN_MODEL = os.getenv("OLLAMA_GEN_MODEL", "phi4:14b-q8_0")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
+CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "phi4:14b-q8_0")
 
 # ── Active model cache (60s TTL, read from system_config) ─────────────────────
 
@@ -98,15 +99,7 @@ DATA_DIR = os.getenv("DATA_DIR", "/data")
 
 # ── Database init ─────────────────────────────────────────────────────────────
 
-
-def get_pg_conn():
-    """Get a PostgreSQL connection. Raises on failure."""
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
+from lib.db import get_pg_conn
 
 
 def init_db():
@@ -515,30 +508,7 @@ class QueryRequest(BaseModel):
     generation_model: Optional[str] = None
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-TITLE_SUFFIX_PATTERNS = [
-    re.compile(r'\s*\|\s*European\s+Medicines\s+Agency(\s*\(\s*EMA\s*\))?\s*$', re.IGNORECASE),
-    re.compile(r'\s*\|\s*EMA(\s*\(\s*European\s+Medicines\s+Agency\s*\))?\s*$', re.IGNORECASE),
-    re.compile(r'\s*\|\s*FDA\s*$', re.IGNORECASE),
-    re.compile(r'\s*\|\s*ICH\s*$', re.IGNORECASE),
-]
-
-
-def strip_title_suffix(title: str) -> str:
-    """Remove known agency suffixes from document titles."""
-    if not title:
-        return title
-    for pat in TITLE_SUFFIX_PATTERNS:
-        title = pat.sub("", title)
-    return title.strip()
-
-
-def normalise_agency(agency: str) -> str:
-    """Normalise EU-Commission to EMA for display."""
-    if agency == "EU-Commission":
-        return "EMA"
-    return agency
+from lib.text_utils import normalise_agency, strip_title_suffix
 
 
 def normalise_agency_for_filter(agency: str) -> list[str]:
@@ -571,7 +541,7 @@ def classify_query(query: str) -> tuple[str, str]:
         resp = httpx.post(
             f"{OLLAMA_BASE}/api/generate",
             json={
-                "model": "phi4:14b-q8_0",
+                "model": CLASSIFIER_MODEL,
                 "prompt": f"Classify this query: {query}",
                 "system": CLASSIFIER_SYSTEM_PROMPT,
                 "stream": False,
@@ -584,13 +554,13 @@ def classify_query(query: str) -> tuple[str, str]:
 
         if result in ("CONTENT", "METADATA"):
             logger.info(f"LLM classifier: '{query[:80]}' → {result}")
-            return result, f"llm:phi4:14b-q8_0"
+            return result, f"llm:{CLASSIFIER_MODEL}"
         elif result == "SUPERSEDE":
             logger.info(f"LLM classifier: '{query[:80]}' → SUPERSEDE (fallback to CONTENT — no handler yet)")
-            return "CONTENT", f"llm:phi4:14b-q8_0"
+            return "CONTENT", f"llm:{CLASSIFIER_MODEL}"
         else:
             logger.warning(f"LLM classifier returned unexpected '{result}' — falling back to CONTENT")
-            return "CONTENT", f"llm:phi4:14b-q8_0"
+            return "CONTENT", f"llm:{CLASSIFIER_MODEL}"
 
     except Exception as e:
         logger.error(f"LLM classifier failed: {e} — falling back to CONTENT")
@@ -812,9 +782,15 @@ DOCUMENT_NAME_MAP = {
     "21 cfr part 11": "21-CFR-Part-11",
     "21 cfr 11": "21-CFR-Part-11",
     "ich q9(r1)": "ICH-Q9-R1",
-    "ich q9": "ICH-Q9-R1",  # point to current version
+    "ich q9": "ICH-Q9-R1",
     "ich q9 (r1)": "ICH-Q9-R1",
     "ich q10": "ICH-Q10",
+    "ema reflection": "EMA-Reflection-AI",
+    "reflection paper on ai": "EMA-Reflection-AI",
+    "reflection paper artificial intelligence": "EMA-Reflection-AI",
+    "fda data integrity": "FDA-DI-CGMP-QA",
+    "data integrity guidance": "FDA-DI-CGMP-QA",
+    "data integrity and compliance": "FDA-DI-CGMP-QA",
 }
 
 
@@ -1148,12 +1124,7 @@ async def health():
 
     # PostgreSQL
     try:
-        import psycopg2
-        conn = psycopg2.connect(
-            host=POSTGRES_HOST, port=POSTGRES_PORT,
-            dbname=POSTGRES_DB, user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD, connect_timeout=5
-        )
+        conn = get_pg_conn()
         conn.close()
         components["postgres"] = "ok"
     except Exception as e:
@@ -1640,15 +1611,10 @@ async def _run_metadata_query(
 
     if is_count:
         # Count distinct documents from PostgreSQL document_registry
-        import psycopg2 as _psycopg2
         total = 0
         pg_rows = []
         try:
-            _conn = _psycopg2.connect(
-                host=POSTGRES_HOST, port=POSTGRES_PORT,
-                dbname=POSTGRES_DB, user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD, connect_timeout=5
-            )
+            _conn = get_pg_conn()
             _cur = _conn.cursor()
             where_clauses = ["ingestion_status = 'indexed'"]
             params = []
@@ -1681,7 +1647,7 @@ async def _run_metadata_query(
                 params.append(inferred_filters.date_to)
             where_sql = "WHERE " + " AND ".join(where_clauses)
             _cur.execute(
-                f"SELECT COUNT(*) FROM document_registry {where_sql}", params
+                f"SELECT COUNT(*) FROM document_registry_ext {where_sql}", params
             )
             total = _cur.fetchone()[0] or 0
 
@@ -1692,7 +1658,7 @@ async def _run_metadata_query(
                            issuing_body, document_version,
                            metadata_json->>'publication_date' as pub_date,
                            archive_path
-                    FROM document_registry {where_sql}
+                    FROM document_registry_ext {where_sql}
                     ORDER BY metadata_json->>'publication_date' DESC NULLS LAST
                     LIMIT 5""",
                 params
@@ -1757,14 +1723,9 @@ async def _run_metadata_query(
 
     elif is_current_version:
         # Look up document version from PostgreSQL document_registry
-        import psycopg2
         answer_parts = []
         try:
-            conn = psycopg2.connect(
-                host=POSTGRES_HOST, port=POSTGRES_PORT,
-                dbname=POSTGRES_DB, user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD, connect_timeout=5
-            )
+            conn = get_pg_conn()
             cur = conn.cursor()
             where_clauses = ["ingestion_status = 'indexed'"]
             params = []
@@ -1788,7 +1749,7 @@ async def _run_metadata_query(
                 f"""SELECT document_id, metadata_json->>'document_title' as title,
                           document_version, metadata_json->>'publication_date' as pub_date,
                           issuing_body, document_status, document_family_id
-                   FROM document_registry
+                   FROM document_registry_ext
                    {where}
                    ORDER BY metadata_json->>'document_title'"""
                 , params
@@ -1864,14 +1825,9 @@ async def _run_metadata_query(
 
     elif is_list:
         # List documents from PostgreSQL with all inferred filters applied
-        import psycopg2 as _psycopg2
         pg_rows = []
         try:
-            _conn = _psycopg2.connect(
-                host=POSTGRES_HOST, port=POSTGRES_PORT,
-                dbname=POSTGRES_DB, user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD, connect_timeout=5
-            )
+            _conn = get_pg_conn()
             _cur = _conn.cursor()
             where_clauses = ["ingestion_status = 'indexed'"]
             params = []
@@ -1906,7 +1862,7 @@ async def _run_metadata_query(
                            metadata_json->>'document_title' as title,
                            issuing_body, document_version,
                            publication_date, source_url
-                    FROM document_registry {where_sql}
+                    FROM document_registry_ext {where_sql}
                     ORDER BY publication_date DESC NULLS LAST
                     LIMIT 50""",
                 params
@@ -1974,7 +1930,6 @@ async def _run_metadata_query(
             answer = "No documents found matching your criteria."
     elif is_publication_date:
         # Publication date lookup: find the best-matching document and return its date
-        import psycopg2 as _psycopg2
         # Extract meaningful keywords from query for document title search
         stop_words = {"when", "was", "is", "the", "published", "released", "publication",
                       "date", "of", "what", "year", "a", "an", "in", "for", "and", "or"}
@@ -1983,11 +1938,7 @@ async def _run_metadata_query(
 
         pg_rows = []
         try:
-            _conn = _psycopg2.connect(
-                host=POSTGRES_HOST, port=POSTGRES_PORT,
-                dbname=POSTGRES_DB, user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD, connect_timeout=5
-            )
+            _conn = get_pg_conn()
             _cur = _conn.cursor()
             where_clauses = ["ingestion_status = 'indexed'"]
             params = []
@@ -2008,7 +1959,7 @@ async def _run_metadata_query(
                 f"""SELECT document_id,
                            metadata_json->>'document_title' as title,
                            issuing_body, publication_date, source_url
-                    FROM document_registry {where_sql}
+                    FROM document_registry_ext {where_sql}
                     ORDER BY publication_date DESC NULLS LAST
                     LIMIT 5""",
                 params

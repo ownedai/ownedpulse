@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
+from lib.db import get_pg_conn
 from lib import ingestion_lock
 
 logger = logging.getLogger(__name__)
@@ -20,23 +21,6 @@ router = APIRouter()
 QDRANT_HOST       = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT       = int(os.getenv("QDRANT_PORT", "6333"))
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
-
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "knowledge_base")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-
-
-def get_pg_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=POSTGRES_DB, user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD, connect_timeout=10
-    )
-
-
 # Presentation metadata per feed_id — fixed set of known feeds.
 FEED_METADATA: dict = {
     "ema_reg_guidance":   {"agency": "EMA", "label": "Regulatory Guidance",  "description": "Regulatory guidance and procedural documents"},
