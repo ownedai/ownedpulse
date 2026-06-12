@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Query
 router = APIRouter()
 
 SESSION_SOURCES = ("bootstrap_ui", "manual_cli")
-RSS_SOURCES = ("n8n_rss", "scheduled", "manual")
 
 # UI category → internal trigger_source values
 SOURCE_CATEGORIES = {

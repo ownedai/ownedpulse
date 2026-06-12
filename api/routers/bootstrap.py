@@ -599,18 +599,3 @@ async def stop_bootstrap_session(session_id: str):
     return {"session_id": session_id, "message": "Stopped."}
 
 
-# ── POST /bootstrap/activate-rss ─────────────────────────────────────────────
-
-@router.post("/activate-rss")
-async def bootstrap_activate_rss():
-    """Returns scheduler status — APScheduler is always active when the API is running."""
-    from lib.scheduler import get_scheduler
-    sched = get_scheduler()
-    job = sched.get_job("rss_daily_ingestion")
-    running = sched.running and job is not None
-    next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
-    return {
-        "activated": running,
-        "already_active": running,
-        "note": f"RSS automation active via APScheduler. Next run: {next_run}." if running else "Scheduler not running.",
-    }

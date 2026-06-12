@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reingestDoc, openBootstrapProgress, stopBootstrapSession } from '../../api/client';
-import { startBootstrapTracking, stopBootstrapTracking, useBootstrapProgress, useRssProgress } from '../../hooks/useBootstrapProgress';
+import { startBootstrapTracking, stopBootstrapTracking, useBootstrapProgress } from '../../hooks/useBootstrapProgress';
 import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 import DateInput, { todayISO } from '../common/DateInput';
@@ -34,7 +34,7 @@ function G3Status({ status }) {
 
 function SrcPill({ src }) {
   const map = {
-    n8n_rss: ['n8n', 'n8n'],
+    n8n_rss: ['n8n', 'Scheduled'],
     scheduled: ['n8n', 'Scheduled'],
     bootstrap_ui: ['bootstrap', 'Bootstrap'],
     manual_cli: ['manual', 'Manual'],
