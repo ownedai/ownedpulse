@@ -6,7 +6,7 @@ import { startBootstrapTracking, useBootstrapProgress } from '../../hooks/useBoo
 import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun, activateRss,
-  getAdminFeeds, toggleFeed,
+  getAdminFeeds, toggleFeed, triggerFeedRun,
   getSchedulerStatus, pauseScheduler, resumeScheduler,
   getSchedulerConfig, updateSchedulerConfig,
   getCorpusDocumentsV2, reingestDoc,
@@ -511,7 +511,7 @@ function ScheduleModal({ schedStatus, onClose, onSaved }) {
 
 // ── RSS Feeds Card ────────────────────────────────────────────────────────────
 
-function RssFeedsCard({ onOpenModal }) {
+function RssFeedsCard() {
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(null);
@@ -542,9 +542,10 @@ function RssFeedsCard({ onOpenModal }) {
     setToggling(null);
   }
 
-  function handleRunNow() {
+  async function handleRunNow() {
     if (enabledFeeds.length === 0) return;
-    onOpenModal(enabledFeeds.map(f => f.feed_id));
+    await Promise.allSettled(enabledFeeds.map((f) => triggerFeedRun(f.feed_id)));
+    fetchData();
   }
 
   function formatNextRun(isoStr) {
@@ -1033,8 +1034,6 @@ function BootstrapToast({ result, onClose }) {
 
 export default function SourcesPage() {
   const [showBootstrapModal, setShowBootstrapModal] = useState(false);
-  const [bootstrapAutoSubmit, setBootstrapAutoSubmit] = useState(false);
-  const [bootstrapEnabledSources, setBootstrapEnabledSources] = useState(null);
   const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
 
   const refreshState = useCallback(() => {
@@ -1047,8 +1046,6 @@ export default function SourcesPage() {
 
   const handleModalClose = useCallback(() => {
     setShowBootstrapModal(false);
-    setBootstrapAutoSubmit(false);
-    setBootstrapEnabledSources(null);
     refreshState();
   }, [refreshState]);
 
@@ -1056,7 +1053,7 @@ export default function SourcesPage() {
     <div className="rp-sources-page">
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
-        <RssFeedsCard onOpenModal={(ids) => { setBootstrapAutoSubmit(true); setBootstrapEnabledSources(ids); setShowBootstrapModal(true); }} />
+        <RssFeedsCard />
         <BaseCorpusCard />
         <InitialLoadCard
           onOpenModal={() => setShowBootstrapModal(true)}
@@ -1068,9 +1065,7 @@ export default function SourcesPage() {
       {showBootstrapModal && (
         <BootstrapModal
           onClose={handleModalClose}
-          autoSubmit={bootstrapAutoSubmit}
-          enabledSources={bootstrapEnabledSources}
-          title={bootstrapAutoSubmit ? "Updating Sources" : "Corpus Loading"}
+          title="Corpus Loading"
         />
       )}
     </div>
