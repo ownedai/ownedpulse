@@ -90,13 +90,19 @@ def _resolve_stale_spans(doc_id: str, trace_id: str, reason: str):
 
 def _subprocess_env(extra: dict = None) -> dict:
     env = os.environ.copy()
-    # Build PG_DSN from component vars already set correctly in the container env.
-    # Do NOT fall back to localhost — that breaks subprocesses launched from Docker.
-    pg_host = env.get("POSTGRES_HOST", "postgres")
-    pg_port = env.get("POSTGRES_PORT", "5432")
-    pg_user = env.get("POSTGRES_USER", "postgres")
-    pg_pass = env.get("POSTGRES_PASSWORD", "")
-    pg_db   = env.get("POSTGRES_DB", "knowledge_base")
+    # Explicitly forward PG credentials so subprocesses always have them,
+    # even if the parent process started without docker-compose env injection.
+    env.setdefault("POSTGRES_HOST", "postgres")
+    env.setdefault("POSTGRES_PORT", "5432")
+    env.setdefault("POSTGRES_DB", "knowledge_base")
+    env.setdefault("POSTGRES_USER", "postgres")
+    env.setdefault("POSTGRES_PASSWORD", os.environ.get("POSTGRES_PASSWORD", ""))
+    # Build PG_DSN from the now-guaranteed component vars.
+    pg_host = env["POSTGRES_HOST"]
+    pg_port = env["POSTGRES_PORT"]
+    pg_user = env["POSTGRES_USER"]
+    pg_pass = env["POSTGRES_PASSWORD"]
+    pg_db   = env["POSTGRES_DB"]
     env.setdefault("PG_DSN", f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}")
     env.setdefault("QDRANT_HOST", env.get("QDRANT_HOST", "qdrant"))
     env.setdefault("QDRANT_PORT", env.get("QDRANT_PORT", "6333"))
