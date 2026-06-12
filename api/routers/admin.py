@@ -179,8 +179,12 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
 # ── POST /admin/feeds/{feed_id}/trigger ──────────────────────────────────────
 
 @router.post("/feeds/{feed_id}/trigger")
-async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks):
-    """Trigger a single feed run via APScheduler background task."""
+async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks, mode: str = "full"):
+    """Trigger a single feed run via APScheduler background task.
+
+    mode=rss: Use RSS XML feed only (lightweight, recent items)
+    mode=full (default): Use bulk scrapers (comprehensive)
+    """
     lock_st = ingestion_lock.state()
     if lock_st["active"]:
         raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
@@ -200,8 +204,9 @@ async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=422, detail=f"Feed '{feed_id}' is disabled")
 
     from lib.scheduler import run_rss_ingestion_job
-    background_tasks.add_task(run_rss_ingestion_job, feed_id=feed_id, triggered_by="admin-ui")
-    return {"feed_id": feed_id, "status": "triggered"}
+    rss_only = mode == "rss"
+    background_tasks.add_task(run_rss_ingestion_job, feed_id=feed_id, triggered_by="admin-ui", rss_only=rss_only)
+    return {"feed_id": feed_id, "status": "triggered", "mode": mode}
 
 
 # ── POST /admin/trigger-run ──────────────────────────────────────────────────

@@ -86,11 +86,14 @@ def stop_active_rss() -> bool:
     return False
 
 
-async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = "scheduler"):
+async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = "scheduler", rss_only: bool = False):
     """Run RSS ingestion for all enabled feeds (or a single feed_id).
 
     Calls fetch_feed.py as a subprocess per feed — same execution path as
     the n8n Execute Command node used previously.
+
+    When rss_only=True, uses the RSS XML feeds (lightweight, recent items only)
+    instead of bulk scrapers. Used by the UI "Run now" button.
     """
     global _active_proc, _active_run_id
     detail = feed_id or "all-feeds"
@@ -129,6 +132,8 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
                 "--triggered-by", triggered_by,
                 "--run-id", run_id,
             ]
+            if rss_only:
+                cmd.append("--rss-only")
             logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
             error_detail = None
             try:
