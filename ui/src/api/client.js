@@ -275,6 +275,10 @@ export function getRunDocuments(runId, page = 1, pageSize = 25) {
   return request(`/api/ingestions/runs/${encodeURIComponent(runId)}/documents?page=${page}&page_size=${pageSize}`);
 }
 
+export function openRssProgress(runId) {
+  return new EventSource(`${API_BASE}/api/ingestions/runs/${encodeURIComponent(runId)}/progress`);
+}
+
 export function getRunInfo(runId) {
   return request(`/api/ingestions/runs/${encodeURIComponent(runId)}`);
 }

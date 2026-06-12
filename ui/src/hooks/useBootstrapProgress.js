@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { openBootstrapProgress, stopBootstrapSession } from '../api/client';
+import { openBootstrapProgress, openRssProgress, stopBootstrapSession } from '../api/client';
 
 // Module-level state — survives component unmount so the status bar keeps
 // tracking even when the BootstrapModal is closed.
@@ -138,4 +138,113 @@ export function useBootstrapProgress() {
   }, []);
 
   return { ...state, start, stop, dismiss };
+}
+
+// ── RSS run progress tracking (same pattern, separate SSE source) ──────────
+
+let _rssState = {
+  runId: null,
+  uiMode: 'idle',
+  progress: { total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'pending', eta_seconds: 0 },
+  docEvents: [],
+};
+let _rssListeners = [];
+let _rssEsRef = null;
+let _rssErrorCount = 0;
+
+function rssNotify() {
+  _rssListeners.forEach((fn) => fn({ ..._rssState }));
+}
+
+export function subscribeRssProgress(fn) {
+  _rssListeners.push(fn);
+  fn({ ..._rssState });
+  return () => { _rssListeners = _rssListeners.filter((f) => f !== fn); };
+}
+
+function closeRssSSE() {
+  if (_rssEsRef) { _rssEsRef.close(); _rssEsRef = null; }
+}
+
+export function startRssTracking(runId) {
+  closeRssSSE();
+  _rssErrorCount = 0;
+  _rssState = {
+    runId,
+    uiMode: 'running',
+    progress: { total: 0, processed: 0, succeeded: 0, failed: 0, skipped: 0, status: 'running', eta_seconds: 0 },
+    docEvents: [],
+  };
+  rssNotify();
+
+  const es = openRssProgress(runId);
+  _rssEsRef = es;
+  es.onmessage = (evt) => {
+    _rssErrorCount = 0;
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'doc') {
+        _rssState.docEvents = [msg, ..._rssState.docEvents].slice(0, 150);
+        rssNotify();
+      } else if (msg.type === 'progress') {
+        _rssState.progress = {
+          total: msg.total ?? _rssState.progress.total,
+          processed: msg.processed ?? _rssState.progress.processed,
+          succeeded: msg.succeeded ?? _rssState.progress.succeeded,
+          failed: msg.failed ?? _rssState.progress.failed,
+          skipped: msg.skipped ?? _rssState.progress.skipped,
+          status: msg.status ?? _rssState.progress.status,
+          eta_seconds: msg.eta_seconds ?? 0,
+        };
+        if (msg.status !== 'pending' && msg.status !== 'running') {
+          _rssState.uiMode = 'complete';
+          closeRssSSE();
+        }
+        rssNotify();
+      } else if (msg.type === 'error') {
+        _rssState.uiMode = 'complete';
+        _rssState.progress = { ..._rssState.progress, status: 'session_lost' };
+        closeRssSSE();
+        rssNotify();
+      }
+    } catch (_) {}
+  };
+  es.onerror = () => {
+    _rssErrorCount += 1;
+    if (_rssErrorCount >= 8) {
+      _rssState.uiMode = 'complete';
+      _rssState.progress = { ..._rssState.progress, status: 'disconnected' };
+      closeRssSSE();
+    } else {
+      _rssState.progress = { ..._rssState.progress, status: 'disconnected' };
+    }
+    rssNotify();
+  };
+}
+
+export function stopRssTracking() {
+  closeRssSSE();
+  _rssState.uiMode = 'complete';
+  rssNotify();
+}
+
+export function useRssProgress(runId) {
+  const [state, setState] = useState(_rssState);
+
+  useEffect(() => {
+    return subscribeRssProgress(setState);
+  }, []);
+
+  useEffect(() => {
+    if (runId && _rssState.runId !== runId) {
+      startRssTracking(runId);
+    }
+    return () => {
+      if (_rssState.runId === runId) {
+        closeRssSSE();
+      }
+    };
+  }, [runId]);
+
+  return state;
 }

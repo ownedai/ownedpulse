@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reingestDoc, openBootstrapProgress, stopBootstrapSession } from '../../api/client';
-import { startBootstrapTracking, stopBootstrapTracking, useBootstrapProgress } from '../../hooks/useBootstrapProgress';
+import { startBootstrapTracking, stopBootstrapTracking, useBootstrapProgress, useRssProgress } from '../../hooks/useBootstrapProgress';
 import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
 import DateInput, { todayISO } from '../common/DateInput';
@@ -618,8 +618,44 @@ function RssRunRow({ item, isOpen, onToggle }) {
   const [expandedDoc, setExpandedDoc] = useState(null);
   const { expandedRetry, retryDataMap, handleToggleRetry } = useRetryState();
   const fetchedRef = useRef(false);
+  const liveRef = useRef(false);
+  const isRunning = item.status === 'running';
+
+  // Subscribe to SSE progress while this RSS run is active
+  const rssState = isRunning ? useRssProgress(item.run_id) : null;
 
   useEffect(() => {
+    if (!isRunning) return;
+    if (!liveRef.current) {
+      liveRef.current = true;
+      // Initial fetch — get existing docs
+      getRunDocuments(item.run_id, 1, 200)
+        .then((data) => { setDocs(data.items || []); })
+        .catch(() => {});
+    }
+  }, [isRunning, item.run_id]);
+
+  // Merge live doc events from SSE into the docs list (prepend new ones)
+  useEffect(() => {
+    if (!rssState || rssState.docEvents.length === 0) return;
+    const seen = new Set(docs.map((d) => d.doc_id));
+    const newDocs = rssState.docEvents
+      .filter((d) => !seen.has(d.doc_id))
+      .map((d) => ({
+        doc_id: d.doc_id,
+        document_title: d.document_title || d.doc_id,
+        ingestion_status: d.status,
+        chunk_count: d.chunks || 0,
+        failure_reason: d.reason,
+      }));
+    if (newDocs.length > 0) {
+      setDocs((prev) => [...newDocs, ...prev]);
+    }
+  }, [rssState?.docEvents]);
+
+  // One-time fetch on expand for completed runs
+  useEffect(() => {
+    if (isRunning) return;
     if (isOpen && !fetchedRef.current) {
       fetchedRef.current = true;
       setLoadingDocs(true);
@@ -628,7 +664,13 @@ function RssRunRow({ item, isOpen, onToggle }) {
         .catch(() => setDocs([]))
         .finally(() => setLoadingDocs(false));
     }
-  }, [isOpen, item.run_id]);
+  }, [isOpen, item.run_id, isRunning]);
+
+  // Update status badge and counts from live progress
+  const liveStatus = rssState?.progress?.status;
+  const displayStatus = isRunning && liveStatus ? liveStatus : item.status;
+  const displayNew = isRunning && rssState?.progress?.total > 0 ? rssState.progress.total : item.doc_count_new;
+  const displayErrors = isRunning && rssState?.progress?.failed > 0 ? rssState.progress.failed : item.doc_count_errors;
 
   return (
     <div className="g3-row rss" data-testid={`ingestion-run-row-${item.run_id}`}>
@@ -637,11 +679,11 @@ function RssRunRow({ item, isOpen, onToggle }) {
         <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
         <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
         <span className="g3-cell"><span className="lbl">Feed</span><span className="g3-feed">{item.feed_name || '—'}</span></span>
-        <span className="g3-cell"><span className="lbl">Status</span><G3Status status={item.status} /></span>
-        <span className="g3-cell num"><span className="lbl">New</span>{item.doc_count_new ?? '—'}</span>
+        <span className="g3-cell"><span className="lbl">Status</span><G3Status status={displayStatus} /></span>
+        <span className="g3-cell num"><span className="lbl">New</span>{displayNew ?? '—'}</span>
         <span className="g3-cell num"><span className="lbl">Skipped</span>{item.doc_count_skipped ?? '—'}</span>
-        <span className={`g3-cell num errnum${item.doc_count_errors > 0 ? ' has' : ''}`}>
-          <span className="lbl">Errors</span>{item.doc_count_errors ?? 0}
+        <span className={`g3-cell num errnum${displayErrors > 0 ? ' has' : ''}`}>
+          <span className="lbl">Errors</span>{displayErrors ?? 0}
         </span>
         <span className="g3-cell num dim">
           <span className="lbl">Duration</span>{item.duration_seconds != null ? `${item.duration_seconds}s` : '—'}

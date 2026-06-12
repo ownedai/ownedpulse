@@ -509,6 +509,90 @@ async def run_documents(
         raise HTTPException(status_code=503, detail=f"Database error: {e}")
 
 
+# ── GET /ingestions/runs/{run_id}/progress (SSE) ──────────────────────────────
+
+@router.get("/runs/{run_id}/progress")
+async def rss_run_progress(run_id: str):
+    """SSE stream polling run_log + ingestion_doc for live RSS ingestion progress.
+
+    Yields two event types:
+      {type: "progress", total, processed, succeeded, failed, status, eta_seconds}
+      {type: "doc", doc_id, document_title, status, chunks, reason}
+    Stops when run_log.status reaches a terminal value.
+    """
+    import asyncio
+    from fastapi.responses import StreamingResponse
+
+    async def event_stream():
+        sent_doc_created_at = None
+        try:
+            while True:
+                conn = get_pg_conn()
+                try:
+                    cur = conn.cursor()
+
+                    # Run-level status
+                    cur.execute(
+                        "SELECT status, items_new, error_count FROM run_log WHERE run_id = %s",
+                        (run_id,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        yield f"data: {json.dumps({'type': 'error', 'message': 'run not found'})}\n\n"
+                        break
+
+                    run_status, items_new, error_count = row
+
+                    # Aggregate doc counts
+                    cur.execute(
+                        """SELECT COUNT(*) as total,
+                                  COUNT(*) FILTER (WHERE status = 'success') as succeeded,
+                                  COUNT(*) FILTER (WHERE status IN ('error','failed')) as failed
+                           FROM ingestion_doc WHERE trace_id::text = %s""",
+                        (run_id,),
+                    )
+                    total, succeeded, failed = cur.fetchone()
+                    processed = succeeded + failed
+
+                    # Per-doc events (new since last poll)
+                    cursor_clause = (
+                        "AND created_at > %s" if sent_doc_created_at else ""
+                    )
+                    cur.execute(
+                        f"""SELECT id.doc_id, id.status, id.chunk_count, id.failure_reason,
+                                   id.created_at,
+                                   COALESCE(dr.metadata_json->>'document_title', id.doc_id) as title
+                            FROM ingestion_doc id
+                            LEFT JOIN document_registry dr ON dr.document_id = id.doc_id
+                            WHERE id.trace_id::text = %s {cursor_clause}
+                            ORDER BY id.created_at ASC""",
+                        (run_id, sent_doc_created_at) if sent_doc_created_at else (run_id,),
+                    )
+                    for doc_row in cur.fetchall():
+                        sent_doc_created_at = doc_row[4]
+                        yield f"data: {json.dumps({'type': 'doc', 'doc_id': doc_row[0], 'status': doc_row[1], 'chunks': doc_row[2] or 0, 'reason': doc_row[3], 'document_title': doc_row[5]})}\n\n"
+
+                    cur.close()
+                finally:
+                    conn.close()
+
+                effective_total = max(total, items_new or 0)
+                yield f"data: {json.dumps({'type': 'progress', 'total': effective_total, 'processed': processed, 'succeeded': succeeded, 'failed': failed, 'status': run_status, 'eta_seconds': max(0, (effective_total - processed) * 20)})}\n\n"
+
+                if run_status not in ("running", "pending"):
+                    break
+
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
 # ── GET /ingestions/spans/{doc_id} ───────────────────────────────────────────
 
 @router.get("/spans/{doc_id:path}")
