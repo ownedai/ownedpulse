@@ -184,21 +184,47 @@ def reschedule_rss_job(hour: int, minute: int, timezone: str):
     logger.info(f"RSS ingestion rescheduled: daily at {hour:02d}:{minute:02d} {timezone}")
 
 
+def _read_schedule_from_db():
+    """Read schedule from system_config, falling back to env var defaults."""
+    hour = RSS_SCHEDULE_HOUR
+    minute = RSS_SCHEDULE_MINUTE
+    tz = RSS_SCHEDULE_TIMEZONE
+    try:
+        conn = get_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT key, value FROM system_config WHERE key IN "
+                "('rss_schedule_hour', 'rss_schedule_minute', 'rss_schedule_timezone')"
+            )
+            rows = dict(cur.fetchall())
+            cur.close()
+            if rows:
+                hour = int(rows.get("rss_schedule_hour", hour))
+                minute = int(rows.get("rss_schedule_minute", minute))
+                tz = rows.get("rss_schedule_timezone", tz)
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Could not read schedule from system_config, using env defaults: %s", e)
+    return hour, minute, tz
+
+
 def setup_scheduler():
-    """Add jobs and configure schedule. Called once at application startup."""
+    """Add jobs and configure schedule. Called once at application startup.
+
+    Reads persisted schedule from system_config (written by the admin UI).
+    Falls back to env var defaults if the DB is unavailable or empty.
+    """
+    hour, minute, tz = _read_schedule_from_db()
     scheduler.add_job(
         run_rss_ingestion_job,
-        trigger=CronTrigger(
-            hour=RSS_SCHEDULE_HOUR,
-            minute=RSS_SCHEDULE_MINUTE,
-            timezone=RSS_SCHEDULE_TIMEZONE,
-        ),
+        trigger=CronTrigger(hour=hour, minute=minute, timezone=tz),
         id="rss_daily_ingestion",
-        name="Daily RSS Ingestion",
+        name="Daily Source Ingestion",
         replace_existing=True,
         misfire_grace_time=3600,
     )
     logger.info(
-        f"RSS ingestion scheduled: daily at "
-        f"{RSS_SCHEDULE_HOUR:02d}:{RSS_SCHEDULE_MINUTE:02d} {RSS_SCHEDULE_TIMEZONE}"
+        f"Source ingestion scheduled: daily at {hour:02d}:{minute:02d} {tz}"
     )
