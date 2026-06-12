@@ -426,7 +426,13 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
             );
           })()}
 
-          {!loading && !loadError && bootstrapStatus && localUiMode === 'config' && (
+          {autoSubmit && localUiMode === 'config' && !submitting && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 13 }}>
+              Starting ingestion…
+            </div>
+          )}
+
+          {!autoSubmit && !loading && !loadError && bootstrapStatus && localUiMode === 'config' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
               {/* ── Section 1: Base Corpus ── */}
