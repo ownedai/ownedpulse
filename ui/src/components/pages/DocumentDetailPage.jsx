@@ -231,7 +231,7 @@ export default function DocumentDetailPage() {
         </div>
       </div>
       <p style={{ fontSize: 13, color: 'var(--doc-text-2)', margin: '4px 0 24px' }}>
-        {doc.issuing_body} · {(doc.document_type || doc.doc_type || '').replace(/-/g, ' ')} · {doc.document_version || 'v1'}
+        {doc.issuing_body} · {(doc.document_type || doc.doc_type || '').replace(/-/g, ' ')} · {doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}
       </p>
 
       {/* 2-column layout */}
@@ -244,7 +244,7 @@ export default function DocumentDetailPage() {
           </MetaRow>
           <MetaRow label="Issuing Body">{doc.issuing_body}</MetaRow>
           <MetaRow label="Document Type">{(doc.document_type || doc.doc_type || '—').replace(/-/g, ' ')}</MetaRow>
-          <MetaRow label="Version">{doc.document_version || '—'}</MetaRow>
+          <MetaRow label="Version">{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</MetaRow>
           <MetaRow label="Publication Date">
             {isFutureDate(doc.publication_date) ? (
               <Tooltip tip="Future effective date — this document is not yet in force">

@@ -92,7 +92,7 @@ export default function DocumentViewer({ document, onClose }) {
             fontSize: 11,
             color: 'var(--doc-text-2)',
           }}>
-            {document.issuing_body} · v{document.document_version || '—'} · {document.superseded ? 'Superseded' : 'Current'}
+            {document.issuing_body} · {document.document_version && document.document_version !== '1.0' ? `v${document.document_version}` : '—'} · {document.superseded ? 'Superseded' : 'Current'}
           </div>
         </div>
         <button

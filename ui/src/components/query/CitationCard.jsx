@@ -11,7 +11,7 @@ export default function CitationCard({ citation, isActive, onClick, onViewSource
   const { index, document_title, issuing_body, document_version, clause_id, publication_date, score, cited_by_llm, superseded, superseded_by } = citation;
 
   const agency = issuing_body || 'Unknown';
-  const version = document_version || '—';
+  const version = (document_version && document_version !== '1.0') ? document_version : '—';
   const clause = clause_id || 'Not available';
   const date = publication_date ? formatDate(publication_date) : 'Not available';
 

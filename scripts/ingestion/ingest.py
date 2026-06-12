@@ -148,7 +148,7 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
             mark_document_not_viable(doc_id, quality["gate_reason"])
             if doc_span:
                 doc_span.finalize(
-                    status="skipped", chunk_count=quality["total"],
+                    status="not_viable", chunk_count=quality["total"],
                     failure_reason=quality["gate_reason"],
                 )
             return {
@@ -214,11 +214,15 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
                 print(f'  [{i+1}/{len(chunks)}] {clause_id or "—"}')
 
         # Post-pass: fix zero-length char_offset spans (table chunks where extraction fell through)
-        for j in range(len(points) - 1):
+        for j in range(len(points)):
             cs = points[j].payload['char_offset_start']
             ce = points[j].payload['char_offset_end']
             if cs == ce:
-                points[j].payload['char_offset_end'] = points[j + 1].payload['char_offset_start']
+                # Try next chunk's start; fall back to cs + 1 as minimum span
+                if j + 1 < len(points) and points[j + 1].payload['char_offset_start'] > cs:
+                    points[j].payload['char_offset_end'] = points[j + 1].payload['char_offset_start']
+                else:
+                    points[j].payload['char_offset_end'] = cs + 1
 
         # Batch upsert to Qdrant
         get_client().upsert(collection_name=QDRANT_COLLECTION, points=points)

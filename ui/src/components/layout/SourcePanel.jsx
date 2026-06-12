@@ -181,7 +181,7 @@ function ProvenanceTab({ citation }) {
         </div>
         <div className="row">
           <span className="k">Document version</span>
-          <span className="v">{document_version || '—'}</span>
+          <span className="v">{document_version && document_version !== '1.0' ? document_version : '—'}</span>
         </div>
         <div className="row">
           <span className="k">Clause ID</span>
@@ -335,7 +335,7 @@ export default function SourcePanel({
                     <span className="v" style={{ cursor: 'help' }}>{agency}</span>
                   </Tooltip>
                   {' · '}
-                  <span className="v">{citation.document_version || '—'}</span>
+                  <span className="v">{citation.document_version && citation.document_version !== '1.0' ? citation.document_version : '—'}</span>
                   {' · '}
                   <span className="v">{citation.superseded ? 'Superseded' : 'Current'}</span>
                 </div>

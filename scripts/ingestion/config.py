@@ -2,7 +2,7 @@
 
 import os
 
-os.environ.setdefault('PG_DSN', 'postgresql://postgres:***REMOVED***@postgres:5432/knowledge_base')
+os.environ.setdefault('PG_DSN', 'postgresql://postgres:@postgres:5432/knowledge_base')
 
 ARCHIVE_ROOT      = os.environ.get('ARCHIVE_ROOT', '/mnt/data/regulatory_archive')
 INTERNAL_ARCHIVE  = os.environ.get('INTERNAL_ARCHIVE', '/mnt/data/internal_archive')
