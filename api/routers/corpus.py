@@ -139,7 +139,10 @@ async def corpus_documents(
             conditions.append("ingestion_status = %s")
             params.append(ingestion_status)
         else:
-            conditions.append("ingestion_status IN ('indexed', 'superseded')")
+            # Show all docs touched by ingestion — indexed, superseded,
+            # and in-progress (parsing, chunking, etc.). Exclude only
+            # docs that were registered but never ingested.
+            conditions.append("ingestion_status IS NOT NULL")
 
         if date_from:
             conditions.append("publication_date >= %s::date")
