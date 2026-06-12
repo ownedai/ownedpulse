@@ -251,7 +251,7 @@ async def sources_bootstrap(body: BootstrapRequest):
     Trigger a corpus bootstrap/reload run. Returns immediately with session_id for
     SSE progress tracking via GET /api/bootstrap/progress/{session_id}.
     """
-    if body.mode not in ("wipe_and_reload", "reload_changed_only"):
+    if body.mode not in ("wipe_and_reload", "reload_changed_only", "full_reset"):
         raise HTTPException(status_code=422, detail="Invalid mode.")
 
     # Import session state and worker from bootstrap router (shared in-process dict)
@@ -268,6 +268,44 @@ async def sources_bootstrap(body: BootstrapRequest):
                 detail=f"Bootstrap already running (session {sid}). Wait for it to complete.",
             )
 
+    # When full_reset: wipe everything — Qdrant, PG trace tables, then re-seed
+    # document_registry from the corpus manifest. RSS docs are NOT re-registered;
+    # they will be discovered on the next RSS pipeline run.
+    if body.mode == "full_reset":
+        # 1. Truncate PG trace tables
+        try:
+            conn = get_pg_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute("TRUNCATE TABLE ingestion_doc, ingestion_state, run_log CASCADE")
+                conn.commit()
+                cur.close()
+            finally:
+                conn.close()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PG truncate failed: {e}")
+
+        # 2. Delete + recreate Qdrant collection
+        try:
+            from qdrant_client.models import VectorParams, Distance
+            qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            qc.delete_collection(QDRANT_COLLECTION)
+            qc.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Qdrant wipe failed: {e}")
+
+        # 3. Re-seed document_registry from corpus manifest (9 seed docs only)
+        import subprocess
+        seed = subprocess.run(
+            ["python3", "/opt/scripts/registry/seed_registry.py"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if seed.returncode != 0:
+            logger.error("seed_registry.py failed during full_reset: %s", seed.stderr)
+
     # Docs are already registered by startup discovery (populate_registry_if_empty).
     # _build_doc_list_from_scope reads document_registry directly.
     docs = _build_doc_list_from_scope(body.base_corpus, body.rss_feeds)
@@ -275,12 +313,12 @@ async def sources_bootstrap(body: BootstrapRequest):
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 
     # Map UI mode to redownload strategy (controls source file fetch, not the wipe)
-    # wipe_and_reload always forces full redownload; reload_changed_only respects the selection
-    redownload = "force" if body.mode == "wipe_and_reload" else body.redownload
+    # wipe_and_reload and full_reset always force full redownload
+    redownload = "force" if body.mode in ("wipe_and_reload", "full_reset") else body.redownload
 
-    # When wipe_and_reload: delete archive directories for selected docs
+    # When wipe_and_reload or full_reset: delete archive directories for selected docs
     # so source files are re-downloaded from scratch, not overwritten in place.
-    if body.mode == "wipe_and_reload":
+    if body.mode in ("wipe_and_reload", "full_reset"):
         import shutil
         from pathlib import Path
         ARCHIVE = Path("/archive")

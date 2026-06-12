@@ -208,9 +208,10 @@ export default function BootstrapModal({ onClose, onStarted }) {
     setSubmitError(null);
     try {
       const { date_from, date_to } = getDateRange(dateWindow, customFromYear, customToYear);
-      const isWipe = sourceMode === 'full_redownload' || sourceMode === 'full_reset';
-      const mode = isWipe ? 'wipe_and_reload' : 'reload_changed_only';
-      const redownload = sourceMode === 'local_files' ? 'none' : isWipe ? 'force' : 'check';
+      const mode = sourceMode === 'full_reset' ? 'full_reset'
+        : sourceMode === 'full_redownload' ? 'wipe_and_reload'
+        : 'reload_changed_only';
+      const redownload = sourceMode === 'local_files' ? 'none' : sourceMode === 'changed_only' ? 'check' : 'force';
       const payload = {
         mode,
         redownload,
