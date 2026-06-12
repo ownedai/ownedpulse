@@ -603,7 +603,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
         {/* ── Footer ── */}
         <div className="mfoot" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)' }}>
-            {localUiMode === 'config' && !loading
+            {!autoSubmit && localUiMode === 'config' && !loading
               ? `~${totalEstimate.toLocaleString()} documents selected`
               : localUiMode === 'running'
                 ? 'You can close this window — progress is shown in the status bar'
@@ -611,15 +611,15 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
             }
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {ingestionRunning && localUiMode === 'config' && (
+            {!autoSubmit && ingestionRunning && localUiMode === 'config' && (
               <span style={{ fontSize: 12, color: '#f59e0b', fontFamily: 'var(--mono)', fontWeight: 600 }}>
                 Ingestion already running — wait for it to finish
               </span>
             )}
-            {submitError && localUiMode === 'config' && (
+            {!autoSubmit && submitError && localUiMode === 'config' && (
               <span style={{ fontSize: 12, color: 'var(--err-text)', maxWidth: 260 }}>{submitError}</span>
             )}
-            {localUiMode === 'config' && (
+            {!autoSubmit && localUiMode === 'config' && (
               <>
                 <button className="rp-mbtn ghost" onClick={!submitting ? onClose : undefined} disabled={submitting}>
                   Cancel
