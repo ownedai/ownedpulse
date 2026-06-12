@@ -206,8 +206,8 @@ export function updateSchedulerConfig(hour, minute, timezone) {
   });
 }
 
-export function triggerFeedRun(feedId, mode = 'rss') {
-  return request(`/api/admin/sources/${encodeURIComponent(feedId)}/trigger?mode=${mode}`, { method: 'POST' });
+export function triggerFeedRun(feedId) {
+  return request(`/api/admin/sources/${encodeURIComponent(feedId)}/trigger`, { method: 'POST' });
 }
 
 export function getAdminModels() {
