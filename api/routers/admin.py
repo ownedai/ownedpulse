@@ -9,6 +9,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance
 from lib import ingestion_lock
 
 logger = logging.getLogger("regpulse.admin")
@@ -445,12 +446,16 @@ async def admin_reset_corpus(body: ResetCorpusRequest):
         if not conn.closed:
             conn.close()
 
-    # 2. Wipe Qdrant collection
+    # 2. Wipe Qdrant collection and immediately recreate it empty
     try:
         client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
         client.delete_collection(QDRANT_COLLECTION)
+        client.create_collection(
+            collection_name=QDRANT_COLLECTION,
+            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+        )
         result["qdrant_wiped"] = True
-        logger.info("Qdrant collection '%s' deleted", QDRANT_COLLECTION)
+        logger.info("Qdrant collection '%s' deleted and recreated empty", QDRANT_COLLECTION)
     except Exception as e:
         logger.error("Qdrant wipe failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Qdrant wipe failed: {e}")
