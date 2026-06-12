@@ -203,8 +203,8 @@ async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks, mo
     if not row[1]:
         raise HTTPException(status_code=422, detail=f"Feed '{feed_id}' is disabled")
 
-    from lib.scheduler import run_rss_ingestion_job
-    background_tasks.add_task(run_rss_ingestion_job, feed_id=feed_id, triggered_by="admin-ui")
+    from lib.scheduler import run_ingestion_job
+    background_tasks.add_task(run_ingestion_job, feed_id=feed_id, triggered_by="admin-ui")
     return {"feed_id": feed_id, "status": "triggered"}
 
 
@@ -212,13 +212,13 @@ async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks, mo
 
 @router.post("/trigger-run")
 async def admin_trigger_run(background_tasks: BackgroundTasks):
-    """Trigger a full RSS ingestion run via APScheduler background task."""
+    """Trigger a full ingestion run via APScheduler background task."""
     lock_st = ingestion_lock.state()
     if lock_st["active"]:
         raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
 
-    from lib.scheduler import run_rss_ingestion_job
-    background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
+    from lib.scheduler import run_ingestion_job
+    background_tasks.add_task(run_ingestion_job, triggered_by="admin-ui")
     return {"status": "triggered"}
 
 
@@ -226,9 +226,9 @@ async def admin_trigger_run(background_tasks: BackgroundTasks):
 
 @router.post("/stop-ingestion")
 async def admin_stop_ingestion():
-    """Stop the currently running RSS ingestion subprocess."""
-    from lib.scheduler import stop_active_rss
-    killed = stop_active_rss()
+    """Stop the currently running ingestion subprocess."""
+    from lib.scheduler import stop_ingestion
+    killed = stop_ingestion()
     if killed:
         ingestion_lock.release()
         return {"status": "stopped"}
@@ -520,10 +520,10 @@ RSS_SCHEDULE_TIMEZONE = os.environ.get("RSS_SCHEDULE_TIMEZONE", "Europe/Berlin")
 async def get_scheduler_status():
     from lib.scheduler import get_scheduler
     sched = get_scheduler()
-    job = sched.get_job("rss_daily_ingestion")
+    job = sched.get_job("daily_ingestion")
     return {
         "scheduler_running": sched.running,
-        "job_id": "rss_daily_ingestion",
+        "job_id": "daily_ingestion",
         "next_run_time": job.next_run_time.isoformat() if job and job.next_run_time else None,
         "schedule": f"{RSS_SCHEDULE_HOUR:02d}:{RSS_SCHEDULE_MINUTE:02d} {RSS_SCHEDULE_TIMEZONE}",
     }
@@ -533,9 +533,9 @@ async def get_scheduler_status():
 
 @router.post("/scheduler/trigger")
 async def trigger_scheduler_now(background_tasks: BackgroundTasks):
-    """Manual trigger — fires RSS ingestion for all enabled feeds as a background task."""
-    from lib.scheduler import run_rss_ingestion_job
-    background_tasks.add_task(run_rss_ingestion_job, triggered_by="admin-ui")
+    """Manual trigger — fires ingestion for all enabled feeds as a background task."""
+    from lib.scheduler import run_ingestion_job
+    background_tasks.add_task(run_ingestion_job, triggered_by="admin-ui")
     return {"status": "triggered", "message": "Source ingestion started in background"}
 
 
@@ -544,7 +544,7 @@ async def trigger_scheduler_now(background_tasks: BackgroundTasks):
 @router.post("/scheduler/pause")
 async def pause_scheduler():
     from lib.scheduler import get_scheduler
-    get_scheduler().pause_job("rss_daily_ingestion")
+    get_scheduler().pause_job("daily_ingestion")
     return {"status": "paused"}
 
 
@@ -553,7 +553,7 @@ async def pause_scheduler():
 @router.post("/scheduler/resume")
 async def resume_scheduler():
     from lib.scheduler import get_scheduler
-    get_scheduler().resume_job("rss_daily_ingestion")
+    get_scheduler().resume_job("daily_ingestion")
     return {"status": "resumed"}
 
 
@@ -612,7 +612,7 @@ async def update_scheduler_config(body: SchedulerConfigRequest):
     finally:
         conn.close()
 
-    from lib.scheduler import reschedule_rss_job
-    reschedule_rss_job(body.hour, body.minute, body.timezone)
+    from lib.scheduler import reschedule_ingestion_job
+    reschedule_ingestion_job(body.hour, body.minute, body.timezone)
 
     return {"hour": body.hour, "minute": body.minute, "timezone": body.timezone}

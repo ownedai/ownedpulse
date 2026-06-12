@@ -90,7 +90,7 @@ async def bootstrap_state():
 
     from lib.scheduler import get_scheduler
     sched = get_scheduler()
-    scheduler_active = sched.running and sched.get_job("rss_daily_ingestion") is not None
+    scheduler_active = sched.running and sched.get_job("daily_ingestion") is not None
 
     # Check for active in-memory session
     active_session = None

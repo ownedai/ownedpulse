@@ -1,4 +1,4 @@
-"""APScheduler — daily RSS ingestion job, replaces n8n webhook trigger."""
+"""APScheduler — daily ingestion job, replaces n8n webhook trigger."""
 
 import os
 import asyncio
@@ -74,7 +74,7 @@ _active_proc = None
 _active_run_id = None
 
 
-def stop_active_rss() -> bool:
+def stop_ingestion() -> bool:
     """Kill the currently running RSS subprocess. Returns True if killed."""
     global _active_proc
     if _active_proc and _active_proc.returncode is None:
@@ -86,8 +86,8 @@ def stop_active_rss() -> bool:
     return False
 
 
-async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = "scheduler"):
-    """Run RSS ingestion for all enabled feeds (or a single feed_id).
+async def run_ingestion_job(feed_id: str | None = None, triggered_by: str = "scheduler"):
+    """Run ingestion for all enabled feeds (or a single feed_id).
 
     Calls fetch_feed.py as a subprocess per feed — same execution path as
     the n8n Execute Command node used previously. Scope is controlled by
@@ -98,14 +98,14 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
     if not ingestion_lock.acquire("rss", detail):
         run_date = datetime.now(timezone.utc) + timedelta(minutes=30)
         scheduler.add_job(
-            run_rss_ingestion_job,
+            run_ingestion_job,
             trigger=DateTrigger(run_date=run_date),
-            id="rss_deferred_run",
+            id="deferred_run",
             replace_existing=True,
             kwargs={"feed_id": feed_id, "triggered_by": "deferred"},
         )
         logger.info(
-            f"RSS ingestion deferred to {run_date.strftime('%H:%M UTC')} "
+            f"ingestion deferred to {run_date.strftime('%H:%M UTC')} "
             f"({ingestion_lock.conflict_detail()})"
         )
         return
@@ -113,11 +113,11 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
     try:
         feeds = [feed_id] if feed_id else _get_enabled_feeds()
     except Exception as e:
-        logger.error(f"RSS ingestion: failed to load feed list: {e}")
+        logger.error(f"ingestion: failed to load feed list: {e}")
         ingestion_lock.release()
         return
 
-    logger.info(f"RSS ingestion starting: {len(feeds)} feed(s), triggered_by={triggered_by}")
+    logger.info(f"ingestion starting: {len(feeds)} feed(s), triggered_by={triggered_by}")
 
     try:
         for fid in feeds:
@@ -130,7 +130,7 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
                 "--triggered-by", triggered_by,
                 "--run-id", run_id,
             ]
-            logger.info(f"RSS ingestion: starting feed={fid} run_id={run_id}")
+            logger.info(f"ingestion: starting feed={fid} run_id={run_id}")
             error_detail = None
             try:
                 env = os.environ.copy()
@@ -153,17 +153,17 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
                 _active_proc = None
                 _active_run_id = None
                 if proc.returncode == 0:
-                    logger.info(f"RSS ingestion: feed={fid} run_id={run_id} complete")
+                    logger.info(f"ingestion: feed={fid} run_id={run_id} complete")
                     continue
                 else:
                     error_detail = f"Process exited rc={proc.returncode}: {stderr.decode()[:400]}"
-                    logger.error(f"RSS ingestion: feed={fid} run_id={run_id} failed: {error_detail}")
+                    logger.error(f"ingestion: feed={fid} run_id={run_id} failed: {error_detail}")
             except asyncio.TimeoutError:
                 error_detail = "Timed out after 30 minutes"
-                logger.error(f"RSS ingestion: feed={fid} run_id={run_id} timed out")
+                logger.error(f"ingestion: feed={fid} run_id={run_id} timed out")
             except Exception as e:
                 error_detail = str(e)
-                logger.error(f"RSS ingestion: feed={fid} run_id={run_id} exception: {e}")
+                logger.error(f"ingestion: feed={fid} run_id={run_id} exception: {e}")
 
             if error_detail:
                 _write_run_log_error_or_insert(run_id, trigger_source, triggered_by, fid, error_detail)
@@ -171,13 +171,13 @@ async def run_rss_ingestion_job(feed_id: str | None = None, triggered_by: str = 
         ingestion_lock.release()
 
 
-def reschedule_rss_job(hour: int, minute: int, timezone: str):
-    """Reschedule the RSS ingestion job with new cron parameters at runtime."""
+def reschedule_ingestion_job(hour: int, minute: int, timezone: str):
+    """Reschedule the ingestion job with new cron parameters at runtime."""
     scheduler.reschedule_job(
-        "rss_daily_ingestion",
+        "daily_ingestion",
         trigger=CronTrigger(hour=hour, minute=minute, timezone=timezone),
     )
-    logger.info(f"RSS ingestion rescheduled: daily at {hour:02d}:{minute:02d} {timezone}")
+    logger.info(f"ingestion rescheduled: daily at {hour:02d}:{minute:02d} {timezone}")
 
 
 def _read_schedule_from_db():
@@ -214,9 +214,9 @@ def setup_scheduler():
     """
     hour, minute, tz = _read_schedule_from_db()
     scheduler.add_job(
-        run_rss_ingestion_job,
+        run_ingestion_job,
         trigger=CronTrigger(hour=hour, minute=minute, timezone=tz),
-        id="rss_daily_ingestion",
+        id="daily_ingestion",
         name="Daily Source Ingestion",
         replace_existing=True,
         misfire_grace_time=3600,
