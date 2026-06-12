@@ -239,7 +239,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
         mode,
         redownload,
         base_corpus: baseCorpusIds,
-        rss_feeds: activeSources.map(feed_id => ({ feed_id, date_from, date_to })),
+        rss_feeds: (enabledSources || activeSources).map(feed_id => ({ feed_id, date_from, date_to })),
       };
       const result = await postSourcesBootstrap(payload);
 
