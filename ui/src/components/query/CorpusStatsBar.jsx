@@ -17,7 +17,7 @@ export default function CorpusStatsBar() {
   const { stats } = useCorpusStats();
   const { uiMode, progress, docEvents } = useBootstrapProgress();
   const [contextMenu, setContextMenu] = useState(null);
-  const isRunning = uiMode === 'running';
+  const isRunning = uiMode === 'running' || stats?.ingestion_active;
 
   const handleContext = useCallback((e) => {
     e.preventDefault();
@@ -93,10 +93,16 @@ export default function CorpusStatsBar() {
           <div
             className="ingestion-status"
             onContextMenu={handleContext}
-            title={`Ingested: ${progress.processed} / ${progress.total} docs — ETA: ${eta}`}
+            title={uiMode === 'running'
+              ? `Bootstrap: ${progress.processed} / ${progress.total} docs — ETA: ${eta}`
+              : `RSS ingestion running — ${stats?.ingestion_detail || ''}`}
           >
             <SpinnerIcon />
-            <span className="ingestion-pct">{pct}%</span>
+            {uiMode === 'running' ? (
+              <span className="ingestion-pct">{pct}%</span>
+            ) : (
+              <span className="ingestion-label">RSS</span>
+            )}
           </div>
         )}
         <Tooltip tip="Last time new regulatory documents were automatically checked and ingested via the RSS feed pipeline.">

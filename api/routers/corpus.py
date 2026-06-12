@@ -86,12 +86,18 @@ async def corpus_stats():
         last_run = cur.fetchone()[0]
         last_run_iso = last_run.isoformat() if last_run else None
 
+        from lib import ingestion_lock
+        lock_state = ingestion_lock.state()
+
         cur.close()
         return {
             "total_documents": total,
             "per_agency": per_agency,
             "per_document_type": per_doc_type,
             "last_pipeline_run": last_run_iso,
+            "ingestion_active": lock_state["active"],
+            "ingestion_kind": lock_state["kind"],
+            "ingestion_detail": lock_state["detail"],
         }
     finally:
         conn.close()
