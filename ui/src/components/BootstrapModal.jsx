@@ -426,9 +426,9 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
             );
           })()}
 
-          {autoSubmit && localUiMode === 'config' && !submitting && (
+          {autoSubmit && localUiMode === 'config' && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 13 }}>
-              Starting ingestion…
+              {submitting ? 'Starting ingestion…' : 'Preparing…'}
             </div>
           )}
 
