@@ -135,6 +135,14 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     }
   }, [uiMode, localUiMode]);
 
+  // Reset auto-submit guard and shared progress state on unmount
+  useEffect(() => {
+    return () => {
+      autoSubmittedRef.current = false;
+      if (autoSubmit) dismiss();
+    };
+  }, []);
+
   // Load bootstrap status on mount; auto-reconnect to any active session
   useEffect(() => {
     let cancelled = false;
