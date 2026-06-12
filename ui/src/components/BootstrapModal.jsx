@@ -93,18 +93,11 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
   const [loadError, setLoadError] = useState(null);
   const [bootstrapStatus, setBootstrapStatus] = useState(null);
 
+  const defaultSources = enabledSources
+    ? Object.fromEntries(enabledSources.map(id => [id, true]))
+    : { fda_press_releases: true, ema_reg_guidance: true, ema_sci_guidelines: true, ich_guidelines: true };
   const [includeBaseCorpus, setIncludeBaseCorpus] = useState(!autoSubmit);
-  const [selectedSources, setSelectedSources]     = useState({
-    fda_press_releases: true, ema_reg_guidance: true,
-    ema_sci_guidelines: true, ich_guidelines: true,
-  });
-
-  // Sync selectedSources from enabledSources prop (set after first render)
-  useEffect(() => {
-    if (enabledSources && enabledSources.length > 0) {
-      setSelectedSources(Object.fromEntries(enabledSources.map(id => [id, true])));
-    }
-  }, [enabledSources]);
+  const [selectedSources, setSelectedSources]     = useState(defaultSources);
   const [depth, setDepth]                         = useState('1year');
   const [customFromYear, setCustomFromYear]       = useState(new Date().getFullYear() - 5);
   const [customToYear, setCustomToYear]           = useState(new Date().getFullYear());
