@@ -179,11 +179,11 @@ async def admin_toggle_feed(feed_id: str, body: FeedToggleRequest):
 # ── POST /admin/feeds/{feed_id}/trigger ──────────────────────────────────────
 
 @router.post("/feeds/{feed_id}/trigger")
-async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks, mode: str = "full"):
+async def admin_trigger_feed(feed_id: str, background_tasks: BackgroundTasks, mode: str = "rss"):
     """Trigger a single feed run via APScheduler background task.
 
-    mode=rss: Use RSS XML feed only (lightweight, recent items)
-    mode=full (default): Use bulk scrapers (comprehensive)
+    mode=rss (default): Use RSS XML feed only (lightweight, recent items)
+    mode=full: Use bulk scrapers (comprehensive, for scheduled daily runs)
     """
     lock_st = ingestion_lock.state()
     if lock_st["active"]:
