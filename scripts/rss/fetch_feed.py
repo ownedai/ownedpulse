@@ -40,10 +40,6 @@ ICH_SUBDIVISIONS = [
 import sys
 sys.path.insert(0, '/opt/scripts')
 from ingestion.config import PG_DSN
-NOCO_DSN = PG_DSN.replace('/knowledge_base', '/nocodb')
-
-# Then replace all:
-
 
 def get_kb():
     conn = psycopg2.connect(PG_DSN)
@@ -52,13 +48,8 @@ def get_kb():
         c.execute("SET search_path TO public")
     return conn
 
-def get_noco():
-    conn = psycopg2.connect(NOCO_DSN)
-    conn.autocommit = True
-    return conn
-
 def load_feed_config(feed_id: str) -> dict:
-    conn = get_noco()
+    conn = get_kb()
     with conn.cursor() as c:
         c.execute(
             "SELECT feed_id, authority, feed_url, feed_type, "
@@ -90,7 +81,7 @@ def is_ingested(url: str) -> bool:
 
 
 def get_ich_hashes(feed_id: str) -> dict:
-    conn = get_noco()
+    conn = get_kb()
     with conn.cursor() as c:
         c.execute("SELECT ich_page_hashes FROM public.feed_config WHERE feed_id = %s", (feed_id,))
         row = c.fetchone()
@@ -98,7 +89,7 @@ def get_ich_hashes(feed_id: str) -> dict:
     return row[0] if row and row[0] else {}
 
 def update_ich_hashes(feed_id: str, hashes: dict):
-    conn = get_noco()
+    conn = get_kb()
     with conn.cursor() as c:
         c.execute(
             "UPDATE public.feed_config SET ich_page_hashes = %s WHERE feed_id = %s",
@@ -523,16 +514,15 @@ def main():
         with conn.cursor() as c:
             c.execute("""
                 UPDATE run_log SET
-                    status = 'success',
-                    completed_at = NOW(),
+                    status = 'running',
                     items_fetched = %s,
                     items_new = %s,
                     items_skipped = %s,
                     error_count = 0,
-                    duration_ms = %s
+                    duration_ms = 0
                 WHERE run_id = %s
             """, (stats["items_fetched"], stats["items_new"],
-                  stats["items_skipped"], duration_ms, run_id))
+                  stats["items_skipped"], run_id))
             c.execute(
                 "UPDATE feed_config SET last_run_at = NOW() WHERE feed_id = %s",
                 (args.feed_id,)
