@@ -28,7 +28,13 @@ from lib.scheduler import scheduler, setup_scheduler
 
 # ── App init ──────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.9.44"
+def _read_version():
+    try:
+        return open(os.path.join(os.path.dirname(__file__), "VERSION")).read().strip()
+    except Exception:
+        return "dev"
+
+APP_VERSION = _read_version()
 
 app = FastAPI(title="regpulse API", version=APP_VERSION)
 
