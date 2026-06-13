@@ -1,6 +1,6 @@
 """Shared in-process lock that prevents concurrent ingestion runs.
 
-Both the bootstrap worker (threading) and the RSS scheduler job (asyncio)
+Both the bootstrap worker (threading) and the ingestion scheduler job (asyncio)
 acquire this lock before doing any work. Trigger endpoints check it first
 and return 409 if another ingestion is already active.
 

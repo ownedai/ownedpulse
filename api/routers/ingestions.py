@@ -38,10 +38,10 @@ async def list_ingestions(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ):
-    """Unified ingestion list: session groups (bulk) + RSS runs.
+    """Unified ingestion list: session groups (bulk) + ingestion runs.
 
     Grouped by session_id — all docs in one bootstrap/share the same session UUID.
-    RSS runs and manual CLI use their run_id as the implicit session key.
+    Ingestion runs and manual CLI use their run_id as the implicit session key.
     """
     try:
         conn = get_pg_conn()
@@ -334,7 +334,7 @@ async def run_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
 ):
-    """Documents ingested in a specific RSS run."""
+    """Documents ingested in a specific ingestion run."""
     try:
         conn = get_pg_conn()
         cur = conn.cursor()
@@ -402,7 +402,7 @@ async def run_documents(
             })
 
         # Fallback: supplement with document_registry when ingestion_doc has no entries
-        # or fewer than expected. RSS runs created by fetch_feed.py don't write to
+        # or fewer than expected. Ingestion runs created by fetch_feed.py don't write to
         # ingestion_doc — those entries only exist after run_ingest.py traces them.
         # Look up the run's feed_source and time window to find the relevant docs.
         cur.execute(

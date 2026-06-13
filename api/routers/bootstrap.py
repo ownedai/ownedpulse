@@ -204,7 +204,7 @@ async def corpus_summary():
 
 @router.post("/run")
 async def bootstrap_run(body: BootstrapRunRequest):
-    # Block if any ingestion is already running (bootstrap or RSS)
+    # Block if any ingestion is already running (bootstrap or ingestion)
     lock_st = ingestion_lock.state()
     if lock_st["active"]:
         raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())

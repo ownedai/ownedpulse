@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { openBootstrapProgress, openRssProgress, stopBootstrapSession } from '../api/client';
+import { openBootstrapProgress, stopBootstrapSession } from '../api/client';
 
 // Module-level state — survives component unmount so the status bar keeps
 // tracking even when the BootstrapModal is closed.

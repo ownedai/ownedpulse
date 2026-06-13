@@ -35,9 +35,9 @@ FEED_METADATA: dict = {
 @router.get("/bootstrap-status")
 async def bootstrap_status():
     """
-    Returns current corpus state: base corpus documents and per-feed RSS stats.
+    Returns current corpus state: base corpus documents and per-feed ingestion stats.
     Base corpus = documents with corpus_doc = TRUE (seed/curated set).
-    RSS feeds = entries in feed_config with aggregate stats from document_registry.
+    Ingestion sources = entries in feed_config with aggregate stats from document_registry.
     """
     try:
         conn = get_pg_conn()
@@ -61,7 +61,7 @@ async def bootstrap_status():
             """)
             base_rows = cur.fetchall()
 
-            # RSS feeds: feed_config joined with aggregate stats from document_registry
+            # Ingestion sources: feed_config joined with aggregate stats from document_registry
             # Count all registered docs (including not-yet-indexed) for the
             # bootstrap modal's "available for ingestion" display.
             cur.execute("""
@@ -103,11 +103,11 @@ async def bootstrap_status():
             "publication_date": publication_date.isoformat() if publication_date else None,
         })
 
-    rss_feeds = []
+    ingestion_sources = []
     for row in feed_rows:
         feed_id, name, enabled, last_run_at, doc_count, date_min, date_max, last_indexed_at = row
         meta = FEED_METADATA.get(feed_id, {"agency": "Unknown", "label": name, "description": ""})
-        rss_feeds.append({
+        ingestion_sources.append({
             "feed_id": feed_id,
             "label": meta["label"],
             "agency": meta["agency"],
@@ -125,7 +125,7 @@ async def bootstrap_status():
     return {
         "initialized": initialized,
         "base_corpus": base_corpus,
-        "sources": rss_feeds,
+        "sources": ingestion_sources,
     }
 
 
@@ -196,11 +196,11 @@ class FeedSelection(BaseModel):
 class BootstrapRequest(BaseModel):
     mode: str = "wipe_and_reload"          # "wipe_and_reload" | "reload_changed_only"
     base_corpus: List[str] = []            # doc_ids to include
-    rss_feeds: List[FeedSelection] = []
+    ingestion_sources: List[FeedSelection] = []
     redownload: str = "check"              # "none" | "check" | "force"
 
 
-def _build_doc_list_from_scope(base_corpus: List[str], rss_feeds: List[FeedSelection]) -> list:
+def _build_doc_list_from_scope(base_corpus: List[str], ingestion_sources: List[FeedSelection]) -> list:
     """Build the flat doc list for the bootstrap worker from new-style scope selection."""
     docs = []
 
@@ -208,12 +208,12 @@ def _build_doc_list_from_scope(base_corpus: List[str], rss_feeds: List[FeedSelec
     for doc_id in base_corpus:
         docs.append({"doc_id": doc_id, "issuing_body": "", "phase": "live"})
 
-    # RSS feeds: query document_registry filtered by feed_id + optional date range
-    if rss_feeds:
-        feed_id_list = [f.feed_id for f in rss_feeds]
+    # Ingestion sources: query document_registry filtered by feed_id + optional date range
+    if ingestion_sources:
+        feed_id_list = [f.feed_id for f in ingestion_sources]
         # All selected feeds share the same date window in the current UI
-        date_from = rss_feeds[0].date_from if rss_feeds else None
-        date_to   = rss_feeds[0].date_to   if rss_feeds else None
+        date_from = ingestion_sources[0].date_from if ingestion_sources else None
+        date_to   = ingestion_sources[0].date_to   if ingestion_sources else None
 
         try:
             conn = get_pg_conn()
@@ -257,7 +257,7 @@ async def sources_bootstrap(body: BootstrapRequest):
     # Import session state and worker from bootstrap router (shared in-process dict)
     from routers.bootstrap import _sessions, _bootstrap_worker
 
-    # Block if any ingestion is already running (bootstrap or RSS)
+    # Block if any ingestion is already running (bootstrap or ingestion)
     lock_st = ingestion_lock.state()
     if lock_st["active"]:
         raise HTTPException(status_code=409, detail=ingestion_lock.conflict_detail())
@@ -269,8 +269,8 @@ async def sources_bootstrap(body: BootstrapRequest):
             )
 
     # When full_reset: wipe everything — Qdrant, PG trace tables, then re-seed
-    # document_registry from the corpus manifest. RSS docs are NOT re-registered;
-    # they will be discovered on the next RSS pipeline run.
+    # document_registry from the corpus manifest. Ingested docs are NOT re-registered;
+    # they will be discovered on the next ingestion pipeline run.
     if body.mode == "full_reset":
         # 1. Truncate PG trace tables
         try:
@@ -308,7 +308,7 @@ async def sources_bootstrap(body: BootstrapRequest):
 
     # Docs are already registered by startup discovery (populate_registry_if_empty).
     # _build_doc_list_from_scope reads document_registry directly.
-    docs = _build_doc_list_from_scope(body.base_corpus, body.rss_feeds)
+    docs = _build_doc_list_from_scope(body.base_corpus, body.ingestion_sources)
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 

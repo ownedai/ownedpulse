@@ -509,9 +509,9 @@ function ScheduleModal({ schedStatus, onClose, onSaved }) {
   );
 }
 
-// ── RSS Feeds Card ────────────────────────────────────────────────────────────
+// ── Sources Card ────────────────────────────────────────────────────────────
 
-function RssFeedsCard({ onOpenModal }) {
+function SourcesCard({ onOpenModal }) {
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(null);
@@ -1046,7 +1046,7 @@ export default function SourcesPage() {
     <div className="rp-sources-page">
       <div className="rp-sources-inner">
         <CorpusSummaryCard />
-        <RssFeedsCard onOpenModal={(ids) => { setBootstrapAutoSubmit(true); setBootstrapSources(ids); setShowBootstrapModal(true); }} />
+        <SourcesCard onOpenModal={(ids) => { setBootstrapAutoSubmit(true); setBootstrapSources(ids); setShowBootstrapModal(true); }} />
         <BaseCorpusCard />
         <InitialLoadCard
           onOpenModal={() => setShowBootstrapModal(true)}

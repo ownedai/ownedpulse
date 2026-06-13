@@ -247,7 +247,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
         mode,
         redownload,
         base_corpus: baseCorpusIds,
-        rss_feeds: (enabledSources || activeSources).map(feed_id => ({ feed_id, date_from, date_to })),
+        ingestion_sources: (enabledSources || activeSources).map(feed_id => ({ feed_id, date_from, date_to })),
       };
       const result = await postSourcesBootstrap(payload);
 
@@ -298,7 +298,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
         <div className="mh">
           <div>
             <h3>{autoSubmit ? 'Updating Sources' : 'Initial Load / Corpus Reload'}</h3>
-            {!autoSubmit && (
+            {!autoSubmit && localUiMode === 'config' && (
               <div style={{ fontSize: 12, color: 'var(--doc-text-2)', marginTop: 3, maxWidth: 520 }}>
                 Select document categories and date range. This operation will wipe and re-ingest the selected corpus.
               </div>
@@ -652,7 +652,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                   disabled={!canSubmit}
                   style={canSubmit ? { background: 'var(--status-error, #ef4444)', borderColor: 'var(--status-error, #ef4444)' } : {}}
                 >
-                  {submitting ? 'Starting…' : 'Start Initial Load'}
+                  {submitting ? 'Starting…' : 'Start Load'}
                 </button>
               </>
             )}

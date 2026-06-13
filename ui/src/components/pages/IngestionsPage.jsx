@@ -612,7 +612,7 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
   );
 }
 
-function RssRunRow({ item, isOpen, onToggle }) {
+function IngestionRunRow({ item, isOpen, onToggle }) {
   const [docs, setDocs] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [expandedDoc, setExpandedDoc] = useState(null);
@@ -621,37 +621,16 @@ function RssRunRow({ item, isOpen, onToggle }) {
   const liveRef = useRef(false);
   const isRunning = item.status === 'running';
 
-  // Subscribe to SSE progress while this RSS run is active
-  const rssState = isRunning ? useRssProgress(item.run_id) : null;
-
+  // Initial fetch for running runs
   useEffect(() => {
     if (!isRunning) return;
     if (!liveRef.current) {
       liveRef.current = true;
-      // Initial fetch — get existing docs
       getRunDocuments(item.run_id, 1, 200)
         .then((data) => { setDocs(data.items || []); })
         .catch(() => {});
     }
   }, [isRunning, item.run_id]);
-
-  // Merge live doc events from SSE into the docs list (prepend new ones)
-  useEffect(() => {
-    if (!rssState || rssState.docEvents.length === 0) return;
-    const seen = new Set(docs.map((d) => d.doc_id));
-    const newDocs = rssState.docEvents
-      .filter((d) => !seen.has(d.doc_id))
-      .map((d) => ({
-        doc_id: d.doc_id,
-        document_title: d.document_title || d.doc_id,
-        ingestion_status: d.status,
-        chunk_count: d.chunks || 0,
-        failure_reason: d.reason,
-      }));
-    if (newDocs.length > 0) {
-      setDocs((prev) => [...newDocs, ...prev]);
-    }
-  }, [rssState?.docEvents]);
 
   // One-time fetch on expand for completed runs
   useEffect(() => {
@@ -937,7 +916,7 @@ export default function IngestionsPage() {
       ) : (
         <div className="g3-list-scroll">
           {items.map((item) => {
-            const key = item.type === 'session_group' ? `sess-${item.run_token}` : `rss-${item.run_id}`;
+            const key = item.type === 'session_group' ? `sess-${item.run_token}` : `run-${item.run_id}`;
             if (item.type === 'session_group') {
               return (
                 <SessionGroupRow
@@ -949,7 +928,7 @@ export default function IngestionsPage() {
               );
             }
             return (
-              <RssRunRow
+              <IngestionRunRow
                 key={key}
                 item={item}
                 isOpen={!!openRows[key]}
