@@ -1638,10 +1638,16 @@ async def _run_content_query(
             result["langfuse_trace_id"] = trace_id
             return result
 
-        # Token budget enforcement — prevent context overflow when force-include
-        # returns all chunks from small documents (e.g. Annex 15, 44 chunks).
-        # Estimate token count as char_count / 4 (conservative approximation).
-        # Budget: num_ctx - system_prompt - answer_reserve - query_tokens.
+        # Token budget enforcement with guaranteed slots for mentioned documents.
+        #
+        # When multiple documents are force-included, a large document (e.g.
+        # FDA-DI-CGMP-QA, 44 chunks) can fill the token budget before smaller
+        # mentioned documents get any slots. This causes the LLM to hallucinate
+        # content from training knowledge for the missing document.
+        #
+        # Fix: reserve 2 slots per explicitly mentioned document first (best-
+        # scoring chunks only), then fill remaining budget greedily by score.
+
         NUM_CTX = 12288
         SYSTEM_PROMPT_TOKENS = 1527
         ANSWER_RESERVE = 1024
@@ -1653,25 +1659,62 @@ async def _run_content_query(
             header_approx = 30
             return (len(text) // 4) + header_approx
 
-        deduped_chunks = sorted(deduped_chunks, key=lambda c: c["score"], reverse=True)
+        GUARANTEED_SLOTS_PER_DOC = 2
+
+        # Build guaranteed set: top-N chunks per mentioned doc by score
+        guaranteed = []
+        guaranteed_chunk_ids = set()
+
+        if mentioned_docs:
+            for doc_id in mentioned_docs:
+                doc_chunks = sorted(
+                    [c for c in deduped_chunks if c.get("document_id") == doc_id],
+                    key=lambda c: c["score"],
+                    reverse=True,
+                )
+                for chunk in doc_chunks[:GUARANTEED_SLOTS_PER_DOC]:
+                    if chunk.get("chunk_id") not in guaranteed_chunk_ids:
+                        guaranteed.append(chunk)
+                        guaranteed_chunk_ids.add(chunk.get("chunk_id"))
+
+        # Remaining chunks sorted by score (excluding already guaranteed)
+        remaining = sorted(
+            [c for c in deduped_chunks if c.get("chunk_id") not in guaranteed_chunk_ids],
+            key=lambda c: c["score"],
+            reverse=True,
+        )
+
+        # Fill budget: guaranteed first, then remaining by score
         budget_chunks = []
         used_tokens = 0
-        for chunk in deduped_chunks:
+
+        for chunk in guaranteed + remaining:
             chunk_tokens = _estimate_chunk_tokens(chunk)
             if used_tokens + chunk_tokens > CONTEXT_BUDGET:
                 logger.info(
                     "Token budget reached at %d chunks (%d est. tokens) — "
                     "dropping %d remaining chunks",
-                    len(budget_chunks), used_tokens, len(deduped_chunks) - len(budget_chunks),
+                    len(budget_chunks), used_tokens,
+                    len(guaranteed) + len(remaining) - len(budget_chunks),
                 )
                 break
             budget_chunks.append(chunk)
             used_tokens += chunk_tokens
 
+        # Log guaranteed slots that made it in
+        if mentioned_docs:
+            for doc_id in mentioned_docs:
+                doc_in_budget = [c for c in budget_chunks if c.get("document_id") == doc_id]
+                logger.info(
+                    "Context budget: %s has %d chunk(s) in final context",
+                    doc_id, len(doc_in_budget),
+                )
+
         deduped_chunks = budget_chunks
         logger.info(
-            "Context budget: %d tokens available, %d est. used, %d chunks",
-            CONTEXT_BUDGET, used_tokens, len(deduped_chunks),
+            "Context budget: %d of %d tokens used, %d chunks (num_ctx=%d, sys=%d, ans=%d)",
+            used_tokens, CONTEXT_BUDGET, len(deduped_chunks),
+            NUM_CTX, SYSTEM_PROMPT_TOKENS, ANSWER_RESERVE,
         )
 
         context = build_context(deduped_chunks)
