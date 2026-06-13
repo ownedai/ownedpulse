@@ -262,7 +262,8 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
                    workflow_execution_id: str = None,
                    redownload: str = "none",
                    cancel_event=None,
-                   session_id: str = None) -> list:
+                   session_id: str = None,
+                   feed_source: str = None) -> list:
     """Each doc gets its own run_log row, all sharing session_id."""
     results = []
     for i, doc in enumerate(docs):
@@ -277,6 +278,7 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
             workflow_execution_id=workflow_execution_id,
             doc_id=doc_id,
             session_id=session_id,
+            feed_source=doc.get("feed_id") or feed_source,
         )
 
         ok, detail = None, None
@@ -364,14 +366,19 @@ def _ingest_mode_b(docs: list, *, source: str, triggered_by: str,
                    workflow_execution_id: str = None,
                    redownload: str = "none",
                    cancel_event=None,
-                   session_id: str = None) -> dict:
+                   session_id: str = None,
+                   feed_source: str = None) -> dict:
     """One run_log row wraps all documents in the batch."""
+    # Collect unique feed_ids from all docs for the run_log trace
+    feed_ids = {d.get("feed_id") for d in docs if d.get("feed_id")}
+    fs = feed_source or (",".join(sorted(feed_ids)) if feed_ids else None)
     trace = start_ingestion_trace(
         source=source,
         triggered_by=triggered_by,
         workflow_id=workflow_id,
         workflow_execution_id=workflow_execution_id,
         session_id=session_id,
+        feed_source=fs,
     )
 
     results = []
@@ -435,7 +442,8 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
                      bulk: bool = False,
                      redownload: str = "none",
                      cancel_event=None,
-                     session_id: str = None) -> dict:
+                     session_id: str = None,
+                     feed_source: str = None) -> dict:
     """Unified ingestion entry point — all paths route through here.
 
     Args:
@@ -466,6 +474,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             redownload=redownload,
             cancel_event=cancel_event,
             session_id=session_id,
+            feed_source=feed_source,
         )
         return {
             "mode": "A",
@@ -484,5 +493,6 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
             workflow_execution_id=workflow_execution_id,
             redownload=redownload,
             cancel_event=cancel_event,
+            feed_source=feed_source,
             session_id=session_id,
         )

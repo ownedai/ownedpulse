@@ -206,7 +206,7 @@ def _build_doc_list_from_scope(base_corpus: List[str], ingestion_sources: List[F
 
     # Base corpus: specific doc_ids selected by user
     for doc_id in base_corpus:
-        docs.append({"doc_id": doc_id, "issuing_body": "", "phase": "live"})
+        docs.append({"doc_id": doc_id, "issuing_body": "", "phase": "live", "feed_id": None})
 
     # Ingestion sources: query document_registry filtered by feed_id + optional date range
     if ingestion_sources:
@@ -229,11 +229,11 @@ def _build_doc_list_from_scope(base_corpus: List[str], ingestion_sources: List[F
                     params.append(date_to)
                 where = " AND ".join(conditions)
                 cur.execute(
-                    f"SELECT document_id, issuing_body FROM document_registry WHERE {where} ORDER BY document_id",
+                    f"SELECT document_id, issuing_body, feed_id FROM document_registry WHERE {where} ORDER BY document_id",
                     params,
                 )
                 for row in cur.fetchall():
-                    docs.append({"doc_id": row[0], "issuing_body": row[1] or "", "phase": "live"})
+                    docs.append({"doc_id": row[0], "issuing_body": row[1] or "", "phase": "live", "feed_id": row[2]})
                 cur.close()
             finally:
                 conn.close()
