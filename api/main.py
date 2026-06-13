@@ -933,11 +933,13 @@ async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) ->
 async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> list[dict]:
     """Fetch chunks from a specific document matching explicit clause identifiers.
 
-    Matches clause_id payload field using:
-    1. Exact match: clause_id == identifier
-    2. Prefix match: clause_id starts with identifier + "."
-    3. Suffix/contains match: identifier appears in clause_id string
-       (handles "11.300" matching "21-CFR-Part11-§11.300")
+    Skipped for small documents (≤50 chunks) — they already get a full scroll
+    from fetch_document_chunks, so the target clause is already present.
+
+    Matching strategy (two-pass):
+    Pass 1 — exact + prefix: clause_id == identifier or starts with "identifier."
+    Pass 2 — contains fallback: only if pass 1 found nothing. Handles compound
+      clause_ids like "21-CFR-Part11-§11.300" where the query only contains "11.300".
 
     Returns matched chunks at fixed score 0.85 (above semantic threshold,
     signals high confidence in clause match).
@@ -961,9 +963,19 @@ async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> lis
         with_vectors=False,
     )
 
+    # Skip clause force-include for small documents — they already get a full
+    # scroll from fetch_document_chunks, so the target clause is already present.
+    if len(points) <= 50:
+        logger.info(
+            "Clause force-include skipped for %s — small doc, full scroll already applied",
+            doc_id,
+        )
+        return []
+
     matched = []
     seen_chunk_ids = set()
 
+    # Pass 1: exact and prefix matches only
     for point in points:
         payload = point.payload or {}
         clause_id = str(payload.get("clause_id") or "").strip()
@@ -975,12 +987,10 @@ async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> lis
         for identifier in clause_identifiers:
             identifier_lower = identifier.lower()
 
-            # Match conditions
             exact = clause_id_lower == identifier_lower
             prefix = clause_id_lower.startswith(identifier_lower + ".")
-            contains = identifier_lower in clause_id_lower
 
-            if (exact or prefix or contains) and str(point.id) not in seen_chunk_ids:
+            if (exact or prefix) and str(point.id) not in seen_chunk_ids:
                 seen_chunk_ids.add(str(point.id))
                 matched.append({
                     "chunk_id": str(point.id),
@@ -991,6 +1001,33 @@ async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> lis
                     "Clause force-include: doc=%s clause_id=%s matched identifier=%s",
                     doc_id, clause_id, identifier,
                 )
+
+    # Pass 2: contains fallback only if pass 1 found nothing.
+    # Handles compound clause_ids like "21-CFR-Part11-§11.300" where the
+    # user query only contains the numeric part "11.300".
+    if not matched:
+        for point in points:
+            payload = point.payload or {}
+            clause_id = str(payload.get("clause_id") or "").strip()
+            if not clause_id:
+                continue
+
+            clause_id_lower = clause_id.lower()
+
+            for identifier in clause_identifiers:
+                identifier_lower = identifier.lower()
+
+                if identifier_lower in clause_id_lower and str(point.id) not in seen_chunk_ids:
+                    seen_chunk_ids.add(str(point.id))
+                    matched.append({
+                        "chunk_id": str(point.id),
+                        "score": 0.85,
+                        **payload,
+                    })
+                    logger.info(
+                        "Clause force-include (contains): doc=%s clause_id=%s matched identifier=%s",
+                        doc_id, clause_id, identifier,
+                    )
 
     if not matched:
         logger.info(
