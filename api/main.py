@@ -1787,6 +1787,12 @@ async def _run_content_query(
                 "score_threshold": retrieval.score_threshold,
                 "sub_query_count": n_sub_queries,
             },
+            "llm_input": {
+                "model": request.generation_model or get_active_model(),
+                "system": SYSTEM_PROMPT_V9,
+                "prompt": prompt,
+                "options": {"num_ctx": 12288},
+            },
         }
         result["langfuse_trace_id"] = trace_id
         return result
