@@ -826,6 +826,40 @@ def extract_mentioned_documents(query_text: str) -> list[str]:
     return list(set(mentioned))  # dedup — two patterns may map to same doc_id
 
 
+# Clause identifier patterns — matches section/clause references in query text.
+# Ordered most-specific first to avoid partial matches.
+_CLAUSE_PATTERNS = [
+    # §11.300, §4.2, § 10
+    re.compile(r'§\s*(\d+(?:\.\d+)*)'),
+    # section 4.2, section 11.300
+    re.compile(r'\bsection\s+(\d+(?:\.\d+)*)'),
+    # clause 10, clause 4.2
+    re.compile(r'\bclause\s+(\d+(?:\.\d+)*)'),
+    # part 11 sub-section references like §11.10, §11.300
+    re.compile(r'\b(\d{1,2}\.\d{3})\b'),
+    # standalone decimal like 4.2, 4.1 when preceded by known doc context
+    re.compile(r'\b(\d+\.\d+)\b'),
+]
+
+
+def extract_mentioned_clauses(query_text: str) -> list[str]:
+    """Extract explicit clause/section identifiers from query text.
+
+    Returns a list of clause identifier strings (e.g. ['4.2', '11.300', '10']).
+    Only returns identifiers that look like regulatory clause references.
+    Deduplicates results.
+    """
+    found = []
+    seen = set()
+    for pattern in _CLAUSE_PATTERNS:
+        for match in pattern.finditer(query_text.lower()):
+            clause_id = match.group(1)
+            if clause_id not in seen:
+                seen.add(clause_id)
+                found.append(clause_id)
+    return found
+
+
 async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) -> list[dict]:
     """Fetch top chunks from a specific document via semantic search.
 
@@ -894,6 +928,77 @@ async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) ->
             **payload,
         })
     return chunks
+
+
+async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> list[dict]:
+    """Fetch chunks from a specific document matching explicit clause identifiers.
+
+    Matches clause_id payload field using:
+    1. Exact match: clause_id == identifier
+    2. Prefix match: clause_id starts with identifier + "."
+    3. Suffix/contains match: identifier appears in clause_id string
+       (handles "11.300" matching "21-CFR-Part11-§11.300")
+
+    Returns matched chunks at fixed score 0.85 (above semantic threshold,
+    signals high confidence in clause match).
+    Returns empty list if no matches found — caller is unaffected.
+    """
+    from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue
+
+    if not clause_identifiers:
+        return []
+
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+    # Scroll all chunks for this document (cap at 200 — no document has more)
+    points, _ = client.scroll(
+        collection_name=QDRANT_COLLECTION,
+        scroll_filter=QFilter(
+            must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+        ),
+        limit=200,
+        with_payload=True,
+        with_vectors=False,
+    )
+
+    matched = []
+    seen_chunk_ids = set()
+
+    for point in points:
+        payload = point.payload or {}
+        clause_id = str(payload.get("clause_id") or "").strip()
+        if not clause_id:
+            continue
+
+        clause_id_lower = clause_id.lower()
+
+        for identifier in clause_identifiers:
+            identifier_lower = identifier.lower()
+
+            # Match conditions
+            exact = clause_id_lower == identifier_lower
+            prefix = clause_id_lower.startswith(identifier_lower + ".")
+            contains = identifier_lower in clause_id_lower
+
+            if (exact or prefix or contains) and str(point.id) not in seen_chunk_ids:
+                seen_chunk_ids.add(str(point.id))
+                matched.append({
+                    "chunk_id": str(point.id),
+                    "score": 0.85,
+                    **payload,
+                })
+                logger.info(
+                    "Clause force-include: doc=%s clause_id=%s matched identifier=%s",
+                    doc_id, clause_id, identifier,
+                )
+
+    if not matched:
+        logger.info(
+            "Clause force-include: no match for %s in %s (identifiers: %s)",
+            clause_identifiers, doc_id, clause_identifiers,
+        )
+
+    return matched
 
 
 # ── Supersede-pair detection ──────────────────────────────────────────────────
@@ -1396,6 +1501,8 @@ async def _run_content_query(
         # fetch chunks from that document regardless of semantic ranking. This ensures
         # GxP queries that name regulatory documents always get content from them.
         mentioned_docs = extract_mentioned_documents(request.query)
+        mentioned_clauses = extract_mentioned_clauses(request.query)
+
         if mentioned_docs:
             for doc_id in mentioned_docs:
                 forced = await fetch_document_chunks(doc_id, request.query, limit=3)
@@ -1407,6 +1514,29 @@ async def _run_content_query(
                         "Force-included %d chunks from %s (explicitly mentioned in query)",
                         len(forced), doc_id,
                     )
+
+            # Step 4b: Clause-level force-include — only when both document AND
+            # clause identifier are explicitly named in the query.
+            # Activates for large documents where full scroll wasn't used and a
+            # specific clause may have been missed by semantic search.
+            if mentioned_clauses:
+                for doc_id in mentioned_docs:
+                    clause_chunks = await fetch_clause_chunks(doc_id, mentioned_clauses)
+                    if clause_chunks:
+                        # Inject clause chunks — don't replace existing doc chunks,
+                        # add alongside them (dedup by chunk_id happens below)
+                        existing_chunk_ids = {c.get("chunk_id") for c in deduped_chunks}
+                        new_clause_chunks = [
+                            c for c in clause_chunks
+                            if c.get("chunk_id") not in existing_chunk_ids
+                        ]
+                        deduped_chunks = deduped_chunks + new_clause_chunks
+                        logger.info(
+                            "Clause force-include: injected %d chunk(s) from %s "
+                            "for clause identifiers %s",
+                            len(new_clause_chunks), doc_id, mentioned_clauses,
+                        )
+
             # Re-sort after merging
             deduped_chunks = sorted(deduped_chunks, key=lambda c: c["score"], reverse=True)
 
