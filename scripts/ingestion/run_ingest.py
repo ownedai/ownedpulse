@@ -782,13 +782,13 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
                     "run_id           = EXCLUDED.run_id, "
                     "ingestion_error  = NULL, "
                     "updated_at       = NOW()",
-                    (doc_id, len(chunks), CHUNKER_VERSION, trace_id or None)
+                    (doc_id, len(points), CHUNKER_VERSION, trace_id or None)
                 )
 
         if doc_span:
-            doc_span.finalize(status="success", chunk_count=len(chunks),
+            doc_span.finalize(status="success", chunk_count=len(points),
                               embedding_model=EMBED_MODEL)
-        return {"doc_id":doc_id,"chunks":len(chunks)}
+        return {"doc_id":doc_id,"chunks":len(points)}
 
     except Exception as e:
         err_msg = f'{type(e).__name__}: {str(e)[:400]}'

@@ -237,15 +237,15 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
         jsonl_path.write_text('\n'.join(jsonl_lines))
         print(f'JSONL: {jsonl_path}')
 
-        update_ingestion_status(doc_id, 'indexed', chunk_count=len(chunks))
+        update_ingestion_status(doc_id, 'indexed', chunk_count=len(points))
 
         if doc_span:
             doc_span.finalize(
-                status="success", chunk_count=len(chunks),
+                status="success", chunk_count=len(points),
                 embedding_model="mxbai-embed-large",
             )
 
-        return {'doc_id': doc_id, 'chunks': len(chunks), 'jsonl': str(jsonl_path)}
+        return {'doc_id': doc_id, 'chunks': len(points), 'jsonl': str(jsonl_path)}
 
     except Exception as e:
         if doc_span:
