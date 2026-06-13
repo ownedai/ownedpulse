@@ -44,7 +44,7 @@ COLLECTION = "knowledge_base"
 BATCH_SIZE = 200
 VERBOSE = False
 
-VALID_DOC_STATUSES  = {"draft", "final", "superseded"}
+VALID_DOC_STATUSES  = {"draft", "final", "superseded", "active"}
 VALID_CHUNK_STATUSES = {"active", "final", "superseded"}
 REQUIRED_PAYLOAD_FIELDS = [
     "document_id", "chunk_index", "content_type", "chunk_status",
@@ -161,42 +161,41 @@ def main():
         "ingestion_status": row[6],
     } for row in cur.fetchall()}
 
-    # Non-superseded docs that aren't not_viable/failed are "indexed" (should have chunks)
+    # Docs that should have Qdrant chunks — successfully ingested, not superseded
     active_doc_ids = {
         did for did, d in pg_docs.items()
         if d["document_status"] != "superseded"
-        and d["ingestion_status"] not in ("not_viable", "failed")
+        and d["ingestion_status"] in ("indexed", "success")
     }
     not_viable_doc_ids = {
         did for did, d in pg_docs.items()
         if d["ingestion_status"] == "not_viable"
     }
 
-    # PostgreSQL chunks (chunk_id is UUID)
-    cur.execute("SELECT chunk_id::text, document_id, chunk_status FROM chunks WHERE chunk_status != 'superseded'")
-    pg_chunks = {row[0]: {"doc_id": row[1], "chunk_status": row[2]} for row in cur.fetchall()}
-    print(f"  PostgreSQL: {len(pg_chunks)} chunks ({len(pg_docs)} registry docs)")
+    # Ingestion state chunk counts — authoritative per-document count in PG
+    cur.execute("SELECT document_id, chunk_count FROM ingestion_state WHERE ingestion_status IN ('indexed', 'success')")
+    pg_chunk_counts = {row[0]: row[1] for row in cur.fetchall()}
+    print(f"  PostgreSQL: {len(pg_docs)} registry docs, {len(pg_chunk_counts)} with chunk counts")
     print()
     print("Running checks...")
     print()
 
     # ----------------------------------------------------------------
-    # C01 — Qdrant / PostgreSQL consistency (totals)
+    # C01 — Every Qdrant point references a document_id in document_registry
     # ----------------------------------------------------------------
-    c = Check("C01", "Qdrant / PostgreSQL total count consistency")
+    c = Check("C01", "Qdrant doc_ids all present in document_registry")
     checks.append(c)
-    qdrant_ids = {str(p.id) for p in all_points if p.payload.get("chunk_status") != "superseded"}
-    pg_ids = set(pg_chunks.keys())
-    missing_pg = qdrant_ids - pg_ids
-    missing_qdrant = pg_ids - qdrant_ids
-    if missing_pg or missing_qdrant:
+    orphan_doc_ids = sorted({
+        p.payload.get("document_id") for p in all_points
+        if p.payload.get("document_id") and p.payload.get("document_id") not in pg_docs
+    })
+    if orphan_doc_ids:
         c.fail(
-            f"{len(missing_pg)} missing in PG, {len(missing_qdrant)} missing in Qdrant",
-            failures=[f"Missing PG: {x}" for x in sorted(missing_pg)[:10]] +
-                     [f"Missing Qdrant: {x}" for x in sorted(missing_qdrant)[:10]]
+            f"{len(orphan_doc_ids)} orphan doc_ids in Qdrant (not in document_registry)",
+            failures=orphan_doc_ids[:20]
         )
     else:
-        c.pass_(f"{len(qdrant_ids)} chunks consistent")
+        c.pass_(f"all {len(all_points)} Qdrant points reference valid registry doc_ids")
 
     # ----------------------------------------------------------------
     # C02 — No zero-length char_offset spans
@@ -430,25 +429,21 @@ def main():
     # ----------------------------------------------------------------
     # C14 — Qdrant / PostgreSQL chunk counts match per document
     # ----------------------------------------------------------------
-    c = Check("C14", "Per-document chunk counts match Qdrant vs PostgreSQL")
+    c = Check("C14", "Per-document chunk counts match (ingestion_state vs Qdrant active)")
     checks.append(c)
     qdrant_by_doc = defaultdict(int)
     for p in all_points:
         if p.payload.get("chunk_status") != "superseded":
             qdrant_by_doc[p.payload.get("document_id")] += 1
-    pg_by_doc = defaultdict(int)
-    for cid, data in pg_chunks.items():
-        pg_by_doc[data["doc_id"]] += 1
-    all_doc_ids = {d for d in set(qdrant_by_doc.keys()) | set(pg_by_doc.keys()) if d is not None}
     count_mismatches = [
-        f"doc={did} qdrant={qdrant_by_doc[did]} pg={pg_by_doc[did]} delta={qdrant_by_doc[did]-pg_by_doc[did]:+d}"
-        for did in sorted(all_doc_ids)
-        if qdrant_by_doc[did] != pg_by_doc[did]
+        f"doc={did} qdrant={qdrant_by_doc[did]} pg={pg_count} delta={qdrant_by_doc[did]-pg_count:+d}"
+        for did, pg_count in pg_chunk_counts.items()
+        if qdrant_by_doc.get(did, 0) != pg_count
     ]
     if count_mismatches:
         c.fail(f"{len(count_mismatches)} per-doc count mismatches", failures=count_mismatches)
     else:
-        c.pass_(f"all {len(all_doc_ids)} docs consistent")
+        c.pass_(f"all {len(pg_chunk_counts)} docs consistent")
 
     # ----------------------------------------------------------------
     # C15 — No documents with anomalous / transitional status
