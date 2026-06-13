@@ -601,8 +601,10 @@ async def ollama_generate(
         "system": system,
         "stream": False,
     }
+    options: dict = {"num_ctx": 12288}
     if temperature is not None:
-        payload["options"] = {"temperature": temperature}
+        options["temperature"] = temperature
+    payload["options"] = options
     async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(f"{OLLAMA_BASE}/api/generate", json=payload)
         resp.raise_for_status()
@@ -1468,6 +1470,42 @@ async def _run_content_query(
                 pass
             result["langfuse_trace_id"] = trace_id
             return result
+
+        # Token budget enforcement — prevent context overflow when force-include
+        # returns all chunks from small documents (e.g. Annex 15, 44 chunks).
+        # Estimate token count as char_count / 4 (conservative approximation).
+        # Budget: num_ctx - system_prompt - answer_reserve - query_tokens.
+        NUM_CTX = 12288
+        SYSTEM_PROMPT_TOKENS = 1527
+        ANSWER_RESERVE = 1024
+        QUERY_TOKENS = len(request.query) // 4
+        CONTEXT_BUDGET = NUM_CTX - SYSTEM_PROMPT_TOKENS - ANSWER_RESERVE - QUERY_TOKENS
+
+        def _estimate_chunk_tokens(chunk: dict) -> int:
+            text = chunk.get("chunk_text", "") or ""
+            header_approx = 30
+            return (len(text) // 4) + header_approx
+
+        deduped_chunks = sorted(deduped_chunks, key=lambda c: c["score"], reverse=True)
+        budget_chunks = []
+        used_tokens = 0
+        for chunk in deduped_chunks:
+            chunk_tokens = _estimate_chunk_tokens(chunk)
+            if used_tokens + chunk_tokens > CONTEXT_BUDGET:
+                logger.info(
+                    "Token budget reached at %d chunks (%d est. tokens) — "
+                    "dropping %d remaining chunks",
+                    len(budget_chunks), used_tokens, len(deduped_chunks) - len(budget_chunks),
+                )
+                break
+            budget_chunks.append(chunk)
+            used_tokens += chunk_tokens
+
+        deduped_chunks = budget_chunks
+        logger.info(
+            "Context budget: %d tokens available, %d est. used, %d chunks",
+            CONTEXT_BUDGET, used_tokens, len(deduped_chunks),
+        )
 
         context = build_context(deduped_chunks)
         framing = build_supersede_framing(supersede_context)
