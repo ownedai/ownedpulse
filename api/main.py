@@ -751,23 +751,37 @@ async def retrieve_chunks(
 
 
 def deduplicate_chunks(chunks: list[dict], top_n: int = 8) -> list[dict]:
-    """Keep best-scoring chunk per document_id, then take top N by score.
-    Also remove chunks with identical text (duplicate content from different doc_ids)."""
-    seen = {}
+    """Keep up to 3 best-scoring chunks per document_id, then take top N overall.
+    Also remove chunks with identical text (duplicate content from different doc_ids).
+
+    Allowing multiple chunks per document is critical for structured regulatory
+    documents (Annex 11, ICH Q10) where different clauses address different
+    requirements and a single-chunk-per-doc limit causes retrieval misses on
+    cross-clause questions.
+    """
+    # Group chunks by document_id, keeping top 3 per doc by score
+    per_doc: dict[str, list] = {}
     for chunk in chunks:
-        doc_id = chunk.get("document_id", chunk.get("chunk_id"))
-        if doc_id not in seen or chunk["score"] > seen[doc_id]["score"]:
-            seen[doc_id] = chunk
+        doc_id = chunk.get("document_id") or chunk.get("chunk_id")
+        if doc_id not in per_doc:
+            per_doc[doc_id] = []
+        per_doc[doc_id].append(chunk)
 
-    deduped = sorted(seen.values(), key=lambda c: c["score"], reverse=True)
+    candidates = []
+    for doc_id, doc_chunks in per_doc.items():
+        top3 = sorted(doc_chunks, key=lambda c: c["score"], reverse=True)[:3]
+        candidates.extend(top3)
 
-    # Remove chunks with identical text — same content ingested under different doc_ids
-    seen_text = {}
+    # Sort all candidates by score descending
+    candidates = sorted(candidates, key=lambda c: c["score"], reverse=True)
+
+    # Remove chunks with identical text across different doc_ids
+    seen_text: dict[str, bool] = {}
     result = []
-    for chunk in deduped:
+    for chunk in candidates:
         text_key = (chunk.get("chunk_text", "") or "")[:200].strip()
         if text_key and text_key in seen_text:
-            continue  # skip lower-scored duplicate (list is already score-sorted)
+            continue
         seen_text[text_key] = True
         result.append(chunk)
 
@@ -813,12 +827,52 @@ def extract_mentioned_documents(query_text: str) -> list[str]:
 async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) -> list[dict]:
     """Fetch top chunks from a specific document via semantic search.
 
-    Embedding is done fresh for the query — deterministic at temperature 0.
+    For small documents (<=50 chunks), fetches ALL chunks via scroll to ensure
+    no clause is missed due to low semantic similarity. Critical for structured
+    regulatory documents like EU-GMP-Annex22 (12 chunks) where specific clauses
+    may embed differently from the query phrasing.
+
+    For larger documents, falls back to semantic top-k retrieval.
     """
     from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue
 
-    vector = await ollama_embed(query_text)
     client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+    # Probe document size — full scroll to get accurate count
+    probe = []
+    offset = None
+    while True:
+        page, offset = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter=QFilter(
+                must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+            ),
+            limit=50,
+            offset=offset,
+            with_payload=True,
+        )
+        probe.extend(page)
+        if offset is None:
+            break
+
+    # Small document — return all chunks at fixed score above threshold
+    if len(probe) <= 50:
+        chunks = []
+        for point in probe:
+            payload = point.payload or {}
+            chunks.append({
+                "chunk_id": str(point.id),
+                "score": 0.75,
+                **payload,
+            })
+        logger.info(
+            "Force-included all %d chunks from %s (small document — full scroll)",
+            len(chunks), doc_id,
+        )
+        return chunks
+
+    # Large document — semantic top-k as before
+    vector = await ollama_embed(query_text)
     results = client.query_points(
         collection_name=QDRANT_COLLECTION,
         query=vector,
@@ -1342,17 +1396,15 @@ async def _run_content_query(
         mentioned_docs = extract_mentioned_documents(request.query)
         if mentioned_docs:
             for doc_id in mentioned_docs:
-                already_present = any(
-                    c.get("document_id") == doc_id for c in deduped_chunks
-                )
-                if not already_present:
-                    forced = await fetch_document_chunks(doc_id, request.query, limit=3)
-                    if forced:
-                        logger.info(
-                            "Force-included %d chunks from %s (explicitly mentioned in query)",
-                            len(forced), doc_id,
-                        )
-                        deduped_chunks = deduped_chunks + forced
+                forced = await fetch_document_chunks(doc_id, request.query, limit=3)
+                if forced:
+                    # Replace any semantic-only chunks for this doc with the full set
+                    deduped_chunks = [c for c in deduped_chunks if c.get("document_id") != doc_id]
+                    deduped_chunks = deduped_chunks + forced
+                    logger.info(
+                        "Force-included %d chunks from %s (explicitly mentioned in query)",
+                        len(forced), doc_id,
+                    )
             # Re-sort after merging
             deduped_chunks = sorted(deduped_chunks, key=lambda c: c["score"], reverse=True)
 
