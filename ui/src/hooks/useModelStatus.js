@@ -9,6 +9,7 @@ export default function useModelStatus() {
     qdrantStatus: 'unknown', qdrantPoints: null,
     postgresStatus: 'unknown', postgresDocCount: null,
     doclingStatus: 'unknown',
+    langfuseStatus: 'unknown', langfuseVersion: null,
   });
   const timerRef = useRef(null);
   const mountedRef = useRef(true);
@@ -33,6 +34,8 @@ export default function useModelStatus() {
             postgresStatus: data.postgres?.status || 'unknown',
             postgresDocCount: data.postgres?.document_count ?? null,
             doclingStatus: data.docling?.status || 'unknown',
+            langfuseStatus: data.langfuse?.status || 'unknown',
+            langfuseVersion: data.langfuse?.version || null,
           });
           if (!data.loaded || !data.embed_loaded) {
             timerRef.current = setTimeout(check, POLL_INTERVAL);
@@ -72,6 +75,8 @@ export default function useModelStatus() {
             postgresStatus: data.postgres?.status || 'unknown',
             postgresDocCount: data.postgres?.document_count ?? null,
             doclingStatus: data.docling?.status || 'unknown',
+            langfuseStatus: data.langfuse?.status || 'unknown',
+            langfuseVersion: data.langfuse?.version || null,
           });
           if (!data.loaded || !data.embed_loaded) timerRef.current = setTimeout(poll, POLL_INTERVAL);
         }

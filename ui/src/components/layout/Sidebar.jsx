@@ -291,6 +291,20 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
           </span>
         </div>
         <div className="row">
+          <span className="k">Langfuse</span>
+          <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span
+              className={`rp-model-dot${modelStatus.langfuseStatus === 'ok' ? ' loaded' : ''}${modelStatus.langfuseStatus === 'error' ? ' error' : ''}`}
+              title={modelStatus.langfuseStatus === 'ok' ? 'Langfuse connected' : modelStatus.langfuseStatus === 'error' ? 'Langfuse unavailable' : 'Checking Langfuse…'}
+            />
+            {modelStatus.langfuseStatus === 'ok'
+              ? `v${modelStatus.langfuseVersion || '?'}`
+              : modelStatus.langfuseStatus === 'error'
+                ? 'unavailable'
+                : ''}
+          </span>
+        </div>
+        <div className="row">
           <span className="k">Docling</span>
           <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span

@@ -23,6 +23,7 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
 DOCLING_HOST = os.getenv("DOCLING_HOST", "http://docling:5001")
+LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "http://langfuse:3000")
 
 from lib.db import get_pg_conn
 
@@ -396,6 +397,22 @@ async def admin_model_status():
                 response["docling"] = {"status": "error", "detail": "unexpected response"}
     except Exception as e:
         response["docling"] = {"status": "error", "detail": str(e)}
+
+    # ── Langfuse probe ───────────────────────────────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{LANGFUSE_HOST}/api/public/health")
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("status") == "OK":
+                response["langfuse"] = {
+                    "status": "ok",
+                    "version": data.get("version", "unknown"),
+                }
+            else:
+                response["langfuse"] = {"status": "error", "detail": "unexpected response"}
+    except Exception as e:
+        response["langfuse"] = {"status": "error", "detail": str(e)}
 
     return response
 
