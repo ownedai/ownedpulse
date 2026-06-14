@@ -6,6 +6,9 @@ export default function useModelStatus() {
   const [status, setStatus] = useState({
     loaded: false, model: null, checked: false,
     embed_loaded: false, embed_model: null,
+    qdrantStatus: 'unknown', qdrantPoints: null,
+    postgresStatus: 'unknown', postgresDocCount: null,
+    doclingStatus: 'unknown',
   });
   const timerRef = useRef(null);
   const mountedRef = useRef(true);
@@ -25,6 +28,11 @@ export default function useModelStatus() {
           setStatus({
             loaded: !!data.loaded, model: data.model, checked: true,
             embed_loaded: !!data.embed_loaded, embed_model: data.embed_model || 'mxbai-embed-large',
+            qdrantStatus: data.qdrant?.status || 'unknown',
+            qdrantPoints: data.qdrant?.points ?? null,
+            postgresStatus: data.postgres?.status || 'unknown',
+            postgresDocCount: data.postgres?.document_count ?? null,
+            doclingStatus: data.docling?.status || 'unknown',
           });
           if (!data.loaded || !data.embed_loaded) {
             timerRef.current = setTimeout(check, POLL_INTERVAL);
@@ -59,6 +67,11 @@ export default function useModelStatus() {
           setStatus({
             loaded: !!data.loaded, model: data.model, checked: true,
             embed_loaded: !!data.embed_loaded, embed_model: data.embed_model || 'mxbai-embed-large',
+            qdrantStatus: data.qdrant?.status || 'unknown',
+            qdrantPoints: data.qdrant?.points ?? null,
+            postgresStatus: data.postgres?.status || 'unknown',
+            postgresDocCount: data.postgres?.document_count ?? null,
+            doclingStatus: data.docling?.status || 'unknown',
           });
           if (!data.loaded || !data.embed_loaded) timerRef.current = setTimeout(poll, POLL_INTERVAL);
         }

@@ -263,6 +263,48 @@ export default function Sidebar({ onNewQuery, modelStatus = {} }) {
           </span>
         </div>
         <div className="row">
+          <span className="k">Qdrant</span>
+          <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span
+              className={`rp-model-dot${modelStatus.qdrantStatus === 'ok' ? ' loaded' : ''}${modelStatus.qdrantStatus === 'error' ? ' error' : ''}`}
+              title={modelStatus.qdrantStatus === 'ok' ? 'Qdrant connected' : modelStatus.qdrantStatus === 'error' ? 'Qdrant unavailable' : 'Checking Qdrant…'}
+            />
+            {modelStatus.qdrantStatus === 'ok'
+              ? `${(modelStatus.qdrantPoints ?? 0).toLocaleString()} pts`
+              : modelStatus.qdrantStatus === 'error'
+                ? 'unavailable'
+                : '…'}
+          </span>
+        </div>
+        <div className="row">
+          <span className="k">PostgreSQL</span>
+          <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span
+              className={`rp-model-dot${modelStatus.postgresStatus === 'ok' ? ' loaded' : ''}${modelStatus.postgresStatus === 'error' ? ' error' : ''}`}
+              title={modelStatus.postgresStatus === 'ok' ? 'PostgreSQL connected' : modelStatus.postgresStatus === 'error' ? 'PostgreSQL unavailable' : 'Checking PostgreSQL…'}
+            />
+            {modelStatus.postgresStatus === 'ok'
+              ? `${(modelStatus.postgresDocCount ?? 0).toLocaleString()} docs`
+              : modelStatus.postgresStatus === 'error'
+                ? 'unavailable'
+                : '…'}
+          </span>
+        </div>
+        <div className="row">
+          <span className="k">Docling</span>
+          <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span
+              className={`rp-model-dot${modelStatus.doclingStatus === 'ok' ? ' loaded' : ''}${modelStatus.doclingStatus === 'error' ? ' error' : ''}`}
+              title={modelStatus.doclingStatus === 'ok' ? 'Docling connected' : modelStatus.doclingStatus === 'error' ? 'Docling unavailable' : 'Checking Docling…'}
+            />
+            {modelStatus.doclingStatus === 'ok'
+              ? ''
+              : modelStatus.doclingStatus === 'error'
+                ? 'unavailable'
+                : '—'}
+          </span>
+        </div>
+        <div className="row">
           <span className="k">Build</span>
           <span className="v">{appVersion ? `v${appVersion}` : '…'}</span>
         </div>

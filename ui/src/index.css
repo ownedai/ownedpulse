@@ -562,6 +562,10 @@ body {
   background: #22c55e;
   animation: none;
 }
+.rp-model-dot.error {
+  background: #ef4444;
+  animation: none;
+}
 
 /* Swap icon button — appears on LLM row hover */
 .rp-model-swap-btn {

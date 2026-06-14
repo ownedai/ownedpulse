@@ -22,6 +22,7 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
+DOCLING_HOST = os.getenv("DOCLING_HOST", "http://docling:5001")
 
 from lib.db import get_pg_conn
 
@@ -309,7 +310,7 @@ async def admin_update_model(body: ModelUpdateRequest):
 
 @router.get("/model-status")
 async def admin_model_status():
-    """Check whether the active LLM model is currently loaded in Ollama (/api/ps)."""
+    """Check Ollama, Qdrant, and PostgreSQL status for the System box."""
     OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
     # Get active model name from system_config
@@ -329,35 +330,74 @@ async def admin_model_status():
 
     embed_model = "mxbai-embed-large"
 
-    # Query Ollama /api/ps for currently loaded models
+    response = {
+        "model": active_model,
+        "loaded": False,
+        "embed_model": embed_model,
+        "embed_loaded": False,
+        "qdrant": {"status": "unknown"},
+        "postgres": {"status": "unknown"},
+    }
+
+    # ── Ollama probe ──────────────────────────────────────────────────────────
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{OLLAMA_BASE}/api/ps")
             resp.raise_for_status()
             running = [m["name"] for m in resp.json().get("models", [])]
-            loaded = any(
+            response["loaded"] = any(
                 r == active_model or r.split(":")[0] == (active_model or "").split(":")[0]
                 for r in running
             )
-            embed_loaded = any(
+            response["embed_loaded"] = any(
                 r == embed_model or r.split(":")[0] == embed_model.split(":")[0]
                 for r in running
             )
-            return {
-                "model": active_model,
-                "loaded": loaded,
-                "embed_model": embed_model,
-                "embed_loaded": embed_loaded,
-                "running_models": running,
-            }
+            response["running_models"] = running
     except Exception as e:
-        return {
-            "model": active_model,
-            "loaded": False,
-            "embed_model": embed_model,
-            "embed_loaded": False,
-            "error": str(e),
+        response["error"] = str(e)
+
+    # ── Qdrant probe ──────────────────────────────────────────────────────────
+    try:
+        qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=3)
+        coll_info = qdrant_client.get_collection(QDRANT_COLLECTION)
+        response["qdrant"] = {
+            "status": "ok",
+            "points": coll_info.points_count,
+            "collection_status": coll_info.status.name.lower(),
         }
+    except Exception as e:
+        response["qdrant"] = {"status": "error", "detail": str(e)}
+
+    # ── PostgreSQL probe ──────────────────────────────────────────────────────
+    try:
+        pg_conn = get_pg_conn()
+        try:
+            cur = pg_conn.cursor()
+            cur.execute("SELECT count(*) FROM document_registry_ext WHERE ingestion_status = 'indexed'")
+            response["postgres"] = {
+                "status": "ok",
+                "document_count": cur.fetchone()[0],
+            }
+            cur.close()
+        finally:
+            pg_conn.close()
+    except Exception as e:
+        response["postgres"] = {"status": "error", "detail": str(e)}
+
+    # ── Docling probe ─────────────────────────────────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{DOCLING_HOST}/health")
+            resp.raise_for_status()
+            if resp.json().get("status") == "ok":
+                response["docling"] = {"status": "ok"}
+            else:
+                response["docling"] = {"status": "error", "detail": "unexpected response"}
+    except Exception as e:
+        response["docling"] = {"status": "error", "detail": str(e)}
+
+    return response
 
 
 # ── POST /admin/warmup ────────────────────────────────────────────────────────
