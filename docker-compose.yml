@@ -1,60 +1,193 @@
 services:
+  postgres:
+    profiles: [postgres]
+    image: postgres:16
+    container_name: regpulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-regpulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-regpulse}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - regpulse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-regpulse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  qdrant:
+    profiles: [qdrant]
+    image: qdrant/qdrant:latest
+    container_name: regpulse-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    networks:
+      - regpulse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  ollama:
+    profiles: [ollama]
+    image: ollama/ollama:latest
+    container_name: regpulse-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    networks:
+      - regpulse
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  docling:
+    profiles: [docling]
+    image: quay.io/docling-project/docling-serve-cu128:main
+    container_name: regpulse-docling
+    restart: unless-stopped
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      DOCLING_SERVE_ENABLE_UI: "1"
+      DOCLING_SERVE_DEFAULT_OCR_KIND: easyocr
+      DOCLING_SERVE_ALLOW_CUSTOM_OCR_CONFIG: "true"
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      DOCLING_CACHE_DIR: /tmp/docling
+    volumes:
+      - ${DOCLING_CACHE_DIR:-./data/docling}:/tmp/docling
+    ports:
+      - "${DOCLING_PORT:-5001}:5001"
+    networks:
+      - regpulse
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  langfuse:
+    profiles: [langfuse]
+    image: langfuse/langfuse:2
+    container_name: regpulse-langfuse
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@${POSTGRES_HOST:-regpulse-postgres}:${POSTGRES_PORT:-5432}/${LANGFUSE_DB_NAME:-langfuse}
+      NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3001}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_SALT}
+      TELEMETRY_ENABLED: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-regpulse-org}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-RegPulse}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-regpulse-project}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-RegPulse}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
+    ports:
+      - "${LANGFUSE_PORT:-3001}:3000"
+    networks:
+      - regpulse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
   regpulse-api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    build: ./api
     container_name: regpulse-api
     restart: unless-stopped
-    ports:
-      - "${API_PORT:-8001}:8001"
+    environment:
+      QDRANT_HOST: ${QDRANT_HOST:-regpulse-qdrant}
+      QDRANT_PORT: ${QDRANT_PORT:-6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-knowledge_base}
+      POSTGRES_HOST: ${POSTGRES_HOST:-regpulse-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-knowledge_base}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://regpulse-ollama:11434}
+      OLLAMA_PORT: ${OLLAMA_PORT:-11434}
+      OLLAMA_GEN_MODEL: ${OLLAMA_GEN_MODEL:-phi4:14b-q8_0}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-mxbai-embed-large}
+      DATA_DIR: /data
+      DOCLING_HOST: ${DOCLING_HOST:-http://regpulse-docling:5001}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://regpulse-langfuse:3000}
+      HF_TOKEN: ${HF_TOKEN:-}
+      RSS_SCHEDULE_HOUR: ${RSS_SCHEDULE_HOUR:-9}
+      RSS_SCHEDULE_MINUTE: ${RSS_SCHEDULE_MINUTE:-0}
+      RSS_SCHEDULE_TIMEZONE: ${RSS_SCHEDULE_TIMEZONE:-Europe/Berlin}
     volumes:
       - ./api:/app
       - ${DATA_DIR:-./data/api}:/data
       - ${REGULATORY_ARCHIVE_PATH:-./data/regulatory_archive}:/archive
       - ${SCRIPTS_PATH:-./scripts}:/opt/scripts:ro
       - ./config:/app/config:ro
-    environment:
-      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
-      - QDRANT_PORT=${QDRANT_PORT:-6333}
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-knowledge_base}
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - POSTGRES_DB=${POSTGRES_DB:-knowledge_base}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
-      - OLLAMA_HOST=${OLLAMA_HOST:-ollama}
-      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
-      - OLLAMA_GEN_MODEL=${OLLAMA_GEN_MODEL:-phi4:14b-q8_0}
-      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-mxbai-embed-large}
-      - DATA_DIR=/data
-      - DOCLING_HOST=${DOCLING_HOST:-http://docling:5001}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
-      - HF_TOKEN=${HF_TOKEN:-}
-      - RSS_SCHEDULE_HOUR=${RSS_SCHEDULE_HOUR:-9}
-      - RSS_SCHEDULE_MINUTE=${RSS_SCHEDULE_MINUTE:-0}
-      - RSS_SCHEDULE_TIMEZONE=${RSS_SCHEDULE_TIMEZONE:-Europe/Berlin}
+    ports:
+      - "${API_PORT:-8001}:8001"
     networks:
-      - ai-stack
+      - regpulse
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
 
   regpulse-ui:
-    build:
-      context: ./ui
-      dockerfile: Dockerfile
+    build: ./ui
     container_name: regpulse-ui
     restart: unless-stopped
-    ports:
-      - "${UI_PORT:-5173}:5173"
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-}
+      VITE_HMR_DISABLED: ${VITE_HMR_DISABLED:-false}
     volumes:
       - ./ui:/app
       - /app/node_modules
-    environment:
-      - VITE_API_URL=${VITE_API_URL:-}
-      - VITE_HMR_DISABLED=${VITE_HMR_DISABLED:-true}
+    ports:
+      - "${UI_PORT:-5173}:5173"
     networks:
-      - ai-stack
+      - regpulse
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  ollama_data:
 
 networks:
-  ai-stack:
-    external: true
+  regpulse:
+    driver: bridge
