@@ -41,7 +41,11 @@ def find_pdf_link(soup, base_url: str, authority: str):
     if not candidates:
         return None
     if authority and authority.upper() == "EMA" and len(candidates) > 1:
-        return max(candidates, key=len)
+        # Prefer PDFs from /en/documents/scientific-guideline/ or /en/documents/regulatory-procedural-guideline/
+        # over other linked PDFs (e.g. related documents, annexes from other pages)
+        preferred = [c for c in candidates if "/en/documents/" in c and "_en.pdf" in c]
+        if preferred:
+            return preferred[0]
     return candidates[0]
 
 def _extract_version_structured(soup, source_url: str = "") -> str:
@@ -163,6 +167,7 @@ def extract_metadata(soup, fallback_title: str = "", fallback_url: str = "") -> 
     return meta
 
 def download_pdf(url: str, dest: Path) -> str:
+    dest.parent.mkdir(parents=True, exist_ok=True)
     r = _request_with_retry(url, stream=True, timeout=30, is_ema=("ema.europa.eu" in url))
     sha256 = hashlib.sha256()
     with open(dest, "wb") as f:
@@ -192,8 +197,11 @@ def _request_with_retry(url: str, stream: bool = False, timeout: int = 60,
     max_attempts = 5 if is_ema else 4
     for attempt in range(max_attempts):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=timeout,
-                            allow_redirects=True, stream=stream)
+            _proxy = os.environ.get("EMA_PROXY") if is_ema else None
+            _proxies = {"http": _proxy, "https": _proxy} if _proxy else None
+            _headers = {**HEADERS, "Accept-Encoding": "identity"} if _proxy else HEADERS
+            r = requests.get(url, headers=_headers, timeout=timeout,
+                            allow_redirects=True, stream=stream, proxies=_proxies)
         except (requests.ConnectionError, requests.Timeout) as e:
             if attempt < max_attempts - 1:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
