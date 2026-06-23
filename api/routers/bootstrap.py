@@ -447,9 +447,11 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
 
             # Record actual per-doc wall-clock time and refresh the running
             # average every 5 ingested documents so the ETA reflects real data.
-            if session["_doc_started_at"] is not None:
+            # Defensive access — session may be created by code paths that don't
+            # include the timing keys (e.g. reingest-doc).
+            if session.get("_doc_started_at") is not None:
                 elapsed = time.monotonic() - session["_doc_started_at"]
-                session["_doc_times"].append(elapsed)
+                session.setdefault("_doc_times", []).append(elapsed)
                 session["_doc_started_at"] = None
                 times = session["_doc_times"]
                 if len(times) >= 5 and len(times) % 5 == 0:
@@ -593,6 +595,9 @@ async def reingest_doc(body: ReingestDocRequest):
         "docs": [],
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": None,
+        "_doc_started_at": None,
+        "_doc_times": [],
+        "_avg_seconds_per_doc": None,
     }
 
     t = threading.Thread(
