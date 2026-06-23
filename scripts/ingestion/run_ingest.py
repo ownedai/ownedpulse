@@ -250,17 +250,23 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
     dest_tmp = archive_dir / "_download.tmp"
 
     def _stream_to_file(url: str, dest: Path) -> tuple:
-        """Download url → dest with exponential backoff on 429/5xx. Returns (sha256_hex, is_pdf).
-        Uses urllib for EMA URLs — EMA CDN blocks python-requests UA (June 2026)."""
+        """Download url → dest with retry. Returns (sha256_hex, is_pdf).
+
+        EMA: 3 attempts, 30s flat delay between retries. EMA's CDN is
+        unreliable at the origin level — don't waste queue time on it.
+        Fails fast so the pipeline moves on to FDA/ICH docs.
+
+        Non-EMA (FDA/ICH): 4 attempts, exponential backoff (5/10/20s).
+        """
         import urllib.request as _ureq, socket as _socket
         is_ema = "ema.europa.eu" in url
-        base_delay = 10 if is_ema else 5
-        max_attempts = 5 if is_ema else 4
+        max_attempts = 3 if is_ema else 4
+        delay_seconds = 30 if is_ema else 0  # 0 = use exponential below
         for attempt in range(max_attempts):
             try:
                 if is_ema:
                     _req = _ureq.Request(url, headers=req_headers)
-                    r = _ureq.urlopen(_req, timeout=120)
+                    r = _ureq.urlopen(_req, timeout=60)
                     st = r.status
                 else:
                     r = requests.get(url, headers=req_headers, timeout=120, stream=True)
@@ -268,26 +274,28 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
             except (requests.ConnectionError, requests.Timeout,
                     _ureq.URLError, _socket.timeout, OSError):
                 if attempt < max_attempts - 1:
-                    delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
-                    print(f"  Connection error, retrying in {delay:.0f}s (attempt {attempt+1}/{max_attempts})",
+                    if delay_seconds:
+                        d = delay_seconds
+                    else:
+                        d = 5 * (2 ** attempt) + random.uniform(0, 3)
+                    print(f"  Connection error, retrying in {d:.0f}s (attempt {attempt+1}/{max_attempts})",
                           file=sys.stderr)
-                    time.sleep(delay)
+                    time.sleep(d)
                     continue
                 raise
-            if st == 429 or st >= 500:
+            if not is_ema and (st == 429 or st >= 500):
                 if attempt < max_attempts - 1:
-                    retry_after = (r.headers.get("Retry-After", "") if not is_ema
-                                   else r.getheader("Retry-After", ""))
-                    delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
+                    retry_after = r.headers.get("Retry-After", "")
+                    d = 5 * (2 ** attempt) + random.uniform(0, 3)
                     if retry_after and retry_after.isdigit():
-                        delay = max(delay, int(retry_after))
-                    print(f"  HTTP {st}, retrying in {delay:.0f}s (attempt {attempt+1}/{max_attempts})",
+                        d = max(d, int(retry_after))
+                    print(f"  HTTP {st}, retrying in {d:.0f}s (attempt {attempt+1}/{max_attempts})",
                           file=sys.stderr)
-                    time.sleep(delay)
+                    time.sleep(d)
                     continue
             if is_ema:
                 if st >= 400:
-                    raise Exception(f"HTTP {st} for {url}")
+                    raise Exception(f"EMA HTTP {st} for {url}")
                 ct = (r.getheader("Content-Type", "") or "").lower()
             else:
                 r.raise_for_status()
