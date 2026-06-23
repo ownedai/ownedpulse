@@ -46,7 +46,7 @@ app.include_router(sources_router, prefix="/api/sources")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://rp.ownedai.dev", "http://localhost:5173", "http://192.168.3.3:5173", "http://192.168.3.2:5173"],
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,6 +69,15 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
+# Handle both bare hostnames and full URLs (e.g. http://10.0.2.2:11434 for external Ollama)
+_OLLAMA_PARSED = OLLAMA_HOST
+if "://" in OLLAMA_HOST:
+    from urllib.parse import urlparse as _up
+    _pu = _up(OLLAMA_HOST)
+    _OLLAMA_PARSED = _pu.hostname or OLLAMA_HOST
+    if _pu.port:
+        OLLAMA_PORT = _pu.port
+OLLAMA_BASE = f"http://{_OLLAMA_PARSED}:{OLLAMA_PORT}"
 OLLAMA_GEN_MODEL = os.getenv("OLLAMA_GEN_MODEL", "phi4:14b-q8_0")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
 CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "phi4:14b-q8_0")
@@ -133,6 +142,7 @@ def init_db():
             ("retrieval_params", "JSONB"),
             ("langfuse_trace_id", "TEXT"),
             ("model_used", "TEXT"),
+            ("classifier", "TEXT"),
         ]
         for col_name, col_type in migrations:
             cur.execute(
@@ -386,6 +396,26 @@ def _discover_feed(feed_id: str) -> None:
         logger.error("[startup] discovery failed for %s: %s", feed_id, e)
 
 
+def _seed_base_corpus() -> None:
+    """Run seed_registry.py to register base corpus documents.
+    Idempotent — uses ON CONFLICT DO UPDATE so safe to call every startup.
+    Runs in a background thread, non-blocking.
+    """
+    try:
+        result = subprocess.run(
+            ["python3", "/opt/scripts/registry/seed_registry.py"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            logger.warning("[startup] seed_registry.py failed: %s", result.stderr[:500])
+        else:
+            logger.info("[startup] seed_registry.py completed")
+    except subprocess.TimeoutExpired:
+        logger.warning("[startup] seed_registry.py timed out after 120s")
+    except Exception as e:
+        logger.warning("[startup] seed_registry.py error: %s", e)
+
+
 def populate_registry_if_empty() -> None:
     """Check each enabled feed in feed_config. For any feed with zero
     registered documents, spawn a background discovery thread.
@@ -457,6 +487,7 @@ async def startup():
     setup_scheduler()
     scheduler.start()
     logger.info("APScheduler started")
+    threading.Thread(target=_seed_base_corpus, daemon=True).start()
     populate_registry_if_empty()
 
 
@@ -529,10 +560,18 @@ def normalise_agency_for_filter(agency: str) -> list[str]:
 CLASSIFIER_SYSTEM_PROMPT = (
     "You are a query classifier for a regulatory document knowledge base. "
     "Classify the user query into exactly one category:\n"
-    "CONTENT: requires reading document text to answer — explanations, requirements, procedures, what a regulation says\n"
-    "METADATA: requires knowing what documents exist — counts, lists, dates, versions, publication status, which issuing bodies\n"
-    "SUPERSEDE: asks about revision history, what replaced what, changes between versions, or compares document versions\n"
-    "Respond with exactly one word. No punctuation, no explanation."
+    "CONTENT: requires reading document text to answer — explanations, requirements, "
+    "procedures, what a regulation says, summaries of guidance on a topic. "
+    "Also use CONTENT for queries about recent or latest guidance on a topic, "
+    "even if they mention dates or time periods — these require reading document content, "
+    "not just listing what exists.\n"
+    "METADATA: requires only knowing what documents exist in the corpus — "
+    "counts, lists of document titles, which issuing bodies are covered, "
+    "how many documents are indexed. Only use METADATA if no document content needs to be read.\n"
+    "SUPERSEDE: asks about revision history, what replaced what, "
+    "changes between versions, or explicitly compares two versions of the same document.\n"
+    "Respond with exactly one word: CONTENT, METADATA, or SUPERSEDE. "
+    "No punctuation, no explanation."
 )
 
 
@@ -558,15 +597,12 @@ def classify_query(query: str) -> tuple[str, str]:
         resp.raise_for_status()
         result = resp.json().get("response", "").strip().upper()
 
-        if result in ("CONTENT", "METADATA"):
+        if result in ("CONTENT", "METADATA", "SUPERSEDE"):
             logger.info(f"LLM classifier: '{query[:80]}' → {result}")
             return result, f"llm:{CLASSIFIER_MODEL}"
-        elif result == "SUPERSEDE":
-            logger.info(f"LLM classifier: '{query[:80]}' → SUPERSEDE (fallback to CONTENT — no handler yet)")
-            return "CONTENT", f"llm:{CLASSIFIER_MODEL}"
-        else:
-            logger.warning(f"LLM classifier returned unexpected '{result}' — falling back to CONTENT")
-            return "CONTENT", f"llm:{CLASSIFIER_MODEL}"
+        # Unrecognised response → fall back to CONTENT
+        logger.warning("classify_query: unrecognised classifier response %r — falling back to CONTENT", result)
+        return "CONTENT", f"llm:{CLASSIFIER_MODEL}:fallback"
 
     except Exception as e:
         logger.error(f"LLM classifier failed: {e} — falling back to CONTENT")
@@ -576,8 +612,6 @@ def classify_query(query: str) -> tuple[str, str]:
 # ── Ollama helpers ────────────────────────────────────────────────────────────
 
 import httpx
-
-OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
 
 async def ollama_generate(
@@ -1443,6 +1477,11 @@ async def submit_query(request: QueryRequest):
     routing_path, classifier = classify_query(request.query)
     if routing_path == "METADATA":
         result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
+    elif routing_path == "SUPERSEDE":
+        # SUPERSEDE routed to CONTENT path — no dedicated handler yet.
+        # Logged in query_history.routing_path as "SUPERSEDE" for visibility.
+        logger.info("classify_query: SUPERSEDE path — routing to CONTENT handler")
+        result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
     else:
         result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
 
