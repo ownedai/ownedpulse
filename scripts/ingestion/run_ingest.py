@@ -285,7 +285,7 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
                           file=sys.stderr)
                     time.sleep(d)
                     continue
-                raise
+                raise Exception(f"Download failed after {max_attempts} attempts — {url}")
             if not is_ema and (st == 429 or st >= 500):
                 if attempt < max_attempts - 1:
                     retry_after = r.headers.get("Retry-After", "")
