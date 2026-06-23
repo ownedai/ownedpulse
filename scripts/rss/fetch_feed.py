@@ -23,6 +23,25 @@ from bs4 import BeautifulSoup
 
 HEADERS = {"User-Agent": "ownedai-regulatory-pipeline/1.0"}
 
+# EMA CloudFront CDN requires browser-like headers with a Referer pointing to
+# the EMA search page. Without this, requests get 404 HTML error pages.
+# See: https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format
+EMA_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json,application/pdf,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.ema.europa.eu/en/search",
+}
+
+
+def _ema_proxies():
+    """Return SOCKS5 proxy dict for EMA requests if EMA_PROXY is set.
+    Returns None otherwise (use default outbound connection)."""
+    proxy = os.environ.get("EMA_PROXY")
+    if not proxy:
+        return None
+    return {"http": proxy, "https": proxy}
+
 # US timezone abbreviations not understood by dateutil by default
 TZINFOS = {
     "EDT": tzoffset("EDT", -4*3600), "EST": tzoffset("EST", -5*3600),
@@ -192,45 +211,32 @@ def fetch_ich(feed: dict) -> tuple:
 # ── EMA bulk JSON scraper ──────────────────────────────────────────────────
 
 EMA_JSON_URL = (
-    'https://www.ema.europa.eu/en/documents/report/general-json-report_en.json'
+    'https://www.ema.europa.eu/en/documents/report/documents-output-json-report_en.json'
 )
 
 def _classify_ema_record(rec: dict) -> str | None:
     """Classify an EMA JSON report record as sci or reg guideline.
     Returns 'ema_sci_guidelines', 'ema_reg_guidance', or None (skip).
+
+    Uses the explicit 'type' field from EMA's JSON schema (June 2026).
+    Replaces the old keyword-matching on 'title' which is now 'name'.
     """
-    title = rec.get('title', '').lower()
-    url = rec.get('general_url', '')
+    doc_type = rec.get('type', '')
+    url = rec.get('document_url', '')
 
     if not url or url in ('', '#'):
         return None
 
-    # Exclude all non-document URL prefixes
-    SKIP_PREFIXES = (
-        '/en/human-regulatory-overview/',
-        '/en/veterinary-regulatory-overview/',
-        '/en/about-us/',
-        '/en/committees/',
-        '/en/partners-networks/',
-        '/en/medicines/',
-        '/en/news',
-        '/en/events/',
-    )
-    if any(url.startswith('https://www.ema.europa.eu' + p) for p in SKIP_PREFIXES):
-        return None
-
-    is_sci = 'scientific guideline' in title
-    is_reg = any(x in title for x in ('regulatory', 'procedural', 'guidance'))
-
-    if is_sci:
-        return 'ema_sci_guidelines'   # sci wins on overlap
-    elif is_reg:
+    if doc_type == 'scientific-guideline':
+        return 'ema_sci_guidelines'
+    elif doc_type == 'regulatory-procedural-guideline':
         return 'ema_reg_guidance'
     return None
 def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cutoff_date=None) -> list:
     """Download EMA bulk JSON, classify and filter for the target feed.
-    Single-file download — 2,046 total records. Each record is classified
-    as sci or reg; only records matching target_feed_id are returned.
+    Single-file download — ~69K total records (June 2026 schema).
+    Each record is classified as sci or reg via the explicit 'type' field;
+    only records matching target_feed_id are returned.
     """
     from dateutil import parser as dateparser
 
@@ -242,9 +248,21 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
         cutoff = None
 
     logger.info("EMA JSON: downloading %s", EMA_JSON_URL)
-    r = requests.get(EMA_JSON_URL, headers=HEADERS, timeout=60)
-    r.raise_for_status()
-    data = r.json()
+
+    for attempt in range(1, 4):
+        try:
+            if attempt > 1:
+                backoff = 5.0 * (2 ** (attempt - 2))
+                logger.warning("EMA JSON: retry %d/3 in %.0fs", attempt, backoff)
+                time.sleep(backoff)
+            r = requests.get(EMA_JSON_URL, headers=EMA_HEADERS, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            break
+        except Exception as e:
+            logger.warning("EMA JSON: attempt %d/3 failed: %s", attempt, e)
+            if attempt == 3:
+                raise
     records = data.get('data', data) if isinstance(data, dict) else data
     logger.info("EMA JSON: %d total records", len(records))
 
@@ -254,8 +272,8 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
         if feed_id != target_feed_id:
             continue
 
-        title = rec.get('title', '')
-        url = rec.get('general_url', '')
+        title = rec.get('name', '')
+        url = rec.get('document_url', '')
         if not title or not url:
             continue
 
@@ -284,7 +302,7 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
                 'pub_date':       pub_date,
                 'authority':      'EMA',
                 'feed_id':        feed_id,
-                'rss_body':       rec.get('summary', ''),
+                'rss_body':       rec.get('reference_number', ''),
                 'feed_item_guid': url,
             })
 
@@ -311,8 +329,10 @@ def fetch_fda_press(feed: dict, months_override: int | None = None, cutoff_date=
     from urllib.parse import urljoin
     from dateutil import parser as dateparser
 
-    FDA_PRESS_URL = 'https://www.fda.gov/news-events/newsroom/press-announcements'
+    FDA_PRESS_URL = 'https://www.fda.gov/news-events/fda-newsroom/press-announcements'
     DELAY = 2.0
+    MAX_RETRIES = 3
+    RETRY_BACKOFF = 5.0  # seconds — doubles each retry
 
     if months_override is not None:
         cutoff = datetime.now(timezone.utc) - relativedelta(months=months_override)
@@ -326,15 +346,44 @@ def fetch_fda_press(feed: dict, months_override: int | None = None, cutoff_date=
 
     while True:
         url = f'{FDA_PRESS_URL}?page={page}'
-        try:
-            time.sleep(DELAY)
-            r = requests.get(url, headers=HEADERS, timeout=30)
-            if r.status_code == 404:
+
+        # Fetch page with retry on transient errors (DNS, connection reset, timeout)
+        soup = None
+        is_404 = False
+        last_error = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                if attempt > 1:
+                    backoff = RETRY_BACKOFF * (2 ** (attempt - 2))
+                    logger.warning(
+                        "FDA press page %d — retry %d/%d in %.0fs",
+                        page, attempt, MAX_RETRIES, backoff,
+                    )
+                    time.sleep(backoff)
+                else:
+                    time.sleep(DELAY)
+                r = requests.get(url, headers=HEADERS, timeout=30)
+                if r.status_code == 404:
+                    is_404 = True
+                    break
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, 'html.parser')
+                last_error = None
                 break
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, 'html.parser')
-        except Exception as e:
-            logger.error(f"FDA press error page {page}: {e}")
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "FDA press page %d — attempt %d/%d failed: %s",
+                    page, attempt, MAX_RETRIES, e,
+                )
+
+        if is_404:
+            break
+        if soup is None:
+            logger.error(
+                "FDA press page %d — all %d attempts failed, last error: %s",
+                page, MAX_RETRIES, last_error,
+            )
             break
 
         page_items = []

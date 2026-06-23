@@ -247,32 +247,35 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
             stored_hash = sha_file.read_text(encoding="utf-8").strip()
 
     req_headers = {"User-Agent": "Mozilla/5.0 (compatible; regpulse/1.0)"}
+    # EMA CloudFront CDN requires browser-like headers with a Referer.
+    # Without these, all requests get 404 HTML error pages.
+    ema_req_headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/pdf,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.ema.europa.eu/en/search",
+    }
     dest_tmp = archive_dir / "_download.tmp"
 
     def _stream_to_file(url: str, dest: Path) -> tuple:
         """Download url → dest with retry. Returns (sha256_hex, is_pdf).
 
-        EMA: 3 attempts, 30s flat delay between retries. EMA's CDN is
-        unreliable at the origin level — don't waste queue time on it.
-        Fails fast so the pipeline moves on to FDA/ICH docs.
+        EMA: 3 attempts, 30s flat delay between retries. Uses browser-like
+        headers with Referer to satisfy CloudFront CDN. Fails fast so the
+        pipeline moves on to FDA/ICH docs.
 
         Non-EMA (FDA/ICH): 4 attempts, exponential backoff (5/10/20s).
         """
-        import urllib.request as _ureq, socket as _socket
         is_ema = "ema.europa.eu" in url
         max_attempts = 3 if is_ema else 4
         delay_seconds = 30 if is_ema else 0  # 0 = use exponential below
         for attempt in range(max_attempts):
             try:
-                if is_ema:
-                    _req = _ureq.Request(url, headers=req_headers)
-                    r = _ureq.urlopen(_req, timeout=60)
-                    st = r.status
-                else:
-                    r = requests.get(url, headers=req_headers, timeout=120, stream=True)
-                    st = r.status_code
-            except (requests.ConnectionError, requests.Timeout,
-                    _ureq.URLError, _socket.timeout, OSError):
+                r = requests.get(url,
+                    headers=ema_req_headers if is_ema else req_headers,
+                    timeout=120, stream=True)
+                st = r.status_code
+            except (requests.ConnectionError, requests.Timeout):
                 if attempt < max_attempts - 1:
                     if delay_seconds:
                         d = delay_seconds
@@ -294,26 +297,19 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
                     time.sleep(d)
                     continue
             if is_ema:
+                # EMA CDN returns 404 HTML on auth failures — fail immediately,
+                # don't retry on client errors (4xx).
                 if st >= 400:
                     raise Exception(f"EMA HTTP {st} for {url}")
-                ct = (r.getheader("Content-Type", "") or "").lower()
             else:
                 r.raise_for_status()
-                ct = r.headers.get("content-type", "").lower()
+            ct = r.headers.get("content-type", "").lower()
             is_pdf = "pdf" in ct or url.lower().split("?")[0].endswith(".pdf")
             h = hashlib.sha256()
             with open(dest, "wb") as fh:
-                if is_ema:
-                    while True:
-                        chunk = r.read(8192)
-                        if not chunk:
-                            break
-                        fh.write(chunk)
-                        h.update(chunk)
-                else:
-                    for chunk in r.iter_content(8192):
-                        fh.write(chunk)
-                        h.update(chunk)
+                for chunk in r.iter_content(8192):
+                    fh.write(chunk)
+                    h.update(chunk)
             return h.hexdigest(), is_pdf
 
     try:
