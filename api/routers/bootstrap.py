@@ -3,6 +3,7 @@
 import os
 import uuid
 import json
+import time
 import asyncio
 import threading
 from datetime import datetime, timezone
@@ -252,6 +253,13 @@ async def bootstrap_run(body: BootstrapRunRequest):
         "docs": [],
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": None,
+        # ETA is computed from the running average of actual per-doc wall-clock
+        # ingestion times. _doc_started_at marks when the current doc began; on
+        # completion its elapsed seconds are appended to _doc_times. The average
+        # is recomputed every 5 docs and used for the remaining-time estimate.
+        "_doc_started_at": None,
+        "_doc_times": [],
+        "_avg_seconds_per_doc": None,
     }
 
     redownload = body.redownload if body.redownload in ("none", "check", "force") else "none"
@@ -387,6 +395,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                 break
 
             doc_id = doc["doc_id"]
+            session["_doc_started_at"] = time.monotonic()
             try:
                 result = ingest_documents(
                     [doc],
@@ -436,6 +445,16 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                     "reason": str(e)[:200],
                 })
 
+            # Record actual per-doc wall-clock time and refresh the running
+            # average every 5 ingested documents so the ETA reflects real data.
+            if session["_doc_started_at"] is not None:
+                elapsed = time.monotonic() - session["_doc_started_at"]
+                session["_doc_times"].append(elapsed)
+                session["_doc_started_at"] = None
+                times = session["_doc_times"]
+                if len(times) >= 5 and len(times) % 5 == 0:
+                    session["_avg_seconds_per_doc"] = sum(times) / len(times)
+
             session["processed"] = i + 1
 
         if session.get("cancelled"):
@@ -482,7 +501,14 @@ async def bootstrap_progress(session_id: str):
 
                 # Overall progress event
                 remaining = session['total'] - session['processed']
-                eta_seconds = max(0, remaining * SECONDS_PER_DOC)
+                # ETA from the running average of actual per-doc ingestion times
+                # (recomputed every 5 docs in the worker). Falls back to the static
+                # SECONDS_PER_DOC estimate until enough real data is available.
+                avg = session.get('_avg_seconds_per_doc')
+                if avg and avg > 0:
+                    eta_seconds = max(0, int(remaining * avg))
+                else:
+                    eta_seconds = max(0, remaining * SECONDS_PER_DOC)
                 yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'skipped': session.get('skipped', 0), 'status': session['status'], 'eta_seconds': eta_seconds})}\n\n"
 
                 if session["status"] not in ("pending", "running"):
