@@ -143,6 +143,13 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     };
   }, []);
 
+  // Dismiss stale completed state on mount so the config form shows immediately
+  // (the shared hook state survives unmount; a prior stopped/finished run
+  //  would otherwise flash its old progress before the async re-check fires)
+  useEffect(() => {
+    if (uiMode === 'complete') dismiss();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load bootstrap status on mount; auto-reconnect to any active session
   useEffect(() => {
     let cancelled = false;

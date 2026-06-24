@@ -17,3 +17,5 @@ semchunk>=2.2.0
 transformers>=4.0.0
 tree-sitter>=0.20.0
 pypdf
+requests>=2.32.0
+PySocks>=1.7.0

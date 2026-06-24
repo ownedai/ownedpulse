@@ -22,6 +22,15 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
+# Handle both bare hostnames and full URLs (e.g. http://10.0.2.2:11434 for external Ollama)
+_OLLAMA_PARSED = OLLAMA_HOST
+if "://" in OLLAMA_HOST:
+    from urllib.parse import urlparse as _up
+    _pu = _up(OLLAMA_HOST)
+    _OLLAMA_PARSED = _pu.hostname or OLLAMA_HOST
+    if _pu.port:
+        OLLAMA_PORT = _pu.port
+OLLAMA_BASE = f"http://{_OLLAMA_PARSED}:{OLLAMA_PORT}"
 DOCLING_HOST = os.getenv("DOCLING_HOST", "http://docling:5001")
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "http://langfuse:3000")
 
@@ -89,7 +98,7 @@ async def admin_health():
     # Ollama
     try:
         async with httpx.AsyncClient() as http:
-            r = await http.get(f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/tags", timeout=10)
+            r = await http.get(f"{OLLAMA_BASE}/api/tags", timeout=10)
             r.raise_for_status()
             data = r.json()
             models = [m["name"] for m in data.get("models", [])]
@@ -99,7 +108,7 @@ async def admin_health():
                 cur = conn.cursor()
                 cur.execute("SELECT value FROM system_config WHERE key = 'active_llm_model'")
                 row = cur.fetchone()
-                active_model = row[0] if row else None
+                active_model = (row[0] if row else None) or os.getenv("OLLAMA_GEN_MODEL")
                 cur.close()
             finally:
                 conn.close()
@@ -251,12 +260,12 @@ async def admin_models():
     finally:
         conn.close()
 
-    active_model = row[0] if row else None
+    active_model = (row[0] if row else None) or os.getenv("OLLAMA_GEN_MODEL")
 
     # Get available models from Ollama
     try:
         async with httpx.AsyncClient() as http:
-            r = await http.get(f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/tags", timeout=10)
+            r = await http.get(f"{OLLAMA_BASE}/api/tags", timeout=10)
             r.raise_for_status()
             data = r.json()
             available_models = [m["name"] for m in data.get("models", [])]
@@ -280,7 +289,7 @@ async def admin_update_model(body: ModelUpdateRequest):
     # Validate model exists in Ollama
     try:
         async with httpx.AsyncClient() as http:
-            r = await http.get(f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/tags", timeout=10)
+            r = await http.get(f"{OLLAMA_BASE}/api/tags", timeout=10)
             r.raise_for_status()
             data = r.json()
             available_models = [m["name"] for m in data.get("models", [])]
@@ -312,7 +321,6 @@ async def admin_update_model(body: ModelUpdateRequest):
 @router.get("/model-status")
 async def admin_model_status():
     """Check Ollama, Qdrant, and PostgreSQL status for the System box."""
-    OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
     # Get active model name from system_config
     active_model = None
@@ -322,14 +330,14 @@ async def admin_model_status():
             cur = conn.cursor()
             cur.execute("SELECT value FROM system_config WHERE key = 'active_llm_model'")
             row = cur.fetchone()
-            active_model = row[0] if row else None
+            active_model = (row[0] if row else None) or os.getenv("OLLAMA_GEN_MODEL")
             cur.close()
         finally:
             conn.close()
     except Exception:
         pass
 
-    embed_model = "mxbai-embed-large"
+    embed_model = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
 
     response = {
         "model": active_model,
@@ -422,7 +430,6 @@ async def admin_model_status():
 @router.post("/warmup")
 async def admin_warmup():
     """Fire a minimal generate request to trigger Ollama model load. Returns immediately."""
-    OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
     active_model = None
     try:
@@ -431,7 +438,7 @@ async def admin_warmup():
             cur = conn.cursor()
             cur.execute("SELECT value FROM system_config WHERE key = 'active_llm_model'")
             row = cur.fetchone()
-            active_model = row[0] if row else None
+            active_model = (row[0] if row else None) or os.getenv("OLLAMA_GEN_MODEL")
             cur.close()
         finally:
             conn.close()

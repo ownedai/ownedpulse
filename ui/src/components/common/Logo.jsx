@@ -17,9 +17,16 @@ export function Wordmark({ onLight = false }) {
 
 export default function Logo({ onLight = false, showWordmark = true }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    <a
+      href="https://ownedai.dev"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="ownedai.dev"
+      className="rp-logo"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}
+    >
       <Mark size="sz-24" onLight={onLight} />
       {showWordmark && <Wordmark onLight={onLight} />}
-    </span>
+    </a>
   );
 }

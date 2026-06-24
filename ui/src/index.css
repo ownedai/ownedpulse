@@ -164,6 +164,16 @@ body {
   top: 22%;
   background: var(--accent-d);
   border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
+.rp-logo {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.rp-logo:hover .rp-mark .ci {
+  background: #ffffff;
 }
 
 .rp-mark.on-light .sq {

@@ -36,6 +36,8 @@ class BootstrapRunRequest(BaseModel):
     scope: BootstrapScope
     force: bool = False
     redownload: str = "none"  # "none" | "check" | "force"
+    months_back: int | None = None  # limit non-corpus docs to recent N months; None = all
+    max_docs: int | None = None  # cap total documents to ingest; None = all
 
 
 class ReingestDocRequest(BaseModel):
@@ -237,7 +239,7 @@ async def bootstrap_run(body: BootstrapRunRequest):
         )
 
     # Build doc list from scope
-    docs = _build_doc_list(body.scope)
+    docs = _build_doc_list(body.scope, body.months_back, body.max_docs)
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope")
 
@@ -339,7 +341,7 @@ def _interleave_docs(docs: list) -> list:
     return interleaved
 
 
-def _build_doc_list(scope: BootstrapScope) -> list:
+def _build_doc_list(scope: BootstrapScope, months_back: int | None = None, max_docs: int | None = None) -> list:
     conditions = []
     if scope.fda_guidance or scope.fda_press:
         conditions.append("issuing_body = 'FDA'")
@@ -352,6 +354,20 @@ def _build_doc_list(scope: BootstrapScope) -> list:
         return []
 
     where = " OR ".join(f"({c})" for c in conditions)
+    where = f"({where})"
+
+    # Always include corpus docs. For non-corpus docs, limit to
+    # recent publication_date when months_back is set.
+    if months_back is not None and months_back > 0:
+        where += (
+            f" AND (corpus_doc = TRUE OR ("
+            f"  metadata_json->>'publication_date' IS NOT NULL"
+            f"  AND metadata_json->>'publication_date' != ''"
+            f"  AND (metadata_json->>'publication_date')::date"
+            f"    > CURRENT_DATE - INTERVAL '{int(months_back)} months'"
+            f"))"
+        )
+
     try:
         conn = get_pg_conn()
         try:
@@ -364,7 +380,10 @@ def _build_doc_list(scope: BootstrapScope) -> list:
         finally:
             conn.close()
         docs = [{"doc_id": row[0], "issuing_body": row[1] or "", "phase": "live"} for row in rows]
-        return _interleave_docs(docs)
+        docs = _interleave_docs(docs)
+        if max_docs is not None and max_docs > 0:
+            docs = docs[:max_docs]
+        return docs
     except Exception:
         return []
 
