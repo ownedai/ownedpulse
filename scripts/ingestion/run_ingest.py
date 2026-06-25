@@ -915,10 +915,12 @@ def _is_not_viable(doc_id: str) -> bool:
 
 def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
                   redownload: str = "none") -> dict:
-    force = redownload in ("check", "force")
+    # 'check' / missing-only: skip already-ingested docs entirely.
+    # 'none' / 'force': re-process all selected docs (re-chunk, re-embed).
+    force = redownload in ("none", "force")
     archive_dir = get_archive_dir(doc_id, force=force)
     if archive_dir is None:
-        return {"status": "ok", "doc_id": doc_id, "note": "already ingested"}
+        return {"status": "ok", "doc_id": doc_id, "note": "already ingested — skipping (missing-only mode)" if redownload == "check" else "already ingested"}
 
     # If archive dir or metadata.json is missing, force a redownload regardless
     # of the requested redownload mode — the file was never fetched.
