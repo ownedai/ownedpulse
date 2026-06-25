@@ -425,11 +425,8 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                     )
                     if _cur.fetchone():
                         already += 1
-                        session["docs"].append({
-                            "doc_id": doc_id,
-                            "status": "skipped",
-                            "reason": "Already ingested — skipping (missing-only mode)",
-                        })
+                        # Don't log in docs — user asked for missing-only,
+                        # they don't care about files already ingested.
                     else:
                         ingest_docs.append(doc)
             _conn.close()
