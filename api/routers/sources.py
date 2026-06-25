@@ -321,13 +321,15 @@ async def sources_bootstrap(body: BootstrapRequest):
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 
-    # Map UI mode to redownload strategy (controls source file fetch, not the wipe)
-    # wipe_and_reload and full_reset always force full redownload
-    redownload = "force" if body.mode in ("wipe_and_reload", "full_reset") else body.redownload
+    # Map UI mode to redownload strategy (controls source file fetch, not the wipe).
+    # 'missing only' (redownload=check) skips the wipe and keeps existing files.
+    redownload = body.redownload
+    if body.mode in ("wipe_and_reload", "full_reset") and redownload != "check":
+        redownload = "force"
 
-    # When wipe_and_reload or full_reset: delete archive directories for selected docs
-    # so source files are re-downloaded from scratch, not overwritten in place.
-    if body.mode in ("wipe_and_reload", "full_reset"):
+    # When wipe_and_reload or full_reset (and not missing-only): delete archive
+    # directories for selected docs so source files are re-downloaded from scratch.
+    if body.mode in ("wipe_and_reload", "full_reset") and redownload != "check":
         import shutil
         from pathlib import Path
         ARCHIVE = Path("/archive")
