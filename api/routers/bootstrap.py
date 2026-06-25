@@ -407,6 +407,39 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
         })
         return
 
+    # Pre-scan: for 'missing only' mode, check which docs are already
+    # ingested so the total reflects only documents that need work.
+    if redownload == "check":
+        from lib.db import get_pg_conn as _get_conn
+        ingest_docs = []
+        already = 0
+        try:
+            _conn = _get_conn()
+            with _conn.cursor() as _cur:
+                for doc in docs:
+                    doc_id = doc["doc_id"]
+                    _cur.execute(
+                        "SELECT 1 FROM ingestion_state "
+                        "WHERE document_id = %s AND ingestion_status IN ('success','indexed')",
+                        (doc_id,),
+                    )
+                    if _cur.fetchone():
+                        already += 1
+                        session["docs"].append({
+                            "doc_id": doc_id,
+                            "status": "skipped",
+                            "reason": "Already ingested — skipping (missing-only mode)",
+                        })
+                    else:
+                        ingest_docs.append(doc)
+            _conn.close()
+        except Exception:
+            ingest_docs = docs  # fall back to full list on error
+            already = 0
+        docs = ingest_docs
+        session["total"] = len(docs)
+        session["already_ingested"] = already
+
     session["status"] = "running"
     try:
         for i, doc in enumerate(docs):
