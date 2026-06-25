@@ -248,7 +248,8 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     try {
       const { date_from, date_to } = getDateRange(depth, customFromYear, customToYear);
       const mode = fileStrategy === 'nuclear' ? 'full_reset' : 'wipe_and_reload';
-      const redownload = fileStrategy === 'use_local' ? 'none' : 'force';
+      const rd = { missing_only: 'check', use_local: 'none', redownload: 'force', nuclear: 'force' };
+      const redownload = rd[fileStrategy] || 'check';
       const baseCorpusIds = includeBaseCorpus ? (bootstrapStatus?.base_corpus || []).map(d => d.document_id) : [];
       const payload = {
         mode,
@@ -565,14 +566,15 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                 </div>
               </section>
 
-              {/* ── Section 4: File Strategy ── */}
+              {/* ── Section 4: Ingestion and File Strategy ── */}
               <section>
-                <SectionLabel>File Strategy</SectionLabel>
+                <SectionLabel>Ingestion and File Strategy</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {[
-                    { value: 'use_local',   label: 'Use local files where available', hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
-                    { value: 'redownload',  label: 'Re-download selected sources',    hint: 'Re-fetch files even if local copies exist' },
-                    { value: 'nuclear',     label: '☢ Nuclear reset',                  hint: 'Wipes ALL cached files including unselected sources, then re-downloads selected. Cannot be undone.' },
+                    { value: 'missing_only', label: 'Missing only',    hint: 'Download and embed only missing files — skip documents that are already ingested' },
+                    { value: 'use_local',    label: 'Re-embed selected and use local files where available', hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
+                    { value: 'redownload',   label: 'Re-download and re-embed selected', hint: 'Re-fetch and re-process only the selected sources' },
+                    { value: 'nuclear',      label: '☢ Nuclear reset', hint: 'Wipes ALL cached files from ALL sources (not just selected), then re-downloads selected. Cannot be undone.' },
                   ].map(opt => {
                     const active = fileStrategy === opt.value;
                     const isNuclear = opt.value === 'nuclear';
