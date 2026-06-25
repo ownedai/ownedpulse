@@ -579,7 +579,7 @@ async def bootstrap_progress(session_id: str):
                     eta_seconds = max(0, int(remaining * avg))
                 else:
                     eta_seconds = max(0, remaining * SECONDS_PER_DOC)
-                yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'skipped': session.get('skipped', 0), 'status': session['status'], 'eta_seconds': eta_seconds})}\n\n"
+                yield f"data: {json.dumps({'type': 'progress', 'total': session['total'], 'processed': session['processed'], 'succeeded': session['succeeded'], 'failed': session['failed'], 'skipped': session.get('skipped', 0), 'already_ingested': session.get('already_ingested', 0), 'status': session['status'], 'eta_seconds': eta_seconds})}\n\n"
 
                 if session["status"] not in ("pending", "running"):
                     break

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Tooltip from '../common/Tooltip';
 import useCorpusStats from '../../hooks/useCorpusStats';
 import { useBootstrapProgress, stopBootstrapTracking } from '../../hooks/useBootstrapProgress';
@@ -17,6 +17,7 @@ export default function CorpusStatsBar() {
   const { stats } = useCorpusStats();
   const { uiMode, progress, docEvents } = useBootstrapProgress();
   const [contextMenu, setContextMenu] = useState(null);
+  const navigate = useNavigate();
   const isRunning = uiMode === 'running' || stats?.ingestion_active;
 
   const handleContext = useCallback((e) => {
@@ -96,7 +97,9 @@ export default function CorpusStatsBar() {
         {isRunning && (
           <div
             className="ingestion-status"
+            onClick={() => navigate('/ingestions')}
             onContextMenu={handleContext}
+            style={{ cursor: 'pointer' }}
             title={uiMode === 'running'
               ? `Bootstrap: ${progress.processed} / ${progress.total} docs — ETA: ${eta}`
               : `Source ingestion running — ${stats?.ingestion_detail || ''}`}
