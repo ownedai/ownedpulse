@@ -351,35 +351,36 @@ async def sources_bootstrap(body: BootstrapRequest):
                     break
         logger.info("wipe_and_reload: deleted %d archive directories", wiped)
 
-    # Always wipe Qdrant chunks and reset registry for selected documents.
-    # This is a deliberate reload — the download mode only controls whether
-    # source files are re-fetched, not whether existing chunks are cleared.
-    doc_ids = [d["doc_id"] for d in docs]
-    try:
-        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        client.delete(
-            collection_name=QDRANT_COLLECTION,
-            points_selector=Filter(
-                must=[FieldCondition(key="document_id", match=MatchAny(any=doc_ids))]
-            ),
-        )
-    except Exception:
-        pass  # Qdrant wipe is best-effort; ingestion will overwrite anyway
-    try:
-        conn = get_pg_conn()
+    # Wipe Qdrant chunks and reset ingestion_state for selected documents.
+    # Skipped for 'missing only' (redownload=check) — those docs are not
+    # being re-ingested, so their state must be preserved for the pre-scan.
+    if body.redownload != "check":
+        doc_ids = [d["doc_id"] for d in docs]
         try:
-            cur = conn.cursor()
-            # GATE3c: delete ingestion_state rows — absence = not indexed
-            cur.execute(
-                "DELETE FROM ingestion_state WHERE document_id = ANY(%s)",
-                (doc_ids,),
+            client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            client.delete(
+                collection_name=QDRANT_COLLECTION,
+                points_selector=Filter(
+                    must=[FieldCondition(key="document_id", match=MatchAny(any=doc_ids))]
+                ),
             )
-            conn.commit()
-            cur.close()
-        finally:
-            conn.close()
-    except Exception:
-        pass  # Non-fatal — ingestion will update status on completion
+        except Exception:
+            pass  # Qdrant wipe is best-effort; ingestion will overwrite anyway
+        try:
+            conn = get_pg_conn()
+            try:
+                cur = conn.cursor()
+                # GATE3c: delete ingestion_state rows — absence = not indexed
+                cur.execute(
+                    "DELETE FROM ingestion_state WHERE document_id = ANY(%s)",
+                    (doc_ids,),
+                )
+                conn.commit()
+                cur.close()
+            finally:
+                conn.close()
+        except Exception:
+            pass  # Non-fatal — ingestion will update status on completion
 
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
