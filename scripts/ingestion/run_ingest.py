@@ -693,7 +693,13 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
                 "chunk_count": 0,
                 "detail": "No readable HTML source — file was re-downloaded as PDF",
             }
-        raw_text = source.read_text(encoding="utf-8").strip()
+        try:
+            raw_text = source.read_text(encoding="utf-8").strip()
+        except UnicodeDecodeError:
+            # Some downloaded HTML sources use non-UTF-8 encodings
+            # (e.g. Windows-1250/1251 Cyrillic, or binary garbage).
+            # Fall back to Latin-1 which decodes every byte.
+            raw_text = source.read_text(encoding="latin-1").strip()
         if not raw_text:
             raise ValueError(f"source.html is empty: {source}")
         text = clean_html_content(raw_text)
