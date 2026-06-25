@@ -290,7 +290,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
   };
   const hasSelection = includeBaseCorpus || activeSources.length > 0;
-  const canSubmit = confirmed && !submitting && !loading && !ingestionRunning && hasSelection && (fileStrategy !== 'nuclear' || nuclearConfirmed);
+  const canSubmit = (confirmed || fileStrategy === 'missing_only') && !submitting && !loading && !ingestionRunning && hasSelection && (fileStrategy !== 'nuclear' || nuclearConfirmed);
   const rssEstimate = estimate?.estimated_docs ?? null;
   const baseCount = includeBaseCorpus ? (bootstrapStatus?.base_corpus?.length || 9) : 0;
   const totalEstimate = rssEstimate !== null ? rssEstimate + baseCount : (hasSelection ? baseCount + 30 : null);
@@ -624,7 +624,8 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                 </div>
               </section>
 
-              {/* ── Section 5: Confirmation ── */}
+              {/* ── Section 5: Confirmation — skipped for Missing only (nothing is deleted) ── */}
+              {fileStrategy !== 'missing_only' && (
               <div style={{ borderTop: '1px solid var(--doc-border)', paddingTop: 16 }}>
                 <label className="rp-wipe-check" onClick={() => setConfirmed(c => !c)}>
                   <span className={`rp-check warn ${confirmed ? 'on' : ''}`}>
@@ -641,6 +642,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                   </label>
                 )}
               </div>
+              )}
 
             </div>
           )}
