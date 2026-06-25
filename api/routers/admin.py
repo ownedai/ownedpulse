@@ -621,6 +621,19 @@ async def resume_scheduler():
     return {"status": "resumed"}
 
 
+# ── POST /admin/scheduler/clear ──────────────────────────────────────────────
+
+@router.post("/scheduler/clear")
+async def clear_scheduler():
+    """Remove the daily ingestion job entirely. No scheduled runs until reconfigured."""
+    from lib.scheduler import get_scheduler
+    try:
+        get_scheduler().remove_job("daily_ingestion")
+    except Exception:
+        pass  # job may not exist
+    return {"status": "cleared"}
+
+
 # ── GET /admin/scheduler/config ───────────────────────────────────────────────
 
 @router.get("/scheduler/config")

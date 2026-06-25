@@ -194,6 +194,10 @@ export function resumeScheduler() {
   return request('/api/admin/scheduler/resume', { method: 'POST' });
 }
 
+export function clearScheduler() {
+  return request('/api/admin/scheduler/clear', { method: 'POST' });
+}
+
 export function getSchedulerConfig() {
   return request('/api/admin/scheduler/config');
 }

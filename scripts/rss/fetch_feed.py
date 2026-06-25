@@ -257,7 +257,15 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
                 time.sleep(backoff)
             r = requests.get(EMA_JSON_URL, headers=EMA_HEADERS, timeout=60)
             r.raise_for_status()
-            data = r.json()
+            try:
+                data = r.json()
+            except json.JSONDecodeError:
+                # EMA JSON sometimes has missing commas between records:
+                # '}    {' → '},  {'.  Attempt repair before giving up.
+                import re as _re
+                _raw = _re.sub(r'\}\s*\{', '}, {', r.text)
+                logger.warning("EMA JSON: repaired missing commas in JSON")
+                data = json.loads(_raw)
             break
         except Exception as e:
             logger.warning("EMA JSON: attempt %d/3 failed: %s", attempt, e)

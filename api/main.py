@@ -416,9 +416,50 @@ def _seed_base_corpus() -> None:
         logger.warning("[startup] seed_registry.py error: %s", e)
 
 
+def _last_ema_publication() -> datetime:
+    """Return the most recent EMA publication time (06:00 or 18:00 Amsterdam)."""
+    try:
+        from zoneinfo import ZoneInfo
+        ams = ZoneInfo("Europe/Amsterdam")
+    except (ImportError, ModuleNotFoundError):
+        # Python < 3.9 fallback: UTC+2 (CEST)
+        from datetime import timedelta as _td
+        ams = timezone(_td(hours=2))
+    now_ams = datetime.now(ams)
+    pub_0600 = now_ams.replace(hour=6, minute=0, second=0, microsecond=0)
+    pub_1800 = now_ams.replace(hour=18, minute=0, second=0, microsecond=0)
+    if now_ams >= pub_1800:
+        return pub_1800
+    elif now_ams >= pub_0600:
+        return pub_0600
+    else:
+        return pub_1800 - timedelta(days=1)
+
+
+def _feed_needs_discovery(feed_id: str, last_fetch_utc: datetime | None) -> bool:
+    """Return True if this feed should be re-discovered."""
+    now_utc = datetime.now(timezone.utc)
+    EMA_FEEDS = {"ema_sci_guidelines", "ema_reg_guidance"}
+
+    if last_fetch_utc is None:
+        return True  # never fetched
+
+    if feed_id in EMA_FEEDS:
+        # EMA publishes at 06:00 and 18:00 Amsterdam. Re-fetch if the
+        # last fetch was before the most recent publication window.
+        last_pub_ams = _last_ema_publication()
+        return last_fetch_utc < last_pub_ams
+    else:
+        # Other feeds: 24-hour throttle
+        age = (now_utc - last_fetch_utc).total_seconds()
+        return age >= 86400
+
+
 def populate_registry_if_empty() -> None:
-    """Check each enabled feed in feed_config. For any feed with zero
-    registered documents, spawn a background discovery thread.
+    """Per-feed discovery throttle.  Runs full feed fetch for feeds that need it.
+
+    EMA feeds are aligned to EMA publication windows (06:00 / 18:00 Amsterdam).
+    Other feeds use a 24-hour throttle.  Feeds that are up-to-date are skipped.
 
     Non-blocking — returns immediately, threads run independently.
     Called once at startup.
@@ -426,27 +467,43 @@ def populate_registry_if_empty() -> None:
     conn = None
     try:
         conn = get_pg_conn()
+        conn.autocommit = True
+
+        # Load all configured feeds
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT fc.feed_id
-                FROM feed_config fc
-                LEFT JOIN document_registry dr USING (feed_id)
-                WHERE fc.enabled = TRUE AND dr.document_id IS NULL
-                GROUP BY fc.feed_id
-                ORDER BY fc.feed_id
-            """)
-            empty_feeds = [row[0] for row in cur.fetchall()]
+            cur.execute("SELECT feed_id FROM feed_config ORDER BY feed_id")
+            feeds = [row[0] for row in cur.fetchall()]
 
-        if not empty_feeds:
-            logger.info("[startup] registry populated for all feeds — skipping discovery")
-            return
+        # Load per-feed last-fetch timestamps
+        feed_keys = {f"last_registry_fetch_{f}" for f in feeds}
+        last_fetches: dict[str, datetime | None] = {f: None for f in feeds}
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT key, value FROM system_config WHERE key = ANY(%s)",
+                (list(feed_keys),),
+            )
+            for key, value in cur.fetchall():
+                feed_id = key.removeprefix("last_registry_fetch_")
+                try:
+                    last_fetches[feed_id] = datetime.fromisoformat(value)
+                except (ValueError, TypeError):
+                    last_fetches[feed_id] = None
 
-        logger.info(
-            "[startup] %d feed(s) have no registered documents: %s — starting background discovery",
-            len(empty_feeds), empty_feeds,
-        )
+        # Decide which feeds need discovery
+        stale_feeds = [f for f in feeds if _feed_needs_discovery(f, last_fetches[f])]
+        if stale_feeds:
+            logger.info(
+                "[startup] discovery needed for %d/%d feed(s): %s",
+                len(stale_feeds), len(feeds),
+                ", ".join(f"{f} (last={last_fetches[f]})" for f in stale_feeds),
+            )
+        else:
+            logger.info("[startup] all %d feed(s) up-to-date — skipping discovery", len(feeds))
 
-        for feed_id in empty_feeds:
+        # Spawn discovery threads and update timestamps
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for feed_id in stale_feeds:
+            key = f"last_registry_fetch_{feed_id}"
             t = threading.Thread(
                 target=_discover_feed,
                 args=(feed_id,),
@@ -454,7 +511,13 @@ def populate_registry_if_empty() -> None:
                 name=f"discovery-{feed_id}",
             )
             t.start()
-            logger.info("[startup] discovery thread started for %s", feed_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO system_config (key, value, updated_at) "
+                    "VALUES (%s, %s, NOW()) "
+                    "ON CONFLICT (key) DO UPDATE SET value = %s, updated_at = NOW()",
+                    (key, now_iso, now_iso),
+                )
 
     except Exception as e:
         logger.error("[startup] populate_registry_if_empty failed: %s", e)

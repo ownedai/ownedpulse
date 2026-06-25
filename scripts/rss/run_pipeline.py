@@ -17,11 +17,21 @@ Usage:
     python run_pipeline.py --feed-id ema_reg_guidance [--run-id <uuid>] [--mode live|backfill]
 """
 
-import os, sys, json, argparse, subprocess, uuid, time, logging
+import os, sys, json, argparse, subprocess, uuid, time, logging, re, hashlib
+from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 import psycopg2
 
 sys.path.insert(0, "/opt/scripts")
 from ingestion.config import PG_DSN
+
+FEED_AUTHORITY = {
+    'fda_drugs': 'FDA',
+    'fda_press_releases': 'FDA',
+    'ema_sci_guidelines': 'EMA',
+    'ema_reg_guidance': 'EMA',
+    'ich_guidelines': 'ICH',
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("run_pipeline")
@@ -71,6 +81,66 @@ def fetch_items(feed_id: str, run_id: str, mode: str, trigger_source: str, trigg
         return data.get("items", data) if isinstance(data, dict) else data
     except json.JSONDecodeError as e:
         raise RuntimeError(f"fetch_feed bad JSON: {e} stdout={stdout[:200]}")
+
+
+def _register_feed_items(feed_id: str, items: list) -> int:
+    """Upsert all fetched items into document_registry as identity rows only.
+    No ingestion, no archiving — just metadata registration.
+    Returns count of rows upserted.
+    """
+    if not items:
+        return 0
+    authority = FEED_AUTHORITY.get(feed_id, '')
+
+    def _make_doc_id(fid: str, url: str) -> str:
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+        path = urlparse(url).path.rstrip("/").split("/")[-1]
+        path = re.sub(r"[^a-z0-9\-]", "-", path.lower())[:40].strip("-")
+        return f"{fid}-{path}-{url_hash}" if path else f"{fid}-{url_hash}"
+
+    conn = psycopg2.connect(PG_DSN)
+    conn.autocommit = True
+    count = 0
+    try:
+        with conn.cursor() as cur:
+            for item in items:
+                url = item.get('url', '')
+                if not url:
+                    continue
+                doc_id = _make_doc_id(feed_id, url)
+                title = item.get('title', '')
+                pub_date = item.get('pub_date', '') or None
+                if pub_date and isinstance(pub_date, str) and len(pub_date) >= 10:
+                    pub_date = pub_date[:10]
+                else:
+                    pub_date = None
+
+                archive_path = f"/mnt/data/regulatory_archive/{authority.lower()}/{doc_id}" if authority else f"/archive/{doc_id}"
+
+                cur.execute("""
+                    INSERT INTO document_registry (
+                        document_id, source_url, issuing_body,
+                        document_class, document_type, document_status,
+                        feed_id, corpus_doc, archive_path,
+                        publication_date, metadata_json, created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, 'regulatory-public', 'guidance', 'final',
+                        %s, FALSE, %s,
+                        %s, %s, NOW(), NOW()
+                    )
+                    ON CONFLICT (document_id) DO NOTHING
+                """, (
+                    doc_id, url, authority,
+                    feed_id, archive_path,
+                    pub_date,
+                    json.dumps({'document_title': title, 'title': title,
+                                'feed_id': feed_id, 'source_url': url}),
+                ))
+                if cur.rowcount > 0:
+                    count += 1
+    finally:
+        conn.close()
+    return count
 
 
 def resolve_item(item: dict):
@@ -243,15 +313,28 @@ def main():
     run_id = args.run_id or str(uuid.uuid4())
     logger.info(f"Pipeline starting: feed={args.feed_id} run_id={run_id}")
 
-    # Step 1: Fetch — creates run_log row, returns new items
+    # Step 1: Full fetch — get ALL items from the feed (no date limit).
+    # This populates document_registry with complete metadata for every
+    # known document. Ingestion is scoped separately (see Step 1b).
     try:
-        items = fetch_items(args.feed_id, run_id, args.mode, args.trigger_source, args.triggered_by,
-                            months_override=args.months_override, max_age_days=args.max_age_days)
+        all_items = fetch_items(args.feed_id, run_id, args.mode, args.trigger_source, args.triggered_by,
+                                months_override=args.months_override, max_age_days=None)
     except Exception as e:
-        logger.error(f"Fetch failed: {e}")
+        logger.error(f"Full fetch failed: {e}")
         sys.exit(1)
 
-    logger.info(f"Fetched {len(items)} new items for feed={args.feed_id}")
+    registered = _register_feed_items(args.feed_id, all_items)
+    logger.info(f"Registry: {registered} new | {len(all_items)} total in source for feed={args.feed_id}")
+
+    # Step 1b: Filter to the ingestion window (default 30 days in live mode,
+    # no limit in backfill mode).
+    if args.mode == "live" and args.max_age_days and args.max_age_days > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=args.max_age_days)
+        cutoff_str = cutoff.strftime('%Y-%m-%d')
+        items = [i for i in all_items if i.get('pub_date','') and i['pub_date'] >= cutoff_str]
+        logger.info(f"Ingestion window: {len(items)} items within {args.max_age_days} days (since {cutoff_str})")
+    else:
+        items = all_items  # backfill mode — ingest everything
 
     succeeded = 0
     failed = 0
