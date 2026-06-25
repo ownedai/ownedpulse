@@ -427,8 +427,27 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                         already += 1
                         # Don't log in docs — user asked for missing-only,
                         # they don't care about files already ingested.
-                    else:
-                        ingest_docs.append(doc)
+                        continue
+                    # Fallback: some docs may be ingested but their ingestion_state
+                    # row was not committed (e.g. process was killed mid-run).
+                    # Check whether an archive directory with source files exists.
+                    _cur.execute(
+                        "SELECT archive_path FROM document_registry "
+                        "WHERE document_id = %s AND archive_path IS NOT NULL",
+                        (doc_id,),
+                    )
+                    _row = _cur.fetchone()
+                    if _row:
+                        from pathlib import Path
+                        _dir = Path(_row[0])
+                        if _dir.exists() and (
+                            (_dir / "source.pdf").exists() or
+                            (_dir / "source.html").exists() or
+                            (_dir / "source_structured.html").exists()
+                        ):
+                            already += 1
+                            continue
+                    ingest_docs.append(doc)
             _conn.close()
         except Exception:
             ingest_docs = docs  # fall back to full list on error

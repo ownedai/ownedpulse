@@ -1051,6 +1051,7 @@ export default function SourcesPage() {
   const [bootstrapAutoSubmit, setBootstrapAutoSubmit] = useState(false);
   const [bootstrapSources, setBootstrapSources] = useState(null);
   const [bootstrapState, setBootstrapState] = useState({ doc_count: 0, last_bootstrap: null });
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const refreshState = useCallback(() => {
     getBootstrapState().then(setBootstrapState).catch(() => {});
@@ -1065,14 +1066,15 @@ export default function SourcesPage() {
     setBootstrapAutoSubmit(false);
     setBootstrapSources(null);
     refreshState();
+    setRefreshKey(k => k + 1);  // force SourcesCard + CorpusSummaryCard to re-fetch
   }, [refreshState]);
 
   return (
     <div className="rp-sources-page">
       <div className="rp-sources-inner">
-        <CorpusSummaryCard />
-        <SourcesCard onOpenModal={(ids) => { setBootstrapAutoSubmit(true); setBootstrapSources(ids); setShowBootstrapModal(true); }} />
-        <BaseCorpusCard />
+        <CorpusSummaryCard key={`corpus-${refreshKey}`} />
+        <SourcesCard key={`sources-${refreshKey}`} onOpenModal={(ids) => { setBootstrapAutoSubmit(true); setBootstrapSources(ids); setShowBootstrapModal(true); }} />
+        <BaseCorpusCard key={`base-${refreshKey}`} />
         <InitialLoadCard
           onOpenModal={() => setShowBootstrapModal(true)}
           lastBootstrap={bootstrapState.last_bootstrap}
