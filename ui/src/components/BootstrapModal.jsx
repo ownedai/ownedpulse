@@ -561,11 +561,23 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                     ? 'Calculating estimate…'
                     : estimate.estimated_docs == null
                       ? `Estimate unavailable — ${estimate.note}`
-                      : `~${estimate.estimated_docs.toLocaleString()} documents selected`
+                      : (() => {
+                          const total = estimate.estimated_docs;
+                          const ingested = estimate.already_ingested || 0;
+                          const toDownload = total - ingested;
+                          return (
+                            <span>
+                              ~{total.toLocaleString()} documents selected
+                              {fileStrategy === 'missing_only' && ingested > 0 && (
+                                <span> — <span style={{ color: 'var(--ok)' }}>{ingested.toLocaleString()} already ingested</span>, ~{toDownload.toLocaleString()} to download</span>
+                              )}
+                              {fileStrategy === 'missing_only' && ingested === 0 && (
+                                <span style={{ color: 'var(--doc-text-2)' }}> — nothing ingested yet</span>
+                              )}
+                            </span>
+                          );
+                        })()
                   }
-                  {estimate?.estimated_docs != null && estimate.estimated_docs > 0 && fileStrategy === 'missing_only' && (
-                    <span style={{ color: 'var(--doc-text-2)' }}> — already ingested will be skipped, only missing files downloaded</span>
-                  )}
                 </div>
               </section>
 

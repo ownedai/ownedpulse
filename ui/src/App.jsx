@@ -279,6 +279,13 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
+  // Global event: ingestion icon click in toolbar opens the progress monitor
+  useEffect(() => {
+    const handler = () => setShowBootstrapModal(true);
+    window.addEventListener('regpulse:open-progress', handler);
+    return () => window.removeEventListener('regpulse:open-progress', handler);
+  }, []);
+
   const handleNewQuery = useCallback(() => {
     navigate('/', { replace: true });
     setResetKey((k) => k + 1);

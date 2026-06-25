@@ -166,6 +166,14 @@ async def date_estimate(
                 params,
             )
             row = cur.fetchone()
+            ingested = 0
+            if row and int(row[0]) > 0:
+                ingested_cond = conditions + ["ingestion_status IN ('indexed', 'success')"]
+                cur.execute(
+                    f"SELECT COUNT(*) FROM document_registry_ext WHERE {' AND '.join(ingested_cond)}",
+                    params,
+                )
+                ingested = int(cur.fetchone()[0]) if cur.rowcount > 0 else 0
             cur.close()
         finally:
             conn.close()
@@ -181,6 +189,7 @@ async def date_estimate(
     return {
         "estimated_docs": doc_count,
         "estimated_chunks": chunk_count,
+        "already_ingested": ingested,
         "note": "Estimate based on currently indexed documents. Actual count may differ after re-download.",
     }
 
