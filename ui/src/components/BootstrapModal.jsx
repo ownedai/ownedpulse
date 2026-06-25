@@ -105,7 +105,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
   const [depth, setDepth]                         = useState(autoSubmit ? '30days' : '1year');
   const [customFromYear, setCustomFromYear]       = useState(new Date().getFullYear() - 5);
   const [customToYear, setCustomToYear]           = useState(new Date().getFullYear());
-  const [fileStrategy, setFileStrategy]           = useState('use_local');
+  const [fileStrategy, setFileStrategy]           = useState('missing_only');
   const [confirmed, setConfirmed]                 = useState(false);
   const [nuclearConfirmed, setNuclearConfirmed]   = useState(false);
   const [estimate, setEstimate]                   = useState(null);
@@ -561,8 +561,11 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                     ? 'Calculating estimate…'
                     : estimate.estimated_docs == null
                       ? `Estimate unavailable — ${estimate.note}`
-                      : `~${estimate.estimated_docs.toLocaleString()} documents in this date range`
+                      : `~${estimate.estimated_docs.toLocaleString()} documents selected`
                   }
+                  {estimate?.estimated_docs != null && estimate.estimated_docs > 0 && fileStrategy === 'missing_only' && (
+                    <span style={{ color: 'var(--doc-text-2)' }}> — already ingested will be skipped, only missing files downloaded</span>
+                  )}
                 </div>
               </section>
 
