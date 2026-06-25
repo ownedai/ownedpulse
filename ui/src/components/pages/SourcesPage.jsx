@@ -7,7 +7,7 @@ import {
   getCorpusSummary, getBootstrapState,
   startBootstrapRun,
   getAdminFeeds, toggleFeed,
-  getSchedulerStatus, pauseScheduler, resumeScheduler,
+  getSchedulerStatus, pauseScheduler, resumeScheduler, clearScheduler,
   getSchedulerConfig, updateSchedulerConfig,
   getCorpusDocumentsV2, reingestDoc,
   openBootstrapProgress,
@@ -389,6 +389,15 @@ function ScheduleModal({ schedStatus, onClose, onSaved }) {
     setPausing(false);
   }
 
+  async function handleClear() {
+    setPausing(true);
+    try {
+      await clearScheduler();
+      onSaved();
+    } catch (_) {}
+    setPausing(false);
+  }
+
   const nextRun = schedStatus?.next_run_time
     ? new Date(schedStatus.next_run_time).toLocaleString('en-GB', {
         weekday: 'long', day: '2-digit', month: 'long',
@@ -434,6 +443,16 @@ function ScheduleModal({ schedStatus, onClose, onSaved }) {
               >
                 {pausing ? '…' : schedStatus?.scheduler_running ? 'Pause' : 'Resume'}
               </button>
+              {schedStatus?.scheduler_running && schedStatus?.next_run_time && (
+                <button
+                  onClick={handleClear}
+                  disabled={pausing}
+                  title="Remove all scheduled runs — no ingestion will run until reconfigured"
+                  style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid var(--warn-border, #e53e3e)', fontSize: 11, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--warn-text, #c53030)', whiteSpace: 'nowrap' }}
+                >
+                  Clear
+                </button>
+              )}
             </div>
 
             {/* Time config */}
@@ -557,10 +576,11 @@ function SourcesCard({ onOpenModal }) {
 
   const nextRunFormatted = schedStatus?.next_run_time ? formatNextRun(schedStatus.next_run_time) : null;
   const schedLine = schedStatus == null ? null
+    : enabledFeeds.length === 0 ? 'No feeds enabled — scheduler idle'
     : !schedStatus.scheduler_running ? 'Next run not scheduled — scheduler paused'
     : nextRunFormatted ? `Next scheduled run on: ${nextRunFormatted}`
     : 'Next run not scheduled';
-  const schedOk = schedStatus?.scheduler_running && !!nextRunFormatted;
+  const schedOk = schedStatus?.scheduler_running && !!nextRunFormatted && enabledFeeds.length > 0;
 
   const runBtnLabel = 'Run now';
 
@@ -581,17 +601,22 @@ function SourcesCard({ onOpenModal }) {
           </span>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+          {enabledFeeds.length === 0 && (
+            <span style={{ fontSize: 11, color: 'var(--warn-text)', fontFamily: 'var(--mono)', marginRight: 4 }}>Please enable feeds</span>
+          )}
           <button
             onClick={() => setShowSchedule(true)}
-            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
+            disabled={enabledFeeds.length === 0}
+            title={enabledFeeds.length === 0 ? 'No feeds enabled — please enable at least one feed to schedule' : 'Configure scheduled run time'}
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: enabledFeeds.length === 0 ? 'not-allowed' : 'pointer', background: 'transparent', color: 'var(--doc-text-2)', opacity: enabledFeeds.length === 0 ? 0.4 : 1 }}
           >
             Schedule
           </button>
           <button
             onClick={handleRunNow}
             disabled={enabledFeeds.length === 0}
-            title="Open Initial Load / Corpus Reload modal"
-            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)' }}
+            title={enabledFeeds.length === 0 ? 'No feeds enabled — please enable at least one feed to run' : 'Open Initial Load / Corpus Reload modal'}
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: enabledFeeds.length === 0 ? 'not-allowed' : 'pointer', background: 'transparent', color: 'var(--doc-text-2)', opacity: enabledFeeds.length === 0 ? 0.4 : 1 }}
           >
             Run now
           </button>
@@ -984,7 +1009,7 @@ function InitialLoadCard({ onOpenModal, lastBootstrap, docCount }) {
           onClick={onOpenModal}
           style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 4, border: '1px solid var(--doc-border)', fontSize: 12, fontFamily: 'var(--mono)', cursor: 'pointer', background: 'transparent', color: 'var(--doc-text-2)', whiteSpace: 'nowrap' }}
         >
-          {docCount > 0 ? 'Re-run Initial Load' : 'Run Initial Load'}
+          {docCount > 0 ? 'Re-Run Ingestion' : 'Run Ingestion'}
         </button>
       </div>
     </div>
