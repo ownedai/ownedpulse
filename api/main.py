@@ -1648,8 +1648,6 @@ async def _run_content_query(
         # GxP queries that name regulatory documents always get content from them.
         mentioned_docs = extract_mentioned_documents(request.query)
         mentioned_clauses = extract_mentioned_clauses(request.query)
-        # DEBUG — remove after verification
-        logger.info("[retrieval-debug] query=%r mentioned_docs=%s", request.query[:100], mentioned_docs)
 
         if mentioned_docs:
             for doc_id in mentioned_docs:
