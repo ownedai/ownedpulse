@@ -910,8 +910,8 @@ DOCUMENT_NAME_MAP = {
     "fda data integrity": "FDA-DI-CGMP-QA",
     "data integrity guidance": "FDA-DI-CGMP-QA",
     "data integrity and compliance": "FDA-DI-CGMP-QA",
-    "computerised system validation": "FDA-DI-CGMP-QA",
-    "computerized system validation": "FDA-DI-CGMP-QA",
+    "computerised system validation": ["FDA-DI-CGMP-QA", "21-CFR-Part-11"],
+    "computerized system validation": ["FDA-DI-CGMP-QA", "21-CFR-Part-11"],
     "fda guidance": "FDA-DI-CGMP-QA",
     "21 cfr": "21-CFR-Part-11",
     "electronic records": "21-CFR-Part-11",
@@ -926,7 +926,10 @@ def extract_mentioned_documents(query_text: str) -> list[str]:
     mentioned = []
     for pattern, doc_id in DOCUMENT_NAME_MAP.items():
         if pattern in query_lower:
-            mentioned.append(doc_id)
+            if isinstance(doc_id, list):
+                mentioned.extend(doc_id)
+            else:
+                mentioned.append(doc_id)
     return list(set(mentioned))  # dedup — two patterns may map to same doc_id
 
 
