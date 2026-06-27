@@ -597,7 +597,7 @@ class QueryFilters(BaseModel):
 
 class RetrievalParams(BaseModel):
     query_depth: Literal["low", "standard", "deep"] = "standard"
-    top_k: int = Field(10, ge=5, le=20)
+    top_k: int = Field(20, ge=5, le=40)
     score_threshold: float = Field(0.60, ge=0.40, le=0.90)
 
 
@@ -910,6 +910,13 @@ DOCUMENT_NAME_MAP = {
     "fda data integrity": "FDA-DI-CGMP-QA",
     "data integrity guidance": "FDA-DI-CGMP-QA",
     "data integrity and compliance": "FDA-DI-CGMP-QA",
+    "computerised system validation": "FDA-DI-CGMP-QA",
+    "computerized system validation": "FDA-DI-CGMP-QA",
+    "fda guidance": "FDA-DI-CGMP-QA",
+    "21 cfr": "21-CFR-Part-11",
+    "electronic records": "21-CFR-Part-11",
+    "electronic signatures": "21-CFR-Part-11",
+    "part 11": "21-CFR-Part-11",
 }
 
 
