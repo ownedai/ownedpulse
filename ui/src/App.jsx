@@ -297,7 +297,7 @@ export default function App() {
       <Sidebar onNewQuery={handleNewQuery} modelStatus={modelStatus} />
       <div className="main-column">
         <TopNav />
-        <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <Routes>
             <Route path="/" element={<QueryPage key={resetKey} />} />
             <Route path="/history" element={<HistoryPage />} />
