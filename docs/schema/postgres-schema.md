@@ -93,7 +93,7 @@ ON CONFLICT (key) DO NOTHING;
 
 After n8n webhook is confirmed:
 ```sql
-UPDATE system_config SET value = 'http://n8n:5678/webhook/regpulse-ingest-trigger'
+UPDATE system_config SET value = 'http://n8n:5678/webhook/ownedpulse-ingest-trigger'
 WHERE key = 'n8n_trigger_webhook';
 ```
 

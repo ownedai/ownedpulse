@@ -1,6 +1,6 @@
 """
-regpulse test configuration and shared fixtures.
-Place at /opt/projects/regpulse/tests/conftest.py
+ownedpulse test configuration and shared fixtures.
+Place at /opt/projects/ownedpulse/tests/conftest.py
 
 Field names reflect ACTUAL Qdrant payload as verified in DEBRIEF.md.
 All old field names (agency, title, local_file_path, etc.) have been corrected.
@@ -11,9 +11,9 @@ import httpx
 import psycopg2
 import os
 
-API_BASE = os.getenv("REGPULSE_API_URL", "http://localhost:8001")
+API_BASE = os.getenv("OWNEDPULSE_API_URL", "http://localhost:8001")
 PG_DSN = os.getenv(
-    "REGPULSE_PG_DSN",
+    "OWNEDPULSE_PG_DSN",
     "host=localhost port=5432 dbname=knowledge_base user=postgres password="
     + os.getenv("POSTGRES_PASSWORD", "")
 )

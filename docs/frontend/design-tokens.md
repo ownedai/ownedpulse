@@ -68,5 +68,5 @@ Logo: outlined square + filled circle, inline SVG (Logo.jsx).
 - Icon: sun (light active) / moon (dark active)
 - Click toggles `data-theme="dark"` on document root
 - CSS uses `[data-theme="dark"] :root { ... }` to override panel variables
-- Persisted in localStorage as `regpulse-theme`
+- Persisted in localStorage as `ownedpulse-theme`
 - Tooltip: "Switch to light mode" / "Switch to dark mode"

@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://regpulse-api:8001',
+        target: 'http://ownedpulse-api:8001',
         changeOrigin: true,
       },
     },

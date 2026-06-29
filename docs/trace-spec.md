@@ -1,4 +1,4 @@
-# regpulse — Ingestion Trace Specification v1
+# ownedpulse — Ingestion Trace Specification v1
 
 **Status:** Canonical (G-T1 locked). All ingestion paths MUST conform.
 **Last updated:** 2026-06-01

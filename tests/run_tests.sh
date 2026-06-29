@@ -1,5 +1,5 @@
 #!/bin/bash
-# regpulse test runner v2
+# ownedpulse test runner v2
 # Usage:
 #   bash tests/run_tests.sh           — run all suites
 #   bash tests/run_tests.sh api       — API endpoint tests only
@@ -11,8 +11,8 @@
 
 set -euo pipefail
 
-API_URL="${REGPULSE_API_URL:-http://localhost:8001}"
-PG_DSN="${REGPULSE_PG_DSN:-host=localhost port=5432 dbname=knowledge_base user=postgres password=${POSTGRES_PASSWORD:-}}"
+API_URL="${OWNEDPULSE_API_URL:-http://localhost:8001}"
+PG_DSN="${OWNEDPULSE_PG_DSN:-host=localhost port=5432 dbname=knowledge_base user=postgres password=${POSTGRES_PASSWORD:-}}"
 SUITE="${1:-all}"
 PASS=0
 FAIL=0
@@ -30,7 +30,7 @@ run_suite() {
 
     blue "\n── Running: $name"
 
-    if REGPULSE_API_URL="$API_URL" REGPULSE_PG_DSN="$PG_DSN" \
+    if OWNEDPULSE_API_URL="$API_URL" OWNEDPULSE_PG_DSN="$PG_DSN" \
         python -m pytest "$path" \
             --tb=short \
             --no-header \
@@ -49,7 +49,7 @@ run_suite() {
 
 echo ""
 echo "========================================"
-echo " regpulse test runner v2"
+echo " ownedpulse test runner v2"
 echo " $(date '+%d/%m/%Y %H:%M:%S')"
 echo " API: $API_URL"
 echo " Suite: $SUITE"
@@ -59,8 +59,8 @@ echo "========================================"
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/api/health" || echo "000")
 if [ "$HTTP_STATUS" != "200" ]; then
     red "\nAPI not reachable at $API_URL (HTTP $HTTP_STATUS). Start the stack first."
-    echo "  docker compose -f /opt/docker-compose/regpulse-api/docker-compose.yml up -d"
-    echo "  docker compose -f /opt/docker-compose/regpulse-ui/docker-compose.yml up -d"
+    echo "  docker compose -f /opt/docker-compose/ownedpulse-api/docker-compose.yml up -d"
+    echo "  docker compose -f /opt/docker-compose/ownedpulse-ui/docker-compose.yml up -d"
     exit 1
 fi
 green "\nAPI reachable — health OK\n"
@@ -68,7 +68,7 @@ green "\nAPI reachable — health OK\n"
 # ── Check field names are correct before full run ─────────────────────────────
 if [ "$SUITE" = "all" ] || [ "$SUITE" = "fields" ]; then
     yellow "── Field name correctness check (runs first)"
-    if REGPULSE_API_URL="$API_URL" REGPULSE_PG_DSN="$PG_DSN" \
+    if OWNEDPULSE_API_URL="$API_URL" OWNEDPULSE_PG_DSN="$PG_DSN" \
         python -m pytest tests/api/test_endpoints.py::TestCitationFields \
             --tb=short -q 2>&1; then
         green "  Field names: CORRECT"

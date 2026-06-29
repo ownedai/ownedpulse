@@ -29,7 +29,7 @@ DELAY_ICH = 0.5
 MAX_FDA_PAGES = 30
 MAX_EMA_PAGES = 50
 HEADERS = {
-    "User-Agent": "RegPulse/1.0 (RSS-Archive comparison; sovereign RAG pipeline; contact zoran@ownedai.dev)"
+    "User-Agent": "OwnedPulse/1.0 (RSS-Archive comparison; sovereign RAG pipeline; contact zoran@ownedai.dev)"
 }
 
 # ── URL sources ────────────────────────────────────────────────────────────────

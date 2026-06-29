@@ -1,5 +1,5 @@
 """
-Branded regpulse query export PDF generator.
+Branded ownedpulse query export PDF generator.
 Matches the ownedai design spec: dark shell header, warning band, query/answer,
 parameters box, source evidence cards with provenance metadata.
 """
@@ -206,7 +206,7 @@ def _draw_header_p1(c: canvas.Canvas, export_id: str, exported: str,
     _logo_mark(c, lx, logo_y, logo_size)
     wx = lx + logo_size + 8
     wy_word = PAGE_H - HEADER_H_P1 / 2 + 5
-    _text(c, wx, wy_word, "regpulse", "Inter-SemiBold", 18, C_WHITE)
+    _text(c, wx, wy_word, "ownedpulse", "Inter-SemiBold", 18, C_WHITE)
     _text(c, wx, wy_word - 15, "REGULATORY INTELLIGENCE · OWNEDAI", "Mono", 7, C_SHELL_MUTED)
 
     rx = PAGE_W - MARGIN_X
@@ -233,7 +233,7 @@ def _draw_header_cont(c: canvas.Canvas, export_id: str, page_num: int):
     _logo_mark(c, lx, logo_y, logo_size)
     wx = lx + logo_size + 7
     wy = PAGE_H - HEADER_H_CONT / 2 + 4
-    _text(c, wx, wy, "regpulse", "Inter-SemiBold", 14, C_WHITE)
+    _text(c, wx, wy, "ownedpulse", "Inter-SemiBold", 14, C_WHITE)
     right_txt = f"Export ID {export_id}  ·  Query Export (cont.)"
     _text(c, PAGE_W - MARGIN_X, PAGE_H - HEADER_H_CONT / 2 - 4, right_txt,
           "Mono", 8.5, C_SHELL_MUTED, align="right")
@@ -362,7 +362,7 @@ def generate_query_export_pdf(
     output_path: str | None = None,
 ) -> bytes:
     """
-    Build branded regpulse query export PDF.
+    Build branded ownedpulse query export PDF.
     Returns PDF bytes; optionally writes to output_path.
     """
     _register_fonts()
@@ -427,14 +427,14 @@ def generate_query_export_pdf(
         from main import APP_VERSION as _APP_VERSION
     except Exception:
         _APP_VERSION = "dev"
-    system_str = f"regpulse v{_APP_VERSION} · {embedding_model} · {generation_model}"
+    system_str = f"ownedpulse v{_APP_VERSION} · {embedding_model} · {generation_model}"
 
     # ── two-pass render: pass 1 counts pages; pass 2 renders with correct total ─
     def _render(total_pages_known: int) -> tuple["canvas.Canvas", BytesIO, int]:
         rbuf = BytesIO()
         rc = canvas.Canvas(rbuf, pagesize=letter)
-        rc.setTitle(f"regpulse Export — {short_id}")
-        rc.setAuthor("ownedai / regpulse")
+        rc.setTitle(f"ownedpulse Export — {short_id}")
+        rc.setAuthor("ownedai / ownedpulse")
         rc.setSubject("Regulatory intelligence query export")
 
         st = _PageState()
@@ -976,7 +976,7 @@ def generate_audit_log_pdf(
     # COVER PAGE
     # ═══════════════════════════════════════════════════════════════════════════
     story.append(Spacer(1, 32 * mm))
-    story.append(Paragraph("regpulse", style_cover_title))
+    story.append(Paragraph("ownedpulse", style_cover_title))
     story.append(Paragraph("REGULATORY INTELLIGENCE · OWNEDAI", style_cover_sub))
     story.append(Spacer(1, 6 * mm))
     story.append(HRFlowable(width="100%", thickness=1.5, color=_rgb("2563EB"),
@@ -990,7 +990,7 @@ def generate_audit_log_pdf(
         ("Export ID",  export_id),
         ("Generated",  export_ts_str),
         ("Corpus date", corpus_date),
-        ("System",     f"regpulse {system_version}"),
+        ("System",     f"ownedpulse {system_version}"),
         ("Filters",    filter_str),
         ("Total queries", str(len(queries))),
     ]
@@ -1108,7 +1108,7 @@ def generate_audit_log_pdf(
 
         canvas_obj.setFont("Inter-SemiBold", 10)
         canvas_obj.setFillColorRGB(*C_WHITE)
-        canvas_obj.drawString(MARGIN, A4_H - 10 * mm, "regpulse  AUDIT LOG")
+        canvas_obj.drawString(MARGIN, A4_H - 10 * mm, "ownedpulse  AUDIT LOG")
 
         canvas_obj.setFont("Mono", 7)
         canvas_obj.setFillColorRGB(*C_SHELL_MUTED)

@@ -1,7 +1,7 @@
 # Regpulse — Traceability & Ingestion Rework: Overview Plan
 
 **Status:** Approved for build
-**Target repo location:** `/opt/projects/regpulse/docs/plans/`
+**Target repo location:** `/opt/projects/ownedpulse/docs/plans/`
 **Supersedes:** original Phase G scope (UI build only). This rework re-scopes Phase G into a trace-infrastructure block (G-T*) followed by three UI surfaces (G1–G3).
 **Authoritative references (do not duplicate, defer to these for existing names):**
 `CLAUDE.md` v2 (field names, PostgreSQL schema, data quality rules), `design-spec.md` (CSS vars, component state, null display, data-testid, Annex 11 §8.1).
@@ -10,7 +10,7 @@
 
 ## 1. Why this rework exists
 
-The differentiator for regpulse is **inspector-grade traceability** — a retrieved answer traceable back to the exact ingestion event that produced each chunk, regardless of how that chunk was ingested (RSS via n8n, manual CLI, or first-install bootstrap). No cloud RAG vendor can match this on the client's own infrastructure.
+The differentiator for ownedpulse is **inspector-grade traceability** — a retrieved answer traceable back to the exact ingestion event that produced each chunk, regardless of how that chunk was ingested (RSS via n8n, manual CLI, or first-install bootstrap). No cloud RAG vendor can match this on the client's own infrastructure.
 
 Three gaps block that claim today:
 1. Langfuse traces wrap only the n8n RSS path; manual ingestions are untraced (TI-19).
@@ -67,7 +67,7 @@ The three UI phases each require a **Claude Design gate before Claude Code build
 **Locked decisions (from prior discussion):**
 - **D-1 trace storage: dedicated PostgreSQL `ingestion_run` + `ingestion_doc` tables.** Langfuse mirrors for observability; PostgreSQL is the queryable record of truth. Registry holds `trace_id` per chunk as FK. No renames without full reingestion.
 - **Two-mode trace architecture:** Mode A (bulk/initial ingestion 1000+ docs) — one Langfuse trace per document, no run envelope, `ingestion_doc.run_id=null`. Mode B (RSS/small batch) — one `ingestion_run` envelope, document spans within it. Mode A is mandatory for initial ingestion — a single envelope over 1000+ documents produces an unusable Run Log (observed in current state).
-- **Corpus wipe is atomic:** `wipe_corpus.py --confirm` deletes in sequence: Langfuse traces (regpulse-tagged) → `ingestion_doc` → `ingestion_run` → `document_registry` → Qdrant points. Partial state is never acceptable.
+- **Corpus wipe is atomic:** `wipe_corpus.py --confirm` deletes in sequence: Langfuse traces (ownedpulse-tagged) → `ingestion_doc` → `ingestion_run` → `document_registry` → Qdrant points. Partial state is never acceptable.
 - Progress monitoring transport: **SSE** (one-directional, survives Cloudflare tunnel; WebSocket rejected as fragile through tunnel).
 - Idempotency: bootstrap does a **state check first** (registry rows + n8n workflow active state via API); if initialized, explicit "re-run will wipe and reingest" confirm path.
 - `workflow_execution_id` stored in PostgreSQL registry per document (not Langfuse-only).

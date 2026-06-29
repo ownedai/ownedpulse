@@ -9,8 +9,8 @@ document_title, issuing_body, document_version, publication_date, etc.
 Run from ai-node (outside Docker):
   python3 /opt/scripts/patch_qdrant_payloads.py
 
-Or inside regpulse-api container:
-  docker exec regpulse-api python3 /opt/scripts/patch_qdrant_payloads.py
+Or inside ownedpulse-api container:
+  docker exec ownedpulse-api python3 /opt/scripts/patch_qdrant_payloads.py
 """
 
 import os

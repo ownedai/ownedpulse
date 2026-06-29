@@ -73,7 +73,7 @@ The `ingestion_source` field determines which mode applies:
    - `finalize_ingestion_run(run_handle, doc_count_attempted, doc_count_succeeded, doc_count_failed, error_summary=None)`
 
 5. **Wipe procedure** — implement `scripts/wipe_corpus.py`. Atomic wipe in this exact sequence:
-   1. Delete Langfuse traces tagged with project `regpulse` via Langfuse API
+   1. Delete Langfuse traces tagged with project `ownedpulse` via Langfuse API
    2. Truncate `ingestion_doc`
    3. Truncate `ingestion_run` (Mode B runs)
    4. Truncate `document_registry` (or delete where applicable)

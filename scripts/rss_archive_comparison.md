@@ -11,7 +11,7 @@ Find and read sources_manifest.json — confirm all feed URLs
 
 Report back: paste the exact URLs for all 3 archive endpoints and all RSS feed URLs. Confirm field names used for title and URL in each scraper. Do not proceed until done.
 Step 2 — Write comparison script
-Write /opt/projects/regpulse/scripts/rss_archive_comparison.py.
+Write /opt/projects/ownedpulse/scripts/rss_archive_comparison.py.
 Requirements:
 
 requests with 15s timeout on all calls

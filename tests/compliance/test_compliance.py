@@ -1,8 +1,8 @@
 """
-regpulse compliance tests — Annex 11 §8.1 audit trail, export integrity,
+ownedpulse compliance tests — Annex 11 §8.1 audit trail, export integrity,
 superseded document handling, query_history persistence.
 
-Place at /opt/projects/regpulse/tests/compliance/test_compliance.py
+Place at /opt/projects/ownedpulse/tests/compliance/test_compliance.py
 
 Changes from previous version:
 - All field names corrected (document_title, issuing_body, etc.)

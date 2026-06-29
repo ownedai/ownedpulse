@@ -18,12 +18,12 @@ Wipe `knowledge_base` (Qdrant) and the registry, then reingest the full archive 
 
 ## Tasks
 
-1. **Pre-flight** — run `regpulse-preflight.sh` (dirs, Docker, Qdrant, PostgreSQL, Ollama model, ports, ai-stack network). Abort if any check fails.
+1. **Pre-flight** — run `ownedpulse-preflight.sh` (dirs, Docker, Qdrant, PostgreSQL, Ollama model, ports, ai-stack network). Abort if any check fails.
 
 2. **Backup + verify** — confirm TI-9 restore test is current. Snapshot current Qdrant collection + registry to the restic chain before destructive steps.
 
 3. **Atomic wipe** — run `scripts/wipe_corpus.py --confirm`. This executes in sequence:
-   1. Delete Langfuse traces tagged `regpulse` via Langfuse API
+   1. Delete Langfuse traces tagged `ownedpulse` via Langfuse API
    2. Truncate `ingestion_doc`
    3. Truncate `ingestion_run`
    4. Truncate `document_registry`

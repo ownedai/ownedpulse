@@ -1,5 +1,5 @@
 #!/bin/bash
-# regpulse install.sh
+# ownedpulse install.sh
 # Idempotent — safe to re-run on an existing installation.
 # Requires: docker, docker compose plugin, .env in working directory,
 #           NVIDIA GPU with nvidia-container-toolkit.
@@ -52,7 +52,7 @@ if [[ "${POSTGRES_PASSWORD:-}" == "change_me" ]] || [[ -z "${POSTGRES_PASSWORD:-
 fi
 log_ok "POSTGRES_PASSWORD is set"
 
-nvidia-smi > /dev/null 2>&1 || die "No NVIDIA GPU detected (nvidia-smi failed). RegPulse requires an NVIDIA GPU with drivers and nvidia-container-toolkit installed."
+nvidia-smi > /dev/null 2>&1 || die "No NVIDIA GPU detected (nvidia-smi failed). OwnedPulse requires an NVIDIA GPU with drivers and nvidia-container-toolkit installed."
 log_ok "NVIDIA GPU detected"
 
 log_info "Verifying GPU access from Docker..."
@@ -141,16 +141,16 @@ LANGFUSE_DB_NAME="${LANGFUSE_DB_NAME:-langfuse}"
 LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD:-}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-knowledge_base}"
-POSTGRES_HOST="${POSTGRES_HOST:-regpulse-postgres}"
+POSTGRES_HOST="${POSTGRES_HOST:-ownedpulse-postgres}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 # Wait for postgres first
 log_info "Waiting for PostgreSQL before creating Langfuse database..."
 if [[ "${POSTGRES_MODE}" == "bundled" ]]; then
   waited=0
-  while ! docker exec regpulse-postgres pg_isready -U "$POSTGRES_USER" > /dev/null 2>&1; do
+  while ! docker exec ownedpulse-postgres pg_isready -U "$POSTGRES_USER" > /dev/null 2>&1; do
     if (( waited >= 60 )); then
-      die "PostgreSQL did not become healthy within 60s.\nCheck logs: docker logs regpulse-postgres 2>&1 | tail -30"
+      die "PostgreSQL did not become healthy within 60s.\nCheck logs: docker logs ownedpulse-postgres 2>&1 | tail -30"
     fi
     sleep 2
     waited=$((waited + 2))
@@ -175,7 +175,7 @@ fi
 # Create Langfuse user and database
 create_langfuse_db() {
   if [[ "${POSTGRES_MODE}" == "bundled" ]]; then
-    local PG_HOST="regpulse-postgres"
+    local PG_HOST="ownedpulse-postgres"
     local EXEC="docker exec $PG_HOST"
   else
     local EXEC="docker run --rm postgres:16"
@@ -259,7 +259,7 @@ wait_for_service() {
   log_info "Waiting for $name..."
   while ! eval "$check_cmd" > /dev/null 2>&1; do
     if (( elapsed >= timeout )); then
-      die "$name did not become healthy within ${timeout}s.\n  Check logs: docker logs regpulse-${name,,} 2>&1 | tail -30"
+      die "$name did not become healthy within ${timeout}s.\n  Check logs: docker logs ownedpulse-${name,,} 2>&1 | tail -30"
     fi
     sleep "$interval"
     elapsed=$(( elapsed + interval ))
@@ -271,16 +271,16 @@ wait_for_service() {
 
 # postgres
 if [[ "${POSTGRES_MODE}" == "bundled" ]]; then
-  wait_for_service "postgres" "docker exec regpulse-postgres pg_isready -U $POSTGRES_USER" 60
+  wait_for_service "postgres" "docker exec ownedpulse-postgres pg_isready -U $POSTGRES_USER" 60
 else
   wait_for_service "postgres (external)" "docker run --rm postgres:16 pg_isready -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER" 60
 fi
 
 # qdrant
 if [[ "${QDRANT_MODE}" == "bundled" ]]; then
-  wait_for_service "qdrant" "docker exec regpulse-qdrant wget -qO- http://localhost:6333/healthz" 60
+  wait_for_service "qdrant" "docker exec ownedpulse-qdrant wget -qO- http://localhost:6333/healthz" 60
 else
-  QDRANT_HOST="${QDRANT_HOST:-regpulse-qdrant}"
+  QDRANT_HOST="${QDRANT_HOST:-ownedpulse-qdrant}"
   QDRANT_PORT="${QDRANT_PORT:-6333}"
   wait_for_service "qdrant (external)" "curl -sf http://${QDRANT_HOST}:${QDRANT_PORT}/healthz" 60
 fi
@@ -289,23 +289,23 @@ fi
 if [[ "${OLLAMA_MODE}" == "bundled" ]]; then
   wait_for_service "ollama" "curl -sf http://localhost:${OLLAMA_PORT:-11434}/api/tags" 120
 else
-  OLLAMA_HOST="${OLLAMA_HOST:-http://regpulse-ollama:11434}"
+  OLLAMA_HOST="${OLLAMA_HOST:-http://ownedpulse-ollama:11434}"
   wait_for_service "ollama (external)" "curl -sf ${OLLAMA_HOST}/api/tags" 120
 fi
 
 # docling
 if [[ "${DOCLING_MODE}" == "bundled" ]]; then
-  wait_for_service "docling" "docker exec regpulse-docling curl -sf http://localhost:5001/health" 180
+  wait_for_service "docling" "docker exec ownedpulse-docling curl -sf http://localhost:5001/health" 180
 else
-  DOCLING_HOST="${DOCLING_HOST:-http://regpulse-docling:5001}"
+  DOCLING_HOST="${DOCLING_HOST:-http://ownedpulse-docling:5001}"
   wait_for_service "docling (external)" "curl -sf ${DOCLING_HOST}/health" 180
 fi
 
 # langfuse
 if [[ "${LANGFUSE_MODE}" == "bundled" ]]; then
-  wait_for_service "langfuse" "docker exec regpulse-langfuse wget -qO- http://localhost:3000/api/public/health" 60
+  wait_for_service "langfuse" "docker exec ownedpulse-langfuse wget -qO- http://localhost:3000/api/public/health" 60
 else
-  LANGFUSE_HOST="${LANGFUSE_HOST:-http://regpulse-langfuse:3000}"
+  LANGFUSE_HOST="${LANGFUSE_HOST:-http://ownedpulse-langfuse:3000}"
   wait_for_service "langfuse (external)" "curl -sf ${LANGFUSE_HOST}/api/public/health" 60
 fi
 
@@ -322,7 +322,7 @@ apply_migration() {
 
   local exit_code=0
   if [[ "${POSTGRES_MODE}" == "bundled" ]]; then
-    docker exec -i regpulse-postgres \
+    docker exec -i ownedpulse-postgres \
       psql -U "${POSTGRES_USER}" \
            -d "${POSTGRES_DB}" \
            -v ON_ERROR_STOP=1 \
@@ -369,7 +369,7 @@ pull_model() {
 
   if [[ "${OLLAMA_MODE:-bundled}" == "bundled" ]]; then
     local present
-    present=$(docker exec regpulse-ollama ollama list 2>/dev/null | grep -c "^${model}" || true)
+    present=$(docker exec ownedpulse-ollama ollama list 2>/dev/null | grep -c "^${model}" || true)
   else
     local present
     present=$(curl -sf "${OLLAMA_HOST}/api/tags" 2>/dev/null | grep -c "\"${model}\"" || true)
@@ -384,7 +384,7 @@ pull_model() {
   log_warn "Do not interrupt this process."
 
   if [[ "${OLLAMA_MODE:-bundled}" == "bundled" ]]; then
-    docker exec regpulse-ollama ollama pull "$model" || die "Failed to pull model: $model\nCheck Ollama logs: docker logs regpulse-ollama 2>&1 | tail -30"
+    docker exec ownedpulse-ollama ollama pull "$model" || die "Failed to pull model: $model\nCheck Ollama logs: docker logs ownedpulse-ollama 2>&1 | tail -30"
   else
     curl -sf -X POST "${OLLAMA_HOST}/api/pull" -d "{\"name\":\"${model}\"}" \
       || die "Failed to pull model: $model\nCheck external Ollama server at ${OLLAMA_HOST}"
@@ -395,14 +395,14 @@ pull_model() {
 pull_model "$LLM_MODEL" "9 GB"
 pull_model "$EMBED_MODEL" "670 MB"
 
-# ── Step 8 — Start regpulse-api and regpulse-ui ───────────────────────
+# ── Step 8 — Start ownedpulse-api and ownedpulse-ui ───────────────────────
 
-log_section "Step 8: Starting RegPulse"
+log_section "Step 8: Starting OwnedPulse"
 
-docker compose up -d regpulse-api regpulse-ui 2>&1 \
-  || die "Failed to start regpulse-api or regpulse-ui. Check: docker compose logs"
+docker compose up -d ownedpulse-api ownedpulse-ui 2>&1 \
+  || die "Failed to start ownedpulse-api or ownedpulse-ui. Check: docker compose logs"
 
-wait_for_service "regpulse-api" "curl -sf http://localhost:${API_PORT:-8001}/health" 60
+wait_for_service "ownedpulse-api" "curl -sf http://localhost:${API_PORT:-8001}/health" 60
 
 # ── Step 9 — Final summary ────────────────────────────────────────────
 
@@ -415,8 +415,8 @@ for svc in postgres qdrant ollama docling langfuse; do
   printf "  %-12s %s\n" "$svc" "[$MODE]"
 done
 echo ""
-echo "  RegPulse UI:  http://localhost:${UI_PORT:-5173}"
-echo "  RegPulse API: http://localhost:${API_PORT:-8001}"
+echo "  OwnedPulse UI:  http://localhost:${UI_PORT:-5173}"
+echo "  OwnedPulse API: http://localhost:${API_PORT:-8001}"
 echo "  Langfuse:     ${LANGFUSE_URL:-http://localhost:${LANGFUSE_PORT:-3001}}"
 echo ""
 echo "  Next steps:"

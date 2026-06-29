@@ -19,11 +19,11 @@ export default function useCorpusStats() {
 
     // Refresh when bootstrap completes
     const onComplete = () => { fetch(); };
-    window.addEventListener('regpulse:bootstrap-complete', onComplete);
+    window.addEventListener('ownedpulse:bootstrap-complete', onComplete);
 
     return () => {
       cleanup();
-      window.removeEventListener('regpulse:bootstrap-complete', onComplete);
+      window.removeEventListener('ownedpulse:bootstrap-complete', onComplete);
     };
   }, [fetch]);
 

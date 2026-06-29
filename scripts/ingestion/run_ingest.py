@@ -246,7 +246,7 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
         if sha_file.exists():
             stored_hash = sha_file.read_text(encoding="utf-8").strip()
 
-    req_headers = {"User-Agent": "Mozilla/5.0 (compatible; regpulse/1.0)"}
+    req_headers = {"User-Agent": "Mozilla/5.0 (compatible; ownedpulse/1.0)"}
     # EMA CloudFront CDN requires browser-like headers with a Referer.
     # Without these, all requests get 404 HTML error pages.
     ema_req_headers = {
@@ -998,7 +998,7 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
             shutil.rmtree(chunks_dir)
         except PermissionError:
             print(f"  WARNING: Cannot remove stale chunks/ (root-owned). "
-                  f"Run: docker exec regpulse-api rm -rf /archive/.../"
+                  f"Run: docker exec ownedpulse-api rm -rf /archive/.../"
                   f"{archive_dir.name}/chunks", file=sys.stderr)
 
     # Determine ingestion path: simple HTML chunking vs Docling parsing.

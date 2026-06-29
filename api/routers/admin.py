@@ -12,7 +12,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
 from lib import ingestion_lock
 
-logger = logging.getLogger("regpulse.admin")
+logger = logging.getLogger("ownedpulse.admin")
 
 router = APIRouter()
 

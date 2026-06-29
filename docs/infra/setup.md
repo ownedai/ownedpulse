@@ -25,13 +25,13 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 ## vite.config.js essentials
 
-- Proxy: `/api` → `http://regpulse-api:8001` (container name on ai-stack)
+- Proxy: `/api` → `http://ownedpulse-api:8001` (container name on ai-stack)
 - `allowedHosts: ['rp.ownedai.dev']` for Cloudflare tunnel access
 - `VITE_API_URL=""` in docker-compose forces same-origin via Vite proxy
 
 Both containers join existing `ai-stack` Docker network.
 
-Compose files: `/opt/docker-compose/regpulse-api/docker-compose.yml` and `/opt/docker-compose/regpulse-ui/docker-compose.yml`.
+Compose files: `/opt/docker-compose/ownedpulse-api/docker-compose.yml` and `/opt/docker-compose/ownedpulse-ui/docker-compose.yml`.
 
 ## Infrastructure Connections
 

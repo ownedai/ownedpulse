@@ -15,12 +15,12 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| README.md present | **FAIL** | Absent — `/opt/projects/regpulse/README.md` does not exist |
+| README.md present | **FAIL** | Absent — `/opt/projects/ownedpulse/README.md` does not exist |
 | GAMP 5 statement present | **FAIL** | Not found in any docs file |
 | Intended Use Boundary referenced | **FAIL** | Not found in any docs file |
 | .gitignore present and correct | PASS | Excludes `.env`, `__pycache__`, `node_modules`, `ui/design-handoff/` |
 | No hardcoded credentials/paths | **FAIL** | `api/lib/ingest_documents.py` lines 54–60: hardcoded PG password `b4e74f2...`, hardcoded `localhost` fallbacks, hardcoded `/opt/scripts` path. Also: `docker-compose.yml` has Langfuse keys in plaintext |
-| docker-compose one-command startup | PARTIAL | Two separate compose files (`/opt/docker-compose/regpulse-api/` and `regpulse-ui/`). No single top-level `docker-compose.yml` in repo root. Also: compose files reference `context: /opt/projects/regpulse/api` (absolute host path — breaks on fresh clone) |
+| docker-compose one-command startup | PARTIAL | Two separate compose files (`/opt/docker-compose/ownedpulse-api/` and `ownedpulse-ui/`). No single top-level `docker-compose.yml` in repo root. Also: compose files reference `context: /opt/projects/ownedpulse/api` (absolute host path — breaks on fresh clone) |
 | .env.example present | **FAIL** | Absent — no `.env.example` or `.env.template` in repo |
 | bootstrap_corpus.sh present | **FAIL** | Absent — no `bootstrap_corpus.sh` or equivalent |
 | bootstrap_corpus.sh handles clean slate | **FAIL** | N/A (file absent) |
@@ -85,7 +85,7 @@ Priority order:
    All required env vars with placeholder values: `POSTGRES_PASSWORD`, `HF_TOKEN`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`, `QDRANT_HOST`, `OLLAMA_HOST`.
 
 5. **Create top-level docker-compose.yml** *(GitHub blocker)*  
-   A single `docker-compose.yml` at repo root that brings up `regpulse-api` + `regpulse-ui`. Use relative build contexts. Join `ai-stack` network. Load credentials from `.env`.
+   A single `docker-compose.yml` at repo root that brings up `ownedpulse-api` + `ownedpulse-ui`. Use relative build contexts. Join `ai-stack` network. Load credentials from `.env`.
 
 6. **Write bootstrap_corpus.sh** *(recommended for demo)*  
    Script to initialise Qdrant collection + PostgreSQL tables + ingest seed corpus from a clean slate. Idempotent. Documents that the bootstrap UI page (G1) already handles this interactively — the script is a CLI fallback for headless setup.

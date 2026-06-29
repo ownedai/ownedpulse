@@ -1,5 +1,5 @@
 """
-regpulse API — FastAPI backend for regulatory intelligence queries.
+ownedpulse API — FastAPI backend for regulatory intelligence queries.
 Phase H: Query UI v3.
 """
 
@@ -36,7 +36,7 @@ def _read_version():
 
 APP_VERSION = _read_version()
 
-app = FastAPI(title="regpulse API", version=APP_VERSION)
+app = FastAPI(title="ownedpulse API", version=APP_VERSION)
 
 app.include_router(corpus_router, prefix="/api/corpus")
 app.include_router(admin_router, prefix="/api/admin")
@@ -52,7 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logger = logging.getLogger("regpulse.api")
+logger = logging.getLogger("ownedpulse.api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -2651,7 +2651,7 @@ async def export_history(
             routing_label = "Metadata lookup" if routing == "METADATA" else "Semantic search"
 
             answer_text = answer or ""
-            answer_excerpt = (answer_text[:300] + "… [full answer: load query_id in regpulse]") if len(answer_text) > 300 else answer_text
+            answer_excerpt = (answer_text[:300] + "… [full answer: load query_id in ownedpulse]") if len(answer_text) > 300 else answer_text
 
             writer.writerow([
                 qid, ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
@@ -2668,7 +2668,7 @@ async def export_history(
             date_suffix = f"_{date_from}_{date_to}"
         elif date_from:
             date_suffix = f"_from_{date_from}"
-        filename = f"regpulse_audit{date_suffix}.csv"
+        filename = f"ownedpulse_audit{date_suffix}.csv"
 
         return Response(
             content=buf.getvalue(),
@@ -2738,7 +2738,7 @@ async def export_history(
         date_suffix = ""
         if date_from and date_to:
             date_suffix = f"_{date_from}_{date_to}"
-        filename = f"regpulse_audit_log{date_suffix}_{len(queries)}queries.pdf"
+        filename = f"ownedpulse_audit_log{date_suffix}_{len(queries)}queries.pdf"
 
         return Response(
             content=pdf_bytes,
@@ -2887,11 +2887,11 @@ async def export_query(query_id: str, format: str = "json"):
                 "langfuse_trace_id": langfuse_trace_id,
                 "classifier": classifier or "",
                 "export_timestamp": datetime.now(timezone.utc).isoformat(),
-                "regpulse_version": APP_VERSION,
+                "ownedpulse_version": APP_VERSION,
             }
             return JSONResponse(
                 content=export,
-                headers={"Content-Disposition": f'attachment; filename="regpulse-export-{query_id}.json"'},
+                headers={"Content-Disposition": f'attachment; filename="ownedpulse-export-{query_id}.json"'},
             )
 
         elif format == "pdf":
@@ -2911,7 +2911,7 @@ async def export_query(query_id: str, format: str = "json"):
                 "classifier":             classifier or "",
             }
             pdf_bytes = generate_query_export_pdf(payload)
-            filename = f"regpulse-export-{query_id[:8]}.pdf"
+            filename = f"ownedpulse-export-{query_id[:8]}.pdf"
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",

@@ -1,6 +1,6 @@
 """
-regpulse API endpoint tests.
-Place at /opt/projects/regpulse/tests/api/test_endpoints.py
+ownedpulse API endpoint tests.
+Place at /opt/projects/ownedpulse/tests/api/test_endpoints.py
 
 Tests every endpoint for correct HTTP status, response shape, and field
 presence. Uses corrected field names from DEBRIEF.md throughout.
@@ -490,7 +490,7 @@ class TestExportEndpoint:
         qid = submitted_query["query_id"]
         r = api_client.get(f"/api/query/{qid}/export?format=json")
         cd = r.headers.get("content-disposition", "")
-        assert f"regpulse-export-{qid}" in cd, \
+        assert f"ownedpulse-export-{qid}" in cd, \
             f"Export filename wrong: {cd}"
 
     def test_export_unknown_id_returns_404(self, api_client):

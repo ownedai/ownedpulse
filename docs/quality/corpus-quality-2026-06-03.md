@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The regpulse corpus was re-ingested on 2026-06-01 via the G-T3 orchestrator (`g3_reingest.py`). This report confirms corpus integrity across 11 acceptance checks. All mandatory checks pass. Three warnings are logged for known gaps that do not affect query correctness.
+The ownedpulse corpus was re-ingested on 2026-06-01 via the G-T3 orchestrator (`g3_reingest.py`). This report confirms corpus integrity across 11 acceptance checks. All mandatory checks pass. Three warnings are logged for known gaps that do not affect query correctness.
 
 ---
 

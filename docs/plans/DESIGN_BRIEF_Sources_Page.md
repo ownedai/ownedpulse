@@ -7,7 +7,7 @@
 
 ## Context
 
-Sources is a new page added to regpulse. It owns corpus configuration and initial ingestion setup. It is opened rarely — during system setup or when the operator needs to add, reingest, or remove a source.
+Sources is a new page added to ownedpulse. It owns corpus configuration and initial ingestion setup. It is opened rarely — during system setup or when the operator needs to add, reingest, or remove a source.
 
 Feed Management moves from Admin to Sources. Admin slims to System Health, Pipeline Trigger, Model Selection only.
 

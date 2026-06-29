@@ -6,7 +6,7 @@ Run: python3 backfill_issuing_body.py [--dry-run]
 import sys
 import os
 import argparse
-sys.path.insert(0, "/opt/projects/regpulse/api")
+sys.path.insert(0, "/opt/projects/ownedpulse/api")
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue

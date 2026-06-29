@@ -1,6 +1,6 @@
 """
-regpulse integration tests — routing, query expansion, comprehensive queries.
-Place at /opt/projects/regpulse/tests/integration/test_routing.py
+ownedpulse integration tests — routing, query expansion, comprehensive queries.
+Place at /opt/projects/ownedpulse/tests/integration/test_routing.py
 
 Changes from previous version:
 - retrieval_params sent in every request

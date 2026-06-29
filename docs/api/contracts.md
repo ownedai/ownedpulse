@@ -121,7 +121,7 @@ Fields per item: `query_id`, `query_text`, `timestamp`, `routing_path`, `citatio
 
 Export content: query text + id + timestamp, routing path (human-readable), retrieval params, sub-queries, filters, answer, cited citations (full provenance), uncited retrieved chunks (labelled "Retrieved but not cited"), Langfuse trace ID, export timestamp and version.
 
-Filename: `regpulse-export-{query_id}.{json|pdf}`
+Filename: `ownedpulse-export-{query_id}.{json|pdf}`
 
 ---
 

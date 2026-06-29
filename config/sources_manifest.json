@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "Authoritative source-feed registry for RegPulse. Gates the RSS archive scan (only feeds listed here are seeded into document_registry) and provides per-feed identity defaults for metadata.json files that lack document_type/class/status.",
+  "description": "Authoritative source-feed registry for OwnedPulse. Gates the RSS archive scan (only feeds listed here are seeded into document_registry) and provides per-feed identity defaults for metadata.json files that lack document_type/class/status.",
   "feeds": [
     {
       "feed_id": "fda_press_releases",

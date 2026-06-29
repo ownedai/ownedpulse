@@ -1,6 +1,6 @@
-# /opt/projects/regpulse/scripts/data_quality_gate.py
+# /opt/projects/ownedpulse/scripts/data_quality_gate.py
 """
-Data Quality Gate — RegPulse Corpus
+Data Quality Gate — OwnedPulse Corpus
 ====================================
 Run after any full reingestion. All checks must pass before proceeding.
 Exit code 0 = GATE PASS. Exit code 1 = GATE FAIL.
@@ -128,7 +128,7 @@ def main():
     VERBOSE = args.verbose
 
     print("=" * 60)
-    print("  RegPulse Data Quality Gate")
+    print("  OwnedPulse Data Quality Gate")
     print("=" * 60)
     print()
 

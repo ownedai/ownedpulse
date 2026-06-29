@@ -93,7 +93,7 @@ Returns:
 `POST /sources/initial-load/run`
 Body: `{ "scope": [{"agency": "FDA", "doc_type": "guidance"}, ...], "force": false }`
 If `force=false` and status=populated, return 409 with message "Corpus already populated. Send force=true to wipe and reingest."
-If `force=true`, call `wipe_corpus.py` logic (or equivalent internal function) before reingesting. Wipe is atomic and sequential: Langfuse traces (regpulse-tagged) → `ingestion_doc` → `ingestion_run` → `document_registry` → Qdrant points. Do NOT drop Qdrant collection.
+If `force=true`, call `wipe_corpus.py` logic (or equivalent internal function) before reingesting. Wipe is atomic and sequential: Langfuse traces (ownedpulse-tagged) → `ingestion_doc` → `ingestion_run` → `document_registry` → Qdrant points. Do NOT drop Qdrant collection.
 Launches as FastAPI background task using **Mode A** (bulk, per-document traces, no run envelope — mandatory for 1000+ doc initial load). Returns `{ "run_token": "uuid" }` — this is not a `trace_id` (there is no run envelope in Mode A), it is a session token used to track the SSE stream. Store it server-side mapped to the background task.
 
 `GET /sources/initial-load/progress/{run_token}`

@@ -2,20 +2,20 @@ services:
   postgres:
     profiles: [postgres]
     image: postgres:16
-    container_name: regpulse-postgres
+    container_name: ownedpulse-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-regpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-ownedpulse}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-regpulse}
+      POSTGRES_DB: ${POSTGRES_DB:-ownedpulse}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     networks:
-      - regpulse
+      - ownedpulse
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-regpulse}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ownedpulse}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -24,14 +24,14 @@ services:
   qdrant:
     profiles: [qdrant]
     image: qdrant/qdrant:latest
-    container_name: regpulse-qdrant
+    container_name: ownedpulse-qdrant
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
     ports:
       - "${QDRANT_PORT:-6333}:6333"
     networks:
-      - regpulse
+      - ownedpulse
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
       interval: 5s
@@ -42,14 +42,14 @@ services:
   ollama:
     profiles: [ollama]
     image: ollama/ollama:latest
-    container_name: regpulse-ollama
+    container_name: ownedpulse-ollama
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
     networks:
-      - regpulse
+      - ownedpulse
     deploy:
       resources:
         reservations:
@@ -60,7 +60,7 @@ services:
   docling:
     profiles: [docling]
     image: quay.io/docling-project/docling-serve-cu128:main
-    container_name: regpulse-docling
+    container_name: ownedpulse-docling
     restart: unless-stopped
     environment:
       NVIDIA_VISIBLE_DEVICES: all
@@ -75,7 +75,7 @@ services:
     ports:
       - "${DOCLING_PORT:-5001}:5001"
     networks:
-      - regpulse
+      - ownedpulse
     deploy:
       resources:
         reservations:
@@ -93,22 +93,22 @@ services:
   langfuse:
     profiles: [langfuse]
     image: langfuse/langfuse:2
-    container_name: regpulse-langfuse
+    container_name: ownedpulse-langfuse
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@${POSTGRES_HOST:-regpulse-postgres}:${POSTGRES_PORT:-5432}/${LANGFUSE_DB_NAME:-langfuse}
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@${POSTGRES_HOST:-ownedpulse-postgres}:${POSTGRES_PORT:-5432}/${LANGFUSE_DB_NAME:-langfuse}
       NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
       SALT: ${LANGFUSE_SALT}
       TELEMETRY_ENABLED: "false"
       NEXT_TELEMETRY_DISABLED: "1"
-      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-regpulse-org}
-      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-RegPulse}
-      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-regpulse-project}
-      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-RegPulse}
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-ownedpulse-org}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-OwnedPulse}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-ownedpulse-project}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-OwnedPulse}
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
@@ -117,7 +117,7 @@ services:
     ports:
       - "${LANGFUSE_PORT:-3001}:3000"
     networks:
-      - regpulse
+      - ownedpulse
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
       interval: 10s
@@ -125,28 +125,28 @@ services:
       retries: 12
       start_period: 30s
 
-  regpulse-api:
+  ownedpulse-api:
     build: ./api
-    container_name: regpulse-api
+    container_name: ownedpulse-api
     restart: unless-stopped
     environment:
-      QDRANT_HOST: ${QDRANT_HOST:-regpulse-qdrant}
+      QDRANT_HOST: ${QDRANT_HOST:-ownedpulse-qdrant}
       QDRANT_PORT: ${QDRANT_PORT:-6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-knowledge_base}
-      POSTGRES_HOST: ${POSTGRES_HOST:-regpulse-postgres}
+      POSTGRES_HOST: ${POSTGRES_HOST:-ownedpulse-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-knowledge_base}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://regpulse-ollama:11434}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ownedpulse-ollama:11434}
       OLLAMA_PORT: ${OLLAMA_PORT:-11434}
       OLLAMA_GEN_MODEL: ${OLLAMA_GEN_MODEL:-phi4:14b-q8_0}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-mxbai-embed-large}
       DATA_DIR: /data
-      DOCLING_HOST: ${DOCLING_HOST:-http://regpulse-docling:5001}
+      DOCLING_HOST: ${DOCLING_HOST:-http://ownedpulse-docling:5001}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://regpulse-langfuse:3000}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://ownedpulse-langfuse:3000}
       HF_TOKEN: ${HF_TOKEN:-}
       RSS_SCHEDULE_HOUR: ${RSS_SCHEDULE_HOUR:-9}
       RSS_SCHEDULE_MINUTE: ${RSS_SCHEDULE_MINUTE:-0}
@@ -160,7 +160,7 @@ services:
     ports:
       - "${API_PORT:-8001}:8001"
     networks:
-      - regpulse
+      - ownedpulse
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
       interval: 10s
@@ -168,9 +168,9 @@ services:
       retries: 6
       start_period: 15s
 
-  regpulse-ui:
+  ownedpulse-ui:
     build: ./ui
-    container_name: regpulse-ui
+    container_name: ownedpulse-ui
     restart: unless-stopped
     environment:
       VITE_API_URL: ${VITE_API_URL:-}
@@ -181,7 +181,7 @@ services:
     ports:
       - "${UI_PORT:-5173}:5173"
     networks:
-      - regpulse
+      - ownedpulse
 
 volumes:
   postgres_data:
@@ -189,5 +189,5 @@ volumes:
   ollama_data:
 
 networks:
-  regpulse:
+  ownedpulse:
     driver: bridge

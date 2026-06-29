@@ -1,6 +1,6 @@
 """
-regpulse E2E UI tests — Playwright.
-Place at /opt/projects/regpulse/tests/e2e/test_ui.py
+ownedpulse E2E UI tests — Playwright.
+Place at /opt/projects/ownedpulse/tests/e2e/test_ui.py
 
 Install: pip install playwright pytest-playwright && playwright install chromium
 Run: pytest tests/e2e/ --headed (or headless for CI)
@@ -493,7 +493,7 @@ class TestExportButton:
         with page.expect_download() as dl_info:
             page.locator("[data-testid='export-json']").click()
         download = dl_info.value
-        assert download.suggested_filename.startswith("regpulse-export-"), \
+        assert download.suggested_filename.startswith("ownedpulse-export-"), \
             f"Unexpected filename: {download.suggested_filename}"
         assert download.suggested_filename.endswith(".json"), \
             f"JSON export should have .json extension"

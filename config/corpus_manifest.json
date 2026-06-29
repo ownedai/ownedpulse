@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "Authoritative base corpus for RegPulse. Source of truth for fresh install and corpus reset. seed_registry.py reads this, resolves the source file at archive_path/source_filename, downloads from download_url if missing, and registers identity metadata only (no ingestion state).",
+  "description": "Authoritative base corpus for OwnedPulse. Source of truth for fresh install and corpus reset. seed_registry.py reads this, resolves the source file at archive_path/source_filename, downloads from download_url if missing, and registers identity metadata only (no ingestion state).",
   "_notes": [
     "archive_path values are literal on-disk paths under the container mount /archive (host: /mnt/data/regulatory_archive). Do not normalise the hyphen/underscore inconsistency in ICH dir names — match disk exactly.",
     "download_url is the direct fetch target used only when the source file is missing. source_url is provenance shown in the UI AND the fetch URL used by the ingestion pipeline — for ICH docs it must match download_url (direct PDF) since the ich.org landing pages are JS-rendered and produce no usable content after cleaning.",
