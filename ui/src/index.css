@@ -2584,8 +2584,6 @@ body {
   font-weight: 500;
   white-space: nowrap;
   background: var(--doc-bg);
-  position: sticky;
-  top: 0;
 }
 
 .rp-table thead th.sortable { cursor: pointer; }
