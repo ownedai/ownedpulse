@@ -1390,6 +1390,7 @@ def build_citation(chunk: dict, index: int, cited_by_llm: bool, provenance: dict
         "embedding_model": prov.get("embedding_model"),
         "relevance_rank": index,
         "collection": "knowledge_base",
+        "doc_type": chunk.get("document_type", ""),
     }
 
 
