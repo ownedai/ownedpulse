@@ -1729,7 +1729,8 @@ async def _run_content_query(
             result = {
                 "query_id": query_id,
                 "timestamp": timestamp,
-                "routing_path": "CONTENT",
+                "routing_path": routing_path,
+                "classifier": classifier,
                 "sub_queries": sub_queries,
                 "answer": "No sources above the relevance threshold were found for this query.",
                 "citations": [],
@@ -1888,7 +1889,8 @@ async def _run_content_query(
         result = {
             "query_id": query_id,
             "timestamp": timestamp,
-            "routing_path": "CONTENT",
+            "routing_path": routing_path,
+            "classifier": classifier,
             "sub_queries": sub_queries,
             "answer": answer.strip(),
             "citations": all_citations,

@@ -415,10 +415,17 @@ def generate_query_export_pdf(
         generation_model = cfg.get("active_llm_model", generation_model)
         _snap_raw        = cfg.get("corpus_snapshot_date", "2026-06-01")
         try:
-            corpus_snapshot = datetime.strptime(_snap_raw, "%Y-%m-%d").strftime("%d.%m.%Y")
+            _snap_fmt = datetime.strptime(_snap_raw, "%Y-%m-%d").strftime("%d.%m.%Y")
         except Exception:
-            corpus_snapshot = _snap_raw
+            _snap_fmt = _snap_raw
         prompt_version   = cfg.get("prompt_version", "V8")
+        # Get active document count for corpus field
+        try:
+            _cur.execute("SELECT COUNT(*) FROM document_registry WHERE document_status = 'active' OR document_status = 'final'")
+            _doc_count = _cur.fetchone()[0]
+        except Exception:
+            _doc_count = 0
+        corpus_snapshot = f"knowledge_base · {_doc_count} docs · {_snap_fmt}"
         _conn.close()
     except Exception:
         pass
