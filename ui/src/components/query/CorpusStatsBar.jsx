@@ -58,7 +58,7 @@ export default function CorpusStatsBar() {
       <div className="left">
         {stats && (
           <>
-            <Tooltip tip="Total guidance documents currently indexed in the regpulse vector store.">
+            <Tooltip tip="Total guidance documents currently indexed in the ownedpulse vector store.">
               <span className="stat" style={{ cursor: 'help' }}>
                 <span className="k">Indexed</span>
                 <span className="v">{stats.total_documents?.toLocaleString() || '—'} docs</span>
@@ -96,7 +96,7 @@ export default function CorpusStatsBar() {
         {isRunning && (
           <div
             className="ingestion-status"
-            onClick={() => window.dispatchEvent(new CustomEvent('regpulse:open-progress'))}
+            onClick={() => window.dispatchEvent(new CustomEvent('ownedpulse:open-progress'))}
             onContextMenu={handleContext}
             style={{ cursor: 'pointer' }}
             title={uiMode === 'running'

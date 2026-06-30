@@ -227,7 +227,7 @@ export default function HistoryPage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `regpulse-audit-${todayISO()}.${fmt}`;
+        a.download = `ownedpulse-audit-${todayISO()}.${fmt}`;
         a.click();
         URL.revokeObjectURL(url);
       })

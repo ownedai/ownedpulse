@@ -284,8 +284,8 @@ export default function CorpusPage() {
   // Auto-refresh when bootstrap ingestion completes
   useEffect(() => {
     const handler = () => fetchData();
-    window.addEventListener('regpulse:bootstrap-complete', handler);
-    return () => window.removeEventListener('regpulse:bootstrap-complete', handler);
+    window.addEventListener('ownedpulse:bootstrap-complete', handler);
+    return () => window.removeEventListener('ownedpulse:bootstrap-complete', handler);
   }, [fetchData]);
 
   async function handleDefer(docId) {

@@ -95,12 +95,12 @@ function MainPage() {
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `regpulse-export-${result.query_id}.json`; a.click();
+        a.href = url; a.download = `ownedpulse-export-${result.query_id}.json`; a.click();
         URL.revokeObjectURL(url);
       } else {
         const url = URL.createObjectURL(data);
         const a = document.createElement('a');
-        a.href = url; a.download = `regpulse-export-${result.query_id}.pdf`; a.click();
+        a.href = url; a.download = `ownedpulse-export-${result.query_id}.pdf`; a.click();
         URL.revokeObjectURL(url);
       }
     } catch (_) {}
@@ -282,8 +282,8 @@ export default function App() {
   // Global event: ingestion icon click in toolbar opens the progress monitor
   useEffect(() => {
     const handler = () => setShowBootstrapModal(true);
-    window.addEventListener('regpulse:open-progress', handler);
-    return () => window.removeEventListener('regpulse:open-progress', handler);
+    window.addEventListener('ownedpulse:open-progress', handler);
+    return () => window.removeEventListener('ownedpulse:open-progress', handler);
   }, []);
 
   const handleNewQuery = useCallback(() => {

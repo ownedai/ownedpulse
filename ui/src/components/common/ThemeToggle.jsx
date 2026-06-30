@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Tooltip from './Tooltip';
 
-const STORAGE_KEY = 'regpulse-theme';
+const STORAGE_KEY = 'ownedpulse-theme';
 
 function getInitialTheme() {
   try {

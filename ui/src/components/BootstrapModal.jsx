@@ -234,7 +234,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
   // Notify other pages when bootstrap completes (e.g. CorpusPage auto-refresh)
   useEffect(() => {
     if (uiMode === 'complete') {
-      window.dispatchEvent(new CustomEvent('regpulse:bootstrap-complete'));
+      window.dispatchEvent(new CustomEvent('ownedpulse:bootstrap-complete'));
     }
   }, [uiMode]);
   useEffect(() => () => {

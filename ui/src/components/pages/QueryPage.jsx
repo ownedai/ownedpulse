@@ -772,7 +772,7 @@ export default function QueryPage() {
         : data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `regpulse-export-${result.query_id}.${fmt}`; a.click();
+      a.href = url; a.download = `ownedpulse-export-${result.query_id}.${fmt}`; a.click();
       URL.revokeObjectURL(url);
     } catch (_) {}
   }, [result?.query_id]);
