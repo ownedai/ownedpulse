@@ -682,7 +682,7 @@ export default function QueryPage() {
   const { loaded: modelLoaded, checked: modelChecked } = useContext(ModelStatusContext);
 
   const [filters, setFilters] = useState({});
-  const [retrieval, setRetrieval] = useState({ depth: 'standard', topK: 10, scoreThreshold: 0.60 });
+  const [retrieval, setRetrieval] = useState({ depth: 'standard', topK: 20, scoreThreshold: 0.60 });
 
   const [queryState, setQueryState] = useState(QUERY_STATES.IDLE);
   const [selectedChunkId, setSelectedChunkId] = useState(null);
