@@ -32,9 +32,9 @@ function MainPage() {
 
   const [filters, setFilters] = useState({});
   const [retrieval, setRetrieval] = useState({
-    depth: 'standard',
-    topK: 20,
-    scoreThreshold: 0.60,
+    depth: DEFAULT_RETRIEVAL.depth,
+    topK: DEFAULT_RETRIEVAL.topK,
+    scoreThreshold: DEFAULT_RETRIEVAL.scoreThreshold,
   });
   const [activeCitation, setActiveCitation] = useState(null);
   const [showTrace, setShowTrace] = useState(false);
