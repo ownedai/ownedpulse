@@ -605,8 +605,8 @@ def generate_query_export_pdf(
                 agency     = chunk.get("issuing_body") or "—"
                 version_raw = chunk.get("document_version") or ""
                 version    = version_raw if (version_raw and version_raw != "1.0") else "—"
-                clause     = chunk.get("clause_id") or "Not available"
-                pub_date   = chunk.get("publication_date") or "Not available"
+                clause     = chunk.get("clause_id") or ""
+                pub_date   = chunk.get("publication_date") or ""
                 page_no    = str(chunk.get("page_no") or "—")
                 doc_type   = chunk.get("doc_type") or chunk.get("document_type") or "Not classified"
                 chunk_txt  = chunk.get("chunk_text") or ""
@@ -699,6 +699,8 @@ def generate_query_export_pdf(
                 for ci, (k, v) in enumerate(cells):
                     if not k:
                         continue
+                    if not v:
+                        continue
                     cx3   = MARGIN_X + (ci % 3) * col_w3 + 10
                     row_y = meta_y - (ci // 3) * META_ROW_H
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
@@ -772,8 +774,8 @@ def generate_query_export_pdf(
                 uc_agency   = chunk.get("issuing_body") or "—"
                 uc_version_raw = chunk.get("document_version") or ""
                 uc_version  = uc_version_raw if (uc_version_raw and uc_version_raw != "1.0") else "—"
-                uc_pub_date = chunk.get("publication_date") or "Not available"
-                uc_clause   = chunk.get("clause_id") or "Not available"
+                uc_pub_date = chunk.get("publication_date") or ""
+                uc_clause   = chunk.get("clause_id") or ""
                 uc_page_no  = str(chunk.get("page_no") or "—")
                 uc_doc_type = chunk.get("doc_type") or chunk.get("document_type") or "Not classified"
                 uc_score    = chunk.get("score")
@@ -821,6 +823,8 @@ def generate_query_export_pdf(
                 uc_col_w3 = CONTENT_W / 3
                 for ci, (k, v) in enumerate(uc_cells):
                     if not k:
+                        continue
+                    if not v:
                         continue
                     uc_cx = MARGIN_X + (ci % 3) * uc_col_w3 + 10
                     uc_ry = uc_meta_y - (ci // 3) * _UNC_META_ROW_H
