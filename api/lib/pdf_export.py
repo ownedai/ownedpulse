@@ -405,7 +405,10 @@ def generate_query_export_pdf(
     try:
         import psycopg2
         pg_dsn = os.environ.get("POSTGRES_DSN") or (
-            f"host=postgres port=5432 dbname=knowledge_base user=postgres "
+            f"host={os.environ.get('POSTGRES_HOST', 'postgres')} "
+            f"port={os.environ.get('POSTGRES_PORT', '5432')} "
+            f"dbname={os.environ.get('POSTGRES_DB', 'knowledge_base')} "
+            f"user={os.environ.get('POSTGRES_USER', 'postgres')} "
             f"password={os.environ.get('POSTGRES_PASSWORD', '')}"
         )
         _conn = psycopg2.connect(pg_dsn)
