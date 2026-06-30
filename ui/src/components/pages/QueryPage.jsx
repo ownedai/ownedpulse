@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useContext } from 'react';
+import { DEFAULT_RETRIEVAL } from '../../constants';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ModelStatusContext } from '../../context/ModelStatusContext';
 import FilterBar from '../layout/FilterBar';
@@ -682,7 +683,7 @@ export default function QueryPage() {
   const { loaded: modelLoaded, checked: modelChecked } = useContext(ModelStatusContext);
 
   const [filters, setFilters] = useState({});
-  const [retrieval, setRetrieval] = useState({ depth: 'standard', topK: 20, scoreThreshold: 0.60 });
+  const [retrieval, setRetrieval] = useState({ DEFAULT_RETRIEVAL.depth, topK: DEFAULT_RETRIEVAL.topK, scoreThreshold: DEFAULT_RETRIEVAL.scoreThreshold });
 
   const [queryState, setQueryState] = useState(QUERY_STATES.IDLE);
   const [selectedChunkId, setSelectedChunkId] = useState(null);
