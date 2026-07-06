@@ -112,12 +112,7 @@ services:
       - "${LANGFUSE_PORT:-3001}:3000"
     networks:
       - ownedpulse
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 12
-      start_period: 30s
+    # healthcheck omitted — langfuse image lacks curl/wget; install.sh checks from host
 
   ownedpulse-api:
     build: ./api

@@ -299,7 +299,7 @@ else
 fi
 
 if [[ "${LANGFUSE_MODE}" == "bundled" ]]; then
-  wait_for "langfuse" "docker exec ownedpulse-langfuse wget -qO- http://localhost:3000/api/public/health" 60
+  wait_for "langfuse" "curl -sf http://localhost:${LANGFUSE_PORT}/api/public/health" 60
 else
   wait_for "langfuse (external)" "curl -sf ${LANGFUSE_HOST}/api/public/health" 60
 fi
