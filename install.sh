@@ -55,10 +55,18 @@ log_ok "POSTGRES_PASSWORD is set"
 nvidia-smi > /dev/null 2>&1 || die "No NVIDIA GPU detected (nvidia-smi failed). OwnedPulse requires an NVIDIA GPU with drivers and nvidia-container-toolkit installed."
 log_ok "NVIDIA GPU detected"
 
+log_info "Checking nvidia-container-toolkit package..."
+dpkg -l nvidia-container-toolkit 2>/dev/null | grep -q '^ii' \
+  || log_warn "nvidia-container-toolkit package not found. If GPU containers fail, install it:\n  sudo apt install -y nvidia-container-toolkit"
+
 log_info "Verifying GPU access from Docker..."
-docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi > /dev/null 2>&1 \
-  || die "nvidia-container-toolkit is not configured correctly.\nRun: sudo apt install nvidia-container-toolkit && sudo systemctl restart docker"
-log_ok "nvidia-container-toolkit working"
+if docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi > /dev/null 2>&1; then
+  log_ok "nvidia-container-toolkit working"
+elif docker images nvidia/cuda:12.0-base-ubuntu22.04 --format '{{.Repository}}' 2>/dev/null | grep -q .; then
+  die "nvidia-container-toolkit Docker GPU test failed.\nThe CUDA image is present but GPU access from Docker is broken.\nRun: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
+else
+  die "Docker GPU test image (nvidia/cuda:12.0-base-ubuntu22.04) could not be pulled.\nCheck internet access and Docker Hub availability, then pull manually:\n  docker pull nvidia/cuda:12.0-base-ubuntu22.04\nThen re-run install.sh"
+fi
 
 # Required env vars
 for var in POSTGRES_PASSWORD LANGFUSE_NEXTAUTH_SECRET LANGFUSE_SALT LANGFUSE_INIT_USER_EMAIL LANGFUSE_INIT_USER_PASSWORD; do
