@@ -281,7 +281,7 @@ else
 fi
 
 if [[ "${QDRANT_MODE}" == "bundled" ]]; then
-  wait_for "qdrant" "docker exec ownedpulse-qdrant wget -qO- http://localhost:6333/healthz" 60
+  wait_for "qdrant" "curl -sf http://localhost:${QDRANT_PORT}/healthz" 60
 else
   wait_for "qdrant (external)" "curl -sf http://${QDRANT_HOST}:${QDRANT_PORT}/healthz" 60
 fi

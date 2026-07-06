@@ -32,12 +32,7 @@ services:
       - "${QDRANT_PORT:-6333}:6333"
     networks:
       - ownedpulse
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+    # healthcheck omitted — qdrant image lacks curl/wget; install.sh checks from host
 
   ollama:
     profiles: [ollama]
