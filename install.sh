@@ -226,28 +226,53 @@ if [[ "${LANGFUSE_MODE}" == "bundled" ]]; then
   fi
   echo ""; log_ok "PostgreSQL is ready"
 
+  # pg_isready may return OK while the server is still finishing startup
+  # (crash recovery, WAL replay). Give it a moment before running psql.
+  sleep 3
+
   create_langfuse_db() {
+    # Retry psql commands — the database may be briefly in recovery even
+    # after pg_isready reports success.
+    _retry_psql() {
+      local desc="$1"; shift
+      local attempt=1
+      while true; do
+        if "$@" 2>&1; then return 0; fi
+        if (( attempt >= 5 )); then
+          die "Failed to $desc after 5 attempts"
+        fi
+        sleep 2; attempt=$((attempt + 1))
+      done
+    }
+
     if [[ "${POSTGRES_MODE}" == "bundled" ]]; then
-      local EXEC="docker exec $PG_HOST psql -U $POSTGRES_USER"
       local user_exists; user_exists=$(docker exec "$PG_HOST" psql -U "$POSTGRES_USER" -tAc "SELECT 1 FROM pg_roles WHERE rolname='${LANGFUSE_DB_USER}'" 2>/dev/null || true)
       if [[ "$user_exists" != "1" ]]; then
         log_info "Creating user: $LANGFUSE_DB_USER"
-        docker exec "$PG_HOST" psql -U "$POSTGRES_USER" -c "CREATE USER \"${LANGFUSE_DB_USER}\" WITH PASSWORD '${LANGFUSE_DB_PASSWORD}';" 2>&1 || die "Failed to create Langfuse database user"
+        _retry_psql "create Langfuse user" docker exec "$PG_HOST" psql -U "$POSTGRES_USER" -c "CREATE USER \"${LANGFUSE_DB_USER}\" WITH PASSWORD '${LANGFUSE_DB_PASSWORD}';"
+        log_ok "Langfuse user created"
+      else
+        log_ok "Langfuse user already exists"
       fi
       local db_exists; db_exists=$(docker exec "$PG_HOST" psql -U "$POSTGRES_USER" -tAc "SELECT 1 FROM pg_database WHERE datname='${LANGFUSE_DB_NAME}'" 2>/dev/null || true)
       if [[ "$db_exists" != "1" ]]; then
         log_info "Creating database: $LANGFUSE_DB_NAME"
-        docker exec "$PG_HOST" psql -U "$POSTGRES_USER" -c "CREATE DATABASE \"${LANGFUSE_DB_NAME}\" OWNER \"${LANGFUSE_DB_USER}\";" 2>&1 || die "Failed to create Langfuse database"
+        _retry_psql "create Langfuse database" docker exec "$PG_HOST" psql -U "$POSTGRES_USER" -c "CREATE DATABASE \"${LANGFUSE_DB_NAME}\" OWNER \"${LANGFUSE_DB_USER}\";"
+        log_ok "Langfuse database created"
+      else
+        log_ok "Langfuse database already exists"
       fi
     else
       local PSQL="docker run --rm postgres:16 psql postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/postgres"
       $PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname='${LANGFUSE_DB_USER}'" 2>/dev/null | grep -q 1 || {
         log_info "Creating user: $LANGFUSE_DB_USER"
-        $PSQL -c "CREATE USER \"${LANGFUSE_DB_USER}\" WITH PASSWORD '${LANGFUSE_DB_PASSWORD}';" 2>&1 || die "Failed to create Langfuse database user on external postgres"
+        _retry_psql "create Langfuse user on external postgres" $PSQL -c "CREATE USER \"${LANGFUSE_DB_USER}\" WITH PASSWORD '${LANGFUSE_DB_PASSWORD}';"
+        log_ok "Langfuse user created"
       }
       $PSQL -tAc "SELECT 1 FROM pg_database WHERE datname='${LANGFUSE_DB_NAME}'" 2>/dev/null | grep -q 1 || {
         log_info "Creating database: $LANGFUSE_DB_NAME"
-        $PSQL -c "CREATE DATABASE \"${LANGFUSE_DB_NAME}\" OWNER \"${LANGFUSE_DB_USER}\";" 2>&1 || die "Failed to create Langfuse database on external postgres"
+        _retry_psql "create Langfuse database on external postgres" $PSQL -c "CREATE DATABASE \"${LANGFUSE_DB_NAME}\" OWNER \"${LANGFUSE_DB_USER}\";"
+        log_ok "Langfuse database created"
       }
     fi
     log_ok "Langfuse database ready"
