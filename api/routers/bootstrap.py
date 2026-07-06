@@ -409,6 +409,8 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
 
     # Pre-scan: for 'missing only' mode, check which docs are already
     # ingested so the total reflects only documents that need work.
+    # Base corpus documents (corpus_doc=TRUE) are always re-ingested —
+    # the user explicitly selected them and they should never be skipped.
     if redownload == "check":
         from lib.db import get_pg_conn as _get_conn
         ingest_docs = []
@@ -418,6 +420,15 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
             with _conn.cursor() as _cur:
                 for doc in docs:
                     doc_id = doc["doc_id"]
+                    # Always include base corpus docs — they're explicitly selected
+                    _cur.execute(
+                        "SELECT corpus_doc FROM document_registry WHERE document_id = %s",
+                        (doc_id,),
+                    )
+                    _cd = _cur.fetchone()
+                    if _cd and _cd[0]:
+                        ingest_docs.append(doc)
+                        continue
                     _cur.execute(
                         "SELECT 1 FROM ingestion_state "
                         "WHERE document_id = %s AND ingestion_status IN ('success','indexed')",
@@ -425,8 +436,6 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                     )
                     if _cur.fetchone():
                         already += 1
-                        # Don't log in docs — user asked for missing-only,
-                        # they don't care about files already ingested.
                         continue
                     # Fallback: some docs may be ingested but their ingestion_state
                     # row was not committed (e.g. process was killed mid-run).
