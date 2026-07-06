@@ -95,9 +95,8 @@ services:
     image: langfuse/langfuse:2
     container_name: ownedpulse-langfuse
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # install.sh waits for postgres and creates the langfuse DB before
+    # starting langfuse, so no depends_on is needed
     environment:
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@${POSTGRES_HOST:-ownedpulse-postgres}:${POSTGRES_PORT:-5432}/${LANGFUSE_DB_NAME:-langfuse}
       NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3001}
