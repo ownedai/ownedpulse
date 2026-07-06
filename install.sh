@@ -140,7 +140,7 @@ fi
 
 # Required env vars for Langfuse (only if bundled)
 if [[ "${LANGFUSE_MODE}" == "bundled" ]]; then
-  for var in LANGFUSE_NEXTAUTH_SECRET LANGFUSE_SALT LANGFUSE_INIT_USER_EMAIL LANGFUSE_INIT_USER_PASSWORD; do
+  for var in LANGFUSE_NEXTAUTH_SECRET LANGFUSE_SALT LANGFUSE_INIT_USER_EMAIL LANGFUSE_INIT_USER_PASSWORD LANGFUSE_DB_PASSWORD; do
     if [[ -z "${!var:-}" ]] || [[ "${!var}" == *"generate_with"* ]] || [[ "${!var}" == *"change_me"* ]]; then
       die "Required variable $var is not set in .env (needed for bundled Langfuse)"
     fi
@@ -328,6 +328,7 @@ MIGRATIONS=(
   "api/migrations/003_not_viable_recheck.up.sql"
   "api/migrations/004_not_viable_status.up.sql"
   "api/migrations/005_chunks_table.up.sql"
+  "api/migrations/006_ingestion_doc_doc_id_unique.up.sql"
   "scripts/migrations/migrate_feed_config.sql"
 )
 
