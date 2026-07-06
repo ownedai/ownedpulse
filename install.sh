@@ -374,7 +374,7 @@ fi
 docker compose up -d ownedpulse-api ownedpulse-ui 2>&1 \
   || die "Failed to start ownedpulse-api or ownedpulse-ui."
 
-wait_for "ownedpulse-api" "curl -sf http://localhost:${API_PORT}/health" 120
+wait_for "ownedpulse-api" "curl -s http://localhost:${API_PORT}/health | grep -q status" 120
 wait_for "ownedpulse-ui"   "curl -sf http://localhost:${UI_PORT}" 60
 
 # ── Step 9 — Summary ─────────────────────────────────────────────────────
