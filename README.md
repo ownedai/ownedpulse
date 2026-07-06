@@ -82,6 +82,8 @@ Fetch (Python scrapers) → Chunk (Docling) → Embed (Ollama) → Store (Qdrant
 
 **Observability**: all query traces are captured in Langfuse, including sub-queries, retrieved chunk IDs, similarity scores, and the prompt template version used.
 
+**Requirements**: NVIDIA GPU w/ ≥24GB VRAM recommended (phi4:14b-q8_0 + mxbai-embed-large via Ollama). CPU-only inference possible but not benchmarked; expect significantly slower generation.
+
 ---
 
 ## Ingestion
@@ -92,7 +94,7 @@ After ingestion, check logs for any lines starting with `WARNING: char_offset`. 
 
 ## Evaluation
 
-A structured evaluation was conducted using 50 questions across three categories, designed to reflect real regulatory work tasks rather than system testing scenarios.
+A structured evaluation was conducted using 50 questions across three categories, designed to reflect real regulatory work tasks rather than system testing scenarios. Reference hardware used for eval numbers was RTX 3090 24GB.
 
 **Question categories:**
 - A — Core lookup: single document, specific requirement
