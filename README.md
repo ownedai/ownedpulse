@@ -154,6 +154,18 @@ This metadata is designed to feed a validation package for organisations deployi
 
 ---
 
+## Quick Start
+
+Requirements: Docker + Docker Compose v2, NVIDIA GPU w/ nvidia-container-toolkit (unless all AI services set to external mode).
+
+cp .env.example .env
+edit .env — set POSTGRES_PASSWORD and Langfuse vars (see comments)
+
+./install.sh
+
+---
+
+
 ## Status
 
 Active development. 
