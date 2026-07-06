@@ -36,7 +36,7 @@ The current corpus contains public regulatory documents only. It does not proces
 
 This system has not been validated under GAMP 5 / CSA methodology. It is a portfolio and operational demonstration artefact. Organisations deploying this system in a GxP context are responsible for their own validation and qualification activities.
 
-GAMP 5 category assessment: Category 5 (Bespoke/Custom Software), risk classification LOW-MEDIUM (advisory function, no direct GxP process impact). 
+**GAMP 5 category assessment:** Category 5 (Bespoke/Custom Software), risk classification LOW-MEDIUM (advisory function, no direct GxP process impact). 
 ---
 
 ## Corpus
