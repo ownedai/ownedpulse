@@ -388,9 +388,10 @@ def redownload_source(archive_dir: Path, doc_id: str, mode: str) -> bool:
             with conn.cursor() as c:
                 c.execute(
                     "UPDATE document_registry "
-                    "SET source_hash = %s, source_fetched_at = NOW(), updated_at = NOW() "
+                    "SET source_hash = %s, source_fetched_at = NOW(), updated_at = NOW(), "
+                    "metadata_json = metadata_json || jsonb_build_object('source_hash', %s) "
                     "WHERE document_id = %s",
-                    (new_hash, doc_id),
+                    (new_hash, new_hash, doc_id),
                 )
 
         verb = "Re-downloaded" if mode == "force" else "Updated"
@@ -416,13 +417,25 @@ _DATE_PAT = _re.compile(
 )
 _URL_DATE_PAT = _re.compile(r'[_-](\d{4})[_-](\d{2})(\d{2})?(?:\.[a-z]+)?(?:$|[^0-9])', _re.IGNORECASE)
 
+# Valid year range for regulatory documents — rejects document reference numbers
+# mis-parsed as dates (e.g. CPMP/EWP/6235/04 → year 6235)
+_MIN_VALID_YEAR = 1900
+_MAX_VALID_YEAR = 2100
+
+def _is_valid_date(yyyy: int, mm: int, dd: int) -> bool:
+    """Reject years outside plausible range for regulatory documents."""
+    return _MIN_VALID_YEAR <= yyyy <= _MAX_VALID_YEAR
+
 def _parse_pub_date(val):
     if not val:
         return None
     try:
         from dateutil import parser as dp
         from datetime import datetime
-        return dp.parse(str(val), default=datetime(1900, 1, 1)).date()
+        d = dp.parse(str(val), default=datetime(1900, 1, 1)).date()
+        if not _is_valid_date(d.year, d.month, d.day):
+            return None
+        return d
     except Exception:
         return None
 
@@ -432,10 +445,12 @@ def _date_from_url(url):
     m = _URL_DATE_PAT.search(url)
     if not m:
         return None
-    yyyy, mm, dd = m.group(1), m.group(2), m.group(3) or '01'
+    yyyy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3) or '01')
+    if not _is_valid_date(yyyy, mm, dd):
+        return None
     try:
         from datetime import date
-        return date(int(yyyy), int(mm), int(dd))
+        return date(yyyy, mm, dd)
     except ValueError:
         return None
 
@@ -451,7 +466,9 @@ def _date_from_chunks(chunks):
         for m in _DATE_PAT.finditer(text):
             raw = next(g for g in m.groups() if g)
             try:
-                return dp.parse(raw, default=datetime(1900, 1, 1)).date()
+                d = dp.parse(raw, default=datetime(1900, 1, 1)).date()
+                if _is_valid_date(d.year, d.month, d.day):
+                    return d
             except Exception:
                 continue
     return None

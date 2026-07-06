@@ -72,6 +72,7 @@ def register(item: dict, archive_dir: Path, content_type: str):
     conn = get_kb()
     with conn.cursor() as c:
         # GATE3b: identity-only upsert — state columns removed
+        sha256_val = item.get('sha256', '')
         c.execute(
             'INSERT INTO document_registry '
             '(document_id, source_url, source_hash, source_fetched_at, '
@@ -84,14 +85,15 @@ def register(item: dict, archive_dir: Path, content_type: str):
             'source_fetched_at=EXCLUDED.source_fetched_at, archive_path=EXCLUDED.archive_path, '
             "issuing_body=COALESCE(NULLIF(EXCLUDED.issuing_body, ''), document_registry.issuing_body), "
             'publication_date=COALESCE(EXCLUDED.publication_date, document_registry.publication_date), '
+            'metadata_json=document_registry.metadata_json || jsonb_build_object(\'source_hash\', EXCLUDED.source_hash), '
             'updated_at=NOW()',
             (
-                item['doc_id'], item.get('pdf_url') or item.get('url',''), item.get('sha256',''),
+                item['doc_id'], item.get('pdf_url') or item.get('url',''), sha256_val,
                 datetime.now(timezone.utc), str(archive_dir),
                 authority, feed_id,
                 'regulatory', content_type, 'active',
                 meta.get('version',''),
-                json.dumps({'doc_id': item['doc_id'], 'feed_id': feed_id}),
+                json.dumps({'doc_id': item['doc_id'], 'feed_id': feed_id, 'source_hash': sha256_val}),
                 pub_date,
             )
         )

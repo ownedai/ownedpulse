@@ -215,7 +215,7 @@ async def document_detail(doc_id: str):
             """SELECT document_id, issuing_body, doc_type, ingestion_status,
                       chunk_count, last_indexed_at, run_id,
                       metadata_json->>'document_title' as title,
-                      metadata_json->>'publication_date' as pub_date,
+                      publication_date,
                       metadata_json->>'document_version' as version,
                       metadata_json->>'document_type' as regulatory_type,
                       metadata_json->>'source_url' as source_url,
@@ -246,7 +246,10 @@ async def document_detail(doc_id: str):
             scroll_result = client.scroll(
                 collection_name=QDRANT_COLLECTION,
                 scroll_filter={
-                    "must": [{"key": "document_id", "match": {"value": doc_id}}]
+                    "must": [
+                        {"key": "document_id", "match": {"value": doc_id}},
+                        {"key": "chunk_status", "match": {"value": "active"}},
+                    ]
                 },
                 limit=1,
                 with_payload=["source_hash"],
@@ -258,7 +261,10 @@ async def document_detail(doc_id: str):
             count_result = client.count(
                 collection_name=QDRANT_COLLECTION,
                 count_filter={
-                    "must": [{"key": "document_id", "match": {"value": doc_id}}]
+                    "must": [
+                        {"key": "document_id", "match": {"value": doc_id}},
+                        {"key": "chunk_status", "match": {"value": "active"}},
+                    ]
                 },
                 exact=True,
             )
@@ -275,7 +281,7 @@ async def document_detail(doc_id: str):
             "document_type": reg_type or None,
             "doc_type": dt,
             "document_version": version,
-            "publication_date": pub_date,
+            "publication_date": pub_date.isoformat() if pub_date else None,
             "issuing_body": normalise_agency(ib),
             "ingestion_status": status,
             "chunk_count": chunk_count or 0,

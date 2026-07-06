@@ -93,35 +93,44 @@ const LEGAL_RE = /legal interpretation|qualified regulatory professional|not a s
 function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
   if (!text) return { nodes: null, legalNote: null };
   const normalised = text
-    .replace(/\n{1,2}(\[\d+\])\n([.,])/g, ' $1$2')
-    .replace(/(\[\d+\])\s*\./g, '$1.')
-    .replace(/\s*\.\s*(\[\d+\])/g, '$1.');
+    .replace(/\[(\d+)\.\d+\]/g, (_, n) => `[${n}]`)
+    .replace(/\n{1,2}(\[\d+(?:\s*,\s*\d+)*\])\n([.,])/g, ' $1$2')
+    .replace(/(\[\d+(?:\s*,\s*\d+)*\])\s*\./g, '$1.')
+    .replace(/\s*\.\s*(\[\d+(?:\s*,\s*\d+)*\])/g, '$1.');
 
   const paragraphs = normalised.split('\n\n').filter((p) => p.trim());
   let legalNote = null;
 
   function renderInline(line) {
     const parts = [];
-    const re = /\[(\d+)\]|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
+    const re = /\[(\d+(?:\s*,\s*\d+)*)\]|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
     let last = 0;
     let m;
     while ((m = re.exec(line)) !== null) {
       if (m.index > last) parts.push(line.slice(last, m.index));
       if (m[1] !== undefined) {
-        const n = parseInt(m[1], 10);
-        const chunkForN = citations?.find((c) => c.index === n);
-        const isActive = chunkForN && chunkForN.chunk_id === selectedChunkId;
-        parts.push(
-          <span
-            key={`c-${m.index}`}
-            className={`g2v2-cmark${isActive ? ' on' : ''}`}
-            data-testid={`citation-${n}`}
-            onClick={() => onCitationClick(n)}
-            title={`Citation [${n}]`}
-          >
-            {n}
-          </span>
-        );
+        // Single [N] or multi [N, M, ...] citation — render each number as clickable
+        const nums = m[1].split(/\s*,\s*/).map((s) => parseInt(s, 10));
+        nums.forEach((n) => {
+          const chunkForN = citations?.find((c) => c.index === n);
+          const isActive = chunkForN && chunkForN.chunk_id === selectedChunkId;
+          parts.push(
+            <span
+              key={`c-${m.index}-${n}`}
+              className={`g2v2-cmark${isActive ? ' on' : ''}`}
+              data-testid={`citation-${n}`}
+              onClick={() => onCitationClick(n)}
+              title={`Citation [${n}]`}
+            >
+              {n}
+            </span>
+          );
+          // Add thin separator between numbers in a group
+          if (nums.length > 1 && n !== nums[nums.length - 1]) {
+            parts.push(<span key={`s-${m.index}-${n}`} className="g2v2-cmark-sep">, </span>);
+          }
+        });
+        // Add bracket wrappers visually — we already have [ and ] from the regex match
       } else if (m[2] !== undefined) {
         const label = m[2];
         const url = m[3].trim();
@@ -726,7 +735,39 @@ export default function QueryPage() {
     }
   }, [result?.query_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const citations = result?.citations || [];
+  // Normalize citations: renumber sequentially (cited 1..N, uncited N+1..M)
+  // so screen and PDF show consistent ordered numbering.
+  const { citations, answerText } = (() => {
+    const raw = result?.citations || [];
+    const rawAnswer = result?.answer || '';
+    if (!raw.length) return { citations: raw, answerText: rawAnswer };
+
+    // Split and sort each group by original index ascending
+    const cited = raw.filter((c) => c.cited_by_llm).sort((a, b) => a.index - b.index);
+    const uncited = raw.filter((c) => !c.cited_by_llm).sort((a, b) => a.index - b.index);
+    const ordered = [...cited, ...uncited];
+
+    // Build old-index → new-index map
+    const remap = {};
+    ordered.forEach((c, i) => { remap[c.index] = i + 1; });
+
+    // Renumber citations
+    const normalized = ordered.map((c, i) => ({ ...c, index: i + 1 }));
+
+    // Strip any decimal sub-citations [N.M] → [N] before remapping (LLM safety net)
+    const cleanAnswer = rawAnswer.replace(/\[(\d+)\.\d+\]/g, (_, n) => `[${n}]`);
+
+    // Rewrite answer [N] and [N, M, ...] markers to new indices
+    const normAnswer = cleanAnswer.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_, nums) => {
+      const remapped = nums.split(/\s*,\s*/).map((n) => {
+        const newIdx = remap[parseInt(n, 10)];
+        return newIdx != null ? String(newIdx) : n;
+      }).join(', ');
+      return `[${remapped}]`;
+    });
+
+    return { citations: normalized, answerText: normAnswer };
+  })();
 
   const handleCitationClick = useCallback((n) => {
     const chunk = citations.find((c) => c.index === n);
@@ -784,7 +825,7 @@ export default function QueryPage() {
   const isMetadata = routingPath === 'METADATA';
 
   const { nodes: answerNodes, legalNote: answerLegalNote } = result
-    ? renderAnswer(result.answer, selectedChunkId, citations, handleCitationClick)
+    ? renderAnswer(answerText, selectedChunkId, citations, handleCitationClick)
     : { nodes: null, legalNote: null };
 
   if (isLanding) {

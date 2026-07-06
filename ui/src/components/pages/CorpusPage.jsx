@@ -21,6 +21,7 @@ const DOC_TYPES = [
   { label: 'Safety Alert', value: 'safety_alert' },
   { label: 'News', value: 'news_item' },
   { label: 'Other', value: 'other' },
+  { label: 'Base Corpus', value: 'base_corpus' },
 ];
 const STATUS_OPTS = [
   { label: 'All corpus', value: null },
@@ -232,47 +233,67 @@ function Pager({ page, pageSize, total, onPage, onPageSize }) {
 }
 
 export default function CorpusPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-
-  const [agency, setAgency] = useState(() => {
-    const a = searchParams.get('agency');
-    return ['FDA', 'EMA', 'ICH'].includes(a) ? a : null;
-  });
-  const [docType, setDocType] = useState(() => searchParams.get('doc_type') || null);
-  const [status, setStatus] = useState(null);
-  const [search, setSearch] = useState('');
-  const [appliedDateFrom, setAppliedDateFrom] = useState('');
-  const [appliedDateTo, setAppliedDateTo] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
   const [actionBusy, setActionBusy] = useState(null);
 
-  useEffect(() => {
-    const a = searchParams.get('agency');
-    const dt = searchParams.get('doc_type');
-    setAgency(['FDA', 'EMA', 'ICH'].includes(a) ? a : null);
-    setDocType(dt || null);
-    setPage(1);
-  }, [searchParams]);
+  // All filter state lives in the URL so back-navigation restores it
+  const agency        = searchParams.get('agency') || null;
+  const docType       = searchParams.get('doc_type') || null;
+  const status        = searchParams.get('status') || null;
+  const search        = searchParams.get('search') || '';
+  const appliedDateFrom = searchParams.get('date_from') || '';
+  const appliedDateTo   = searchParams.get('date_to') || '';
+  const page     = parseInt(searchParams.get('page') || '1', 10);
+  const pageSize = parseInt(searchParams.get('page_size') || '50', 10);
+
+  function setFilter(key, value) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value === null || value === '' || value === undefined) {
+        next.delete(key);
+      } else {
+        next.set(key, String(value));
+      }
+      next.delete('page');
+      return next;
+    }, { replace: true });
+  }
+
+  function setPage(p) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (p === 1) { next.delete('page'); } else { next.set('page', String(p)); }
+      return next;
+    }, { replace: true });
+  }
+
+  function setPageSize(ps) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (ps === 50) { next.delete('page_size'); } else { next.set('page_size', String(ps)); }
+      next.delete('page');
+      return next;
+    }, { replace: true });
+  }
 
   const hasFilters = !!(agency || docType || status || search || appliedDateFrom || appliedDateTo);
 
   function resetFilters() {
-    setAgency(null); setDocType(null); setStatus(null);
-    setSearch(''); setAppliedDateFrom(''); setAppliedDateTo('');
-    setPage(1);
+    setSearchParams({}, { replace: true });
   }
 
   const fetchData = useCallback(() => {
     setLoading(true);
+    const isBaseCorpus = docType === 'base_corpus';
     getCorpusDocumentsV2({
       page, page_size: pageSize,
-      issuing_body: agency, doc_type: docType, ingestion_status: status,
+      issuing_body: agency, doc_type: isBaseCorpus ? null : docType, ingestion_status: status,
       date_from: appliedDateFrom || null, date_to: appliedDateTo || null,
+      ...(isBaseCorpus ? { corpus_doc: true } : {}),
     })
       .then((data) => { setItems(data.items || []); setTotal(data.total || 0); })
       .catch(() => {})
@@ -319,7 +340,7 @@ export default function CorpusPage() {
             type="text"
             placeholder="Search documents…"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => setFilter('search', e.target.value)}
             style={{
               height: 30, padding: '0 10px', fontSize: 12,
               fontFamily: 'var(--sans)', background: 'var(--doc-surface)',
@@ -327,13 +348,21 @@ export default function CorpusPage() {
               color: 'var(--doc-text)', outline: 'none', width: 200,
             }}
           />
-          <FilterDropdown options={AGENCY_OPTS} value={agency} onChange={(v) => { setAgency(v); setPage(1); }} />
-          <FilterDropdown options={DOC_TYPES} value={docType} onChange={(v) => { setDocType(v); setPage(1); }} />
-          <FilterDropdown options={STATUS_OPTS} value={status} onChange={(v) => { setStatus(v); setPage(1); }} />
+          <FilterDropdown options={AGENCY_OPTS} value={agency} onChange={(v) => setFilter('agency', v)} />
+          <FilterDropdown options={DOC_TYPES} value={docType} onChange={(v) => setFilter('doc_type', v)} />
+          <FilterDropdown options={STATUS_OPTS} value={status} onChange={(v) => setFilter('status', v)} />
           <DateRangeFilter
             dateFrom={appliedDateFrom}
             dateTo={appliedDateTo}
-            onApply={(from, to) => { setAppliedDateFrom(from); setAppliedDateTo(to); setPage(1); }}
+            onApply={(from, to) => {
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                if (from) { next.set('date_from', from); } else { next.delete('date_from'); }
+                if (to) { next.set('date_to', to); } else { next.delete('date_to'); }
+                next.delete('page');
+                return next;
+              }, { replace: true });
+            }}
           />
           {hasFilters && (
             <button

@@ -575,7 +575,11 @@ def _load_system_prompt() -> tuple[str, str]:
 
     Returns (version, prompt_text).  Files must be named system_prompt_<version>.txt.
     """
-    candidates = sorted(_PROMPTS_DIR.glob("system_prompt_*.txt"), reverse=True)
+    def _ver_key(p):
+        import re as _re
+        m = _re.search(r'(\d+)', p.stem)
+        return int(m.group(1)) if m else 0
+    candidates = sorted(_PROMPTS_DIR.glob("system_prompt_*.txt"), key=_ver_key, reverse=True)
     if not candidates:
         raise FileNotFoundError(f"No system prompt files found in {_PROMPTS_DIR}")
     path = candidates[0]
@@ -767,7 +771,7 @@ async def expand_query(query: str, depth: int) -> list[str]:
 # ── Qdrant query ──────────────────────────────────────────────────────────────
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny, Range
+from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny, MatchText, Range
 from qdrant_client.http.models import DatetimeRange
 
 
@@ -977,7 +981,7 @@ async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) ->
 
     For larger documents, falls back to semantic top-k retrieval.
     """
-    from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue
+    from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue as QMatchValue
 
     client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
@@ -988,7 +992,7 @@ async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) ->
         page, offset = client.scroll(
             collection_name=QDRANT_COLLECTION,
             scroll_filter=QFilter(
-                must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+                must=[FieldCondition(key="document_id", match=QMatchValue(value=doc_id))]
             ),
             limit=50,
             offset=offset,
@@ -1020,7 +1024,7 @@ async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) ->
         collection_name=QDRANT_COLLECTION,
         query=vector,
         query_filter=QFilter(
-            must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+            must=[FieldCondition(key="document_id", match=QMatchValue(value=doc_id))]
         ),
         limit=limit,
         with_payload=True,
@@ -1052,7 +1056,7 @@ async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> lis
     signals high confidence in clause match).
     Returns empty list if no matches found — caller is unaffected.
     """
-    from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue
+    from qdrant_client.models import Filter as QFilter, FieldCondition, MatchValue as QMatchValue
 
     if not clause_identifiers:
         return []
@@ -1063,7 +1067,7 @@ async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> lis
     points, _ = client.scroll(
         collection_name=QDRANT_COLLECTION,
         scroll_filter=QFilter(
-            must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))]
+            must=[FieldCondition(key="document_id", match=QMatchValue(value=doc_id))]
         ),
         limit=200,
         with_payload=True,
@@ -1289,9 +1293,10 @@ def build_context(chunks: list[dict]) -> str:
 def parse_citations(answer: str, num_chunks: int) -> set[int]:
     """Find which [N] markers appear in the answer text."""
     cited = set()
-    for i in range(1, num_chunks + 1):
-        if f"[{i}]" in answer:
-            cited.add(i)
+    for match in re.finditer(r'\[(\d+)(?:\.\d+)?\]', answer):
+        n = int(match.group(1))
+        if 1 <= n <= num_chunks:
+            cited.add(n)
     return cited
 
 
@@ -1561,7 +1566,9 @@ async def submit_query(request: QueryRequest):
 
     # Persist to query_history
     filters_dict = filters.model_dump() if filters else {}
+    # Attach runtime prompt version so each query records which prompt was used
     retrieval_dict = retrieval.model_dump() if retrieval else {}
+    retrieval_dict["prompt_version"] = SYSTEM_PROMPT_VERSION
     try:
         persist_query(
             query_id=query_id,
@@ -1740,6 +1747,7 @@ async def _run_content_query(
                     "top_k": retrieval.top_k,
                     "score_threshold": retrieval.score_threshold,
                     "sub_query_count": n_sub_queries,
+                    "prompt_version": SYSTEM_PROMPT_VERSION,
                 },
             }
             trace_id = lf_trace.id if lf_trace else ""
@@ -1849,6 +1857,9 @@ async def _run_content_query(
                 metadata={"latency_ms": llm_latency_ms, "system_prompt_version": SYSTEM_PROMPT_VERSION},
             )
 
+        # Normalize decimal citation markers [N.M] → [N] (LLM sometimes generates these)
+        answer = re.sub(r'\[(\d+)\.\d+\]', r'[\1]', answer)
+
         # Step 6: Determine which chunks were cited
         cited_indices = parse_citations(answer, len(deduped_chunks))
 
@@ -1856,14 +1867,31 @@ async def _run_content_query(
         if not cited_indices and deduped_chunks:
             cited_indices = set(range(1, min(4, len(deduped_chunks) + 1)))
 
-        # Step 7: Build citations array (with provenance batch)
+        # Step 7: Build citations array (with provenance and publication_date batch)
         doc_ids = [c.get("document_id", "") for c in deduped_chunks if c.get("document_id")]
+        pub_date_map = {}
         try:
             pg_conn_prov = get_pg_conn()
             prov_map = fetch_chunk_provenance_batch(pg_conn_prov, doc_ids)
+            # Fetch publication_date from document_registry for all cited doc IDs
+            if doc_ids:
+                unique_doc_ids = list(set(doc_ids))
+                cur = pg_conn_prov.cursor()
+                cur.execute(
+                    "SELECT document_id, publication_date FROM document_registry WHERE document_id = ANY(%s)",
+                    (unique_doc_ids,)
+                )
+                for did, pub_date in cur.fetchall():
+                    if pub_date:
+                        pub_date_map[did] = pub_date.isoformat() if hasattr(pub_date, 'isoformat') else str(pub_date)
+                cur.close()
             pg_conn_prov.close()
         except Exception:
             prov_map = {}
+        # Inject publication_date into chunks that lack it
+        for chunk in deduped_chunks:
+            if not chunk.get("publication_date") and chunk.get("document_id") in pub_date_map:
+                chunk["publication_date"] = pub_date_map[chunk["document_id"]]
 
         cited_chunks = []
         uncited_chunks = []
@@ -1901,6 +1929,7 @@ async def _run_content_query(
                 "top_k": retrieval.top_k,
                 "score_threshold": retrieval.score_threshold,
                 "sub_query_count": n_sub_queries,
+                "prompt_version": SYSTEM_PROMPT_VERSION,
             },
             "llm_input": {
                 "model": request.generation_model or get_active_model(),
@@ -2478,6 +2507,7 @@ async def _run_metadata_query(
             "top_k": retrieval.top_k,
             "score_threshold": retrieval.score_threshold,
             "sub_query_count": 0,
+            "prompt_version": SYSTEM_PROMPT_VERSION,
         },
         "langfuse_trace_id": trace_id,
     }

@@ -582,15 +582,12 @@ function SessionGroupRow({ item, isOpen, onToggle }) {
       <div className="g3-row-head" onClick={onToggle} data-testid={`ingestion-session-expand-${item.run_token}`}>
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
         <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
-        <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
-        <span className="g3-cell"><span className="lbl">Source</span><span className="g3-feed">—</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={status} /></span>
         <span className="g3-cell num"><span className="lbl">New</span>{(item.doc_count_succeeded ?? 0).toLocaleString()}</span>
         <span className="g3-cell num"><span className="lbl">Skipped</span>{item.doc_count_skipped > 0 ? item.doc_count_skipped : '—'}</span>
         <span className={`g3-cell num errnum${item.doc_count_failed > 0 ? ' has' : ''}`}>
           <span className="lbl">Errors</span>{item.doc_count_failed ?? 0}
         </span>
-        <span className="g3-cell num dim"><span className="lbl">Duration</span>—</span>
       </div>
       {isOpen && (
         <div className="g3-sub">
@@ -656,16 +653,11 @@ function IngestionRunRow({ item, isOpen, onToggle }) {
       <div className="g3-row-head" onClick={onToggle} data-testid={`ingestion-run-expand-${item.run_id}`}>
         <span className={`g3-chev ${isOpen ? 'open' : ''}`}><ChevronIcon /></span>
         <span className="g3-cell mono"><span className="lbl">Date</span>{formatDateTime(item.triggered_at)}</span>
-        <span className="g3-cell"><span className="lbl">Source</span><SrcPill src={item.source} /></span>
-        <span className="g3-cell"><span className="lbl">Source</span><span className="g3-feed">{item.feed_name || '—'}</span></span>
         <span className="g3-cell"><span className="lbl">Status</span><G3Status status={displayStatus} /></span>
         <span className="g3-cell num"><span className="lbl">New</span>{displayNew ?? '—'}</span>
         <span className="g3-cell num"><span className="lbl">Skipped</span>{item.doc_count_skipped ?? '—'}</span>
         <span className={`g3-cell num errnum${displayErrors > 0 ? ' has' : ''}`}>
           <span className="lbl">Errors</span>{displayErrors ?? 0}
-        </span>
-        <span className="g3-cell num dim">
-          <span className="lbl">Duration</span>{item.duration_seconds != null ? `${item.duration_seconds}s` : '—'}
         </span>
       </div>
       {isOpen && (

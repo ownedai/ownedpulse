@@ -380,8 +380,45 @@ def generate_query_export_pdf(
     classifier    = query_response.get("classifier") or "—"
     timestamp_iso = query_response.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    cited_chunks   = [c for c in citations if     c.get("cited_by_llm")]
-    uncited_chunks = [c for c in citations if not c.get("cited_by_llm")]
+    # Normalize citation numbering: sequential 1..N cited, N+1..M uncited
+    # so screen and PDF show identical ordered numbering.
+    raw_cited   = sorted(
+        [c for c in citations if c.get("cited_by_llm")],
+        key=lambda c: c.get("index", 0)
+    )
+    raw_uncited = sorted(
+        [c for c in citations if not c.get("cited_by_llm")],
+        key=lambda c: c.get("index", 0)
+    )
+    # Build old-index → new-index map
+    remap = {}
+    for i, c in enumerate(raw_cited + raw_uncited):
+        remap[c.get("index")] = i + 1
+    # Renumber citations
+    cited_chunks = []
+    for c in raw_cited:
+        c = dict(c)
+        c["index"] = remap[c.get("index")]
+        cited_chunks.append(c)
+    uncited_chunks = []
+    for c in raw_uncited:
+        c = dict(c)
+        c["index"] = remap[c.get("index")]
+        uncited_chunks.append(c)
+    # Remap [N] and [N, M, ...] markers in answer text
+    import re as _re
+    def _remap_nums(m):
+        nums = m.group(1)
+        remapped = ', '.join(
+            str(remap.get(int(n.strip()), n.strip()))
+            for n in nums.split(',')
+        )
+        return f'[{remapped}]'
+    answer = _re.sub(
+        r'\[(\d+(?:\s*,\s*\d+)*)\]',
+        _remap_nums,
+        answer
+    )
 
     routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
 
@@ -401,7 +438,7 @@ def generate_query_export_pdf(
     corpus_snapshot = "—"
     generation_model = retrieval.get("model") or "phi4:14b-q8_0"
     embedding_model  = "mxbai-embed-large"
-    prompt_version   = "V8"
+    prompt_version   = retrieval.get("prompt_version") or "V9"
     try:
         import psycopg2
         pg_dsn = os.environ.get("POSTGRES_DSN") or (

@@ -36,8 +36,7 @@ The current corpus contains public regulatory documents only. It does not proces
 
 This system has not been validated under GAMP 5 / CSA methodology. It is a portfolio and operational demonstration artefact. Organisations deploying this system in a GxP context are responsible for their own validation and qualification activities.
 
-GAMP 5 category assessment: Category 5 (Bespoke/Custom Software), risk classification LOW-MEDIUM (advisory function, no direct GxP process impact). Full category statement available in `docs/GAMP5_Category_Statement.md`.
-
+GAMP 5 category assessment: Category 5 (Bespoke/Custom Software), risk classification LOW-MEDIUM (advisory function, no direct GxP process impact). 
 ---
 
 ## Corpus
@@ -81,6 +80,12 @@ Fetch (Python scrapers) → Chunk (Docling) → Embed (Ollama) → Store (Qdrant
 **Every chunk carries a deterministic ID**: MD5(doc_id | version | chunk_index) → UUID. Chunk provenance is traceable to the ingestion event via PostgreSQL trace tables.
 
 **Observability**: all query traces are captured in Langfuse, including sub-queries, retrieved chunk IDs, similarity scores, and the prompt template version used.
+
+---
+
+## Ingestion
+
+After ingestion, check logs for any lines starting with `WARNING: char_offset`. These indicate chunks where offset anchor matching failed due to source text formatting. Affected chunks are still ingested and searchable. To inspect, query the PostgreSQL chunks table for rows where `char_offset_end - char_offset_start < 50` for the affected document_id. Re-ingest the document after resolving the source text formatting issue.
 
 ---
 
@@ -148,9 +153,7 @@ This metadata is designed to feed a validation package for organisations deployi
 
 ## Status
 
-Active development. Current milestone: M1f — public release (target 2026-06-27).
-
-Phases A–G complete. Phase H (GitHub-ready hardening) in progress.
+Active development. 
 
 ---
 

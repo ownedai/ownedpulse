@@ -228,19 +228,24 @@ def extract_date_from_filename(url: str) -> str:
     # Pattern 1: _YYYY_MMDD or _YYYY_MM
     m = re.search(r'_(\d{4})_(\d{2})(\d{2})?', decoded)
     if m:
-        y, mo, d = m.group(1), m.group(2), m.group(3) or "01"
-        return f"{y}-{mo}-{d}"
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3) or "01")
+        if 1900 <= y <= 2100:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
     # Pattern 2: _DD Month YYYY_
     m = re.search(r'_(\d{1,2}\s+\w+\s+\d{4})_', decoded)
     if m:
         try:
-            return dateparser.parse(m.group(1)).date().isoformat()
+            dt = dateparser.parse(m.group(1)).date()
+            if 1900 <= dt.year <= 2100:
+                return dt.isoformat()
         except Exception:
             pass
     # Pattern 3: year only _YYYY. or _YYYY_0
     m = re.search(r'_(\d{4})(?:_0|\.pdf)', decoded)
     if m:
-        return f"{m.group(1)}-01-01"
+        y = int(m.group(1))
+        if 1900 <= y <= 2100:
+            return f"{m.group(1)}-01-01"
     return ""
 
 

@@ -185,6 +185,7 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
         points = []
         jsonl_lines = []
         search_start = 0
+        _offset_warnings = []
 
         for i, chunk in enumerate(chunks):
             if not chunk.text or not chunk.text.strip():
@@ -193,6 +194,10 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
             cross_refs = extract_cross_refs(chunk.text)
             offsets    = compute_char_offsets(chunk.text, extracted_text, search_start)
             search_start = offsets[1]
+            if (offsets[1] - offsets[0]) < 50:
+                anchor = repr(chunk.text[:60])
+                print(f'WARNING: char_offset span={offsets[1]-offsets[0]} doc={meta["document_id"]} chunk_index={i} anchor={anchor}')
+                _offset_warnings.append((meta['document_id'], i, offsets[1] - offsets[0], chunk.text[:60]))
             prov       = extract_provenance(chunk)
 
             payload = build_payload(
@@ -229,6 +234,10 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
         get_client().upsert(collection_name=QDRANT_COLLECTION, points=points)
         upsert_chunks_pg(points)
         print(f'Qdrant: {len(points)} upserted (+ PG)')
+        if _offset_warnings:
+            print(f'WARNING: char_offset — {len(_offset_warnings)} chunk(s) with span < 50 in {meta["document_id"]}:')
+            for doc_id, idx, span, anchor in _offset_warnings:
+                print(f'  chunk_index={idx} span={span} anchor={repr(anchor)}')
 
         # Write JSONL replay file
         chunks_dir = Path(meta['archive_path']) / 'chunks'

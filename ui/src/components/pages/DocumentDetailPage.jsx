@@ -245,7 +245,7 @@ export default function DocumentDetailPage() {
           <MetaRow label="Issuing Body">{doc.issuing_body}</MetaRow>
           <MetaRow label="Document Type">{(doc.document_type || doc.doc_type || '—').replace(/-/g, ' ')}</MetaRow>
           <MetaRow label="Version">{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</MetaRow>
-          <MetaRow label="Publication Date">
+          <MetaRow label="Published">
             {isFutureDate(doc.publication_date) ? (
               <Tooltip tip="Future effective date — this document is not yet in force">
                 <span style={{ cursor: 'help', borderBottom: '1px dashed currentColor' }}>{formatDate(doc.publication_date)}</span>

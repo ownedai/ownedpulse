@@ -1209,7 +1209,7 @@ body {
 /* ── Landing page ───────────────────────────────────────────────────────── */
 
 .rp-landing {
-  max-width: 760px;
+  max-width: clamp(640px, 80%, 1400px);
   margin: 48px auto 0;
 }
 
@@ -1470,6 +1470,10 @@ body {
 .rp-main-page .container {
   max-width: 880px;
   margin: 0 auto;
+}
+
+.rp-main-page.landing .container {
+  max-width: clamp(640px, 68%, 1200px);
 }
 
 /* Query area (input + filter row, always together) */
