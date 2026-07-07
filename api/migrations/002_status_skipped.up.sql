@@ -8,4 +8,4 @@ ALTER TABLE run_log ADD CONSTRAINT run_log_status_check
 
 ALTER TABLE ingestion_doc DROP CONSTRAINT IF EXISTS ingestion_doc_status_check;
 ALTER TABLE ingestion_doc ADD CONSTRAINT ingestion_doc_status_check
-    CHECK (status IN ('success','partial','failed','running','pending','error','skipped'));
+    CHECK (status IN ('success','partial','failed','running','pending','error','skipped','not_viable'));
