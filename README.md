@@ -45,8 +45,12 @@ GAMP 5 category assessment: Category 5 (Bespoke/Custom Software), risk classific
 Public regulatory documents from:
 
 - **EMA** — Scientific Guidelines, Regulatory Guidance
-- **FDA** — Drugs guidance, Press Releases
+- **FDA** — Guidance Documents (full catalogue), Press Releases
 - **ICH** — Guidelines via JSON API
+
+Base corpus (12 curated documents always included): EU GMP Annex 11 & 15 & 22, 21 CFR Part 11, 
+ICH Q9(R1) & Q10, EMA AI Reflection Paper, FDA CSV 2003, FDA Part 11 Scope 2003, FDA CSA 2025, 
+FDA CGMP Data Integrity Q&A.
 
 The corpus is defined in `corpus_manifest.json`. Extension beyond the declared scope is a change control event.
 
@@ -127,6 +131,8 @@ The retrieval pipeline was held constant. Each generation model received identic
 | GPT-OSS-120B (open-weight, Apache 2.0) | **76.2%** | **76.4%** |
 | Claude Sonnet 4.6 (API, cloud) | **87.7%** | **85.5%** |
 
+Scores reflect phi4:14b-q8_0 as generation model on RTX 3090. Results will differ with other models — see generation model comparison table above.
+
 **What this means for deployment:**
 
 The architecture is model-agnostic. Quality scales with generation model capability. On current hardware (single consumer GPU), the system scores 69.5%. With a moderate hardware investment running GPT-OSS-120B — an Apache 2.0 open-weight model deployable entirely on-premises — this rises to 76.2%. The cloud API reference ceiling is 87.7% with Claude Sonnet 4.6, but sovereignty is not maintained.
@@ -136,6 +142,9 @@ Category B (cross-framework synthesis) shows the largest model-dependent spread 
 All open-weight models in the comparison are deployable on private infrastructure under permissive licences. No query data leaves the network in any on-premises configuration.
 
 Evaluation scripts and full per-question results: `eval/`
+
+Eval set extended to 52 questions after corpus expansion (Jul 2026). Q051–Q052 cover FDA CSV 
+guidance scope queries added with the FDA guidance catalogue feed.
 
 ---
 
