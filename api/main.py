@@ -1009,7 +1009,7 @@ async def fetch_document_chunks(doc_id: str, query_text: str, limit: int = 3) ->
             payload = point.payload or {}
             chunks.append({
                 "chunk_id": str(point.id),
-                "score": 0.75,
+                "score": 0.92,
                 **payload,
             })
         logger.info(
