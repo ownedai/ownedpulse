@@ -292,7 +292,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
   const hasSelection = includeBaseCorpus || activeSources.length > 0;
   const canSubmit = (confirmed || fileStrategy === 'missing_only') && !submitting && !loading && !ingestionRunning && hasSelection && (fileStrategy !== 'nuclear' || nuclearConfirmed);
   const rssEstimate = estimate?.estimated_docs ?? null;
-  const baseCount = includeBaseCorpus ? (bootstrapStatus?.base_corpus?.length || 9) : 0;
+  const baseCount = includeBaseCorpus ? (bootstrapStatus?.base_corpus?.length || 12) : 0;
   const totalEstimate = rssEstimate !== null ? rssEstimate + baseCount : (hasSelection ? baseCount + 30 : null);
 
   return createPortal(
@@ -476,7 +476,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--doc-text-3)', fontFamily: 'var(--mono)', marginTop: 4, marginLeft: 26 }}>
-                  Annex 11, 21 CFR Part 11, ICH Q10, EU GMP Annex 15 & 22 — always fast
+                  Annex 11, 21 CFR Part 11, ICH Q9/Q10, EU GMP Annex 15 & 22, FDA CSV & CSA — always fast
                 </div>
               </section>
 

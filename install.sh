@@ -355,6 +355,7 @@ MIGRATIONS=(
   "api/migrations/005_chunks_table.up.sql"
   "api/migrations/006_ingestion_doc_doc_id_unique.up.sql"
   "scripts/migrations/migrate_feed_config.sql"
+  "scripts/migrations/add_fda_guidance_catalogue_feed.sql"
 )
 
 for migration in "${MIGRATIONS[@]}"; do
