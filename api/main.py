@@ -364,6 +364,7 @@ def _discover_feed(feed_id: str) -> None:
         from rss.fetch_feed import (
             fetch_ema_sci, fetch_ema_reg,
             fetch_fda_press, fetch_ich,
+            fetch_fda_guidance_catalogue,
             _fetch_ema_json,
         )
 
@@ -379,6 +380,11 @@ def _discover_feed(feed_id: str) -> None:
         elif feed_id == 'ich_guidelines':
             items, _ = fetch_ich(
                 {'feed_id': 'ich_guidelines', 'feed_type': 'json_api'},
+            )
+        elif feed_id == 'fda_guidance_catalogue':
+            items, _ = fetch_fda_guidance_catalogue(
+                {'feed_id': 'fda_guidance_catalogue', 'feed_url': 'https://www.fda.gov/files/api/datatables/static/search-for-guidance.json'},
+                months_override=None,
             )
         else:
             logger.warning("[startup] unknown feed_id: %s — skipping", feed_id)
