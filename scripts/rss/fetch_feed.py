@@ -518,6 +518,12 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
     for row in data:
         try:
             title_raw = row.get("title") or ""
+            # Extract landing page URL from title anchor <a href="/regulatory-information/...">Title</a>
+            landing_url = ""
+            m_title = re.search(r'href="([^"]+)"', title_raw)
+            if m_title:
+                lp = m_title.group(1).strip()
+                landing_url = "https://www.fda.gov" + lp if not lp.startswith("http") else lp
             title = _extract_text(title_raw)
             if not title:
                 continue
@@ -539,6 +545,10 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
                 pdf_path = "https://www.fda.gov" + pdf_path
             pdf_url = pdf_path or None
 
+            # Records without a PDF get the landing page as HTML source
+            source_url = pdf_url or landing_url
+            source_format = "pdf" if pdf_url else ("html" if landing_url else None)
+
             topics = row.get("field_topics") or ""
             org = row.get("field_issuing_office_taxonomy") or ""
             product_area = row.get("field_regulated_product_field") or ""
@@ -557,8 +567,9 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
                 "document_type": doc_type or "guidance",
                 "document_status": status,
                 "publication_date": issue_date,
-                "source_url": pdf_url,
+                "source_url": source_url,
                 "pdf_url": pdf_url,
+                "source_file_format": source_format,
                 "topics": topics,
                 "organization": org,
                 "product_area": product_area,
@@ -568,11 +579,13 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
                     "title": title,
                     "document_title": title,
                     "issuing_body": "FDA",
+                    "source_url": source_url,
+                    "source_file_format": source_format,
+                    "pdf_url": pdf_url,
                     "topics": topics,
                     "organization": org,
                     "product_area": product_area,
                     "docket": docket,
-                    "pdf_url": pdf_url,
                 },
             }
             items.append(item)
