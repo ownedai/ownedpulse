@@ -293,12 +293,13 @@ export default function CorpusPage() {
       page, page_size: pageSize,
       issuing_body: agency, doc_type: isBaseCorpus ? null : docType, ingestion_status: status,
       date_from: appliedDateFrom || null, date_to: appliedDateTo || null,
+      ...(search ? { search } : {}),
       ...(isBaseCorpus ? { corpus_doc: true } : {}),
     })
       .then((data) => { setItems(data.items || []); setTotal(data.total || 0); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [agency, docType, status, appliedDateFrom, appliedDateTo, page, pageSize]);
+  }, [agency, docType, status, appliedDateFrom, appliedDateTo, page, pageSize, search]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -321,12 +322,6 @@ export default function CorpusPage() {
     finally { setActionBusy(null); }
   }
 
-  const filteredItems = search
-    ? items.filter((d) =>
-        (d.document_title || '').toLowerCase().includes(search.toLowerCase()) ||
-        (d.document_id || '').toLowerCase().includes(search.toLowerCase())
-      )
-    : items;
 
   return (
     <>
@@ -394,13 +389,13 @@ export default function CorpusPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && filteredItems.length === 0 && (
+            {loading && items.length === 0 && (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>Loading…</td></tr>
             )}
-            {!loading && filteredItems.length === 0 && (
+            {!loading && items.length === 0 && (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--doc-text-2)', fontFamily: 'var(--mono)', fontSize: 12 }}>No documents found.</td></tr>
             )}
-            {filteredItems.map((doc) => (
+            {items.map((doc) => (
               <tr key={doc.document_id}>
                 <td style={{ maxWidth: 0 }}>
                   <Link
@@ -462,7 +457,7 @@ export default function CorpusPage() {
           </tbody>
         </table>
 
-        <Pager page={page} pageSize={pageSize} total={search ? filteredItems.length : total} onPage={setPage} onPageSize={setPageSize} />
+        <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={setPageSize} />
       </div>
     </>
   );

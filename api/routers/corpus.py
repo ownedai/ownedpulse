@@ -115,12 +115,17 @@ async def corpus_documents(
     date_from: str | None = None,
     date_to: str | None = None,
     corpus_doc: bool | None = None,
+    search: str | None = None,
 ):
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
         conditions = []
         params = []
+
+        if search:
+            conditions.append("(document_id ILIKE %s OR metadata_json->>'document_title' ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
 
         if issuing_body:
             if issuing_body == "EMA":
