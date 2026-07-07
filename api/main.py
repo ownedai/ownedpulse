@@ -276,7 +276,7 @@ def _register_feed_items(feed_id: str, items: list, defaults: dict) -> int:
         conn = get_pg_conn()
         with conn.cursor() as cur:
             for item in items:
-                url = item.get('url', '')
+                url = item.get('url') or item.get('source_url') or item.get('pdf_url') or ''
                 if not url:
                     continue
                 doc_id = _make_doc_id(feed_id, url)
@@ -342,6 +342,10 @@ _FEED_DEFAULTS = {
     'fda_press_releases': {
         'issuing_body': 'FDA', 'document_class': 'regulatory-public',
         'document_type': 'press-release', 'document_status': 'final',
+    },
+    'fda_guidance_catalogue': {
+        'issuing_body': 'FDA', 'document_class': 'regulatory-public',
+        'document_type': 'guidance', 'document_status': 'final',
     },
     'ich_guidelines': {
         'issuing_body': 'ICH', 'document_class': 'regulatory-public',
