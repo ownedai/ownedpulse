@@ -284,7 +284,7 @@ def _register_feed_items(feed_id: str, items: list, defaults: dict) -> int:
                     continue
                 doc_id = _make_doc_id(feed_id, url)
                 title = item.get('title', '')
-                pub_date = item.get('pub_date', '') or None
+                pub_date = item.get('pub_date') or item.get('publication_date') or None
                 if pub_date and isinstance(pub_date, str) and len(pub_date) >= 10:
                     pub_date = pub_date[:10]
                 else:
@@ -314,7 +314,8 @@ def _register_feed_items(feed_id: str, items: list, defaults: dict) -> int:
                     feed_id, archive_path,
                     pub_date,
                     json.dumps({'document_title': title, 'title': title,
-                                'feed_id': feed_id, 'source_url': url}),
+                                'feed_id': feed_id, 'source_url': url,
+                                'publication_date': pub_date, 'pdf_url': item.get('pdf_url') or ''}),
                 ))
                 count += cur.rowcount
         conn.commit()
