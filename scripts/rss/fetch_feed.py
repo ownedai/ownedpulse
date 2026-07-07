@@ -529,7 +529,12 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
             status = "final" if "final" in status_raw else "draft"
 
             pdf_raw = row.get("field_associated_media_2") or ""
-            pdf_path = _extract_text(pdf_raw) if "<" in pdf_raw else pdf_raw.strip()
+            if "<" in pdf_raw:
+                # Extract href from HTML anchor, e.g. <a href="/media/123/download">PDF (137 KB)</a>
+                m = re.search(r'href="([^"]+)"', pdf_raw)
+                pdf_path = m.group(1).strip() if m else ""
+            else:
+                pdf_path = pdf_raw.strip()
             if pdf_path and not pdf_path.startswith("http"):
                 pdf_path = "https://www.fda.gov" + pdf_path
             pdf_url = pdf_path or None

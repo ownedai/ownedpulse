@@ -263,7 +263,10 @@ def _register_feed_items(feed_id: str, items: list, defaults: dict) -> int:
 
     def _make_doc_id(fid: str, url: str) -> str:
         url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-        path = urlparse(url).path.rstrip("/").split("/")[-1]
+        try:
+            path = urlparse(url).path.rstrip("/").split("/")[-1]
+        except Exception:
+            path = ""
         path = re.sub(r"[^a-z0-9\-]", "-", path.lower())[:40].strip("-")
         return f"{fid}-{path}-{url_hash}" if path else f"{fid}-{url_hash}"
 
