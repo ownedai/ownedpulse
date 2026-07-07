@@ -587,7 +587,7 @@ def _load_system_prompt() -> tuple[str, str]:
     text = path.read_text(encoding="utf-8").strip()
     return version, text
 
-SYSTEM_PROMPT_VERSION, SYSTEM_PROMPT_V9 = _load_system_prompt()
+SYSTEM_PROMPT_VERSION, SYSTEM_PROMPT_TEXT = _load_system_prompt()
 
 # ── Request / Response models ─────────────────────────────────────────────────
 
@@ -1843,7 +1843,9 @@ async def _run_content_query(
         framing = build_supersede_framing(supersede_context)
         prompt = f"{framing}Context:\n\n{context}\n\nQuestion: {request.query}\n\nAnswer:"
         t_llm = _time.monotonic()
-        answer, llm_usage = await ollama_generate(prompt, system=SYSTEM_PROMPT_V9, return_usage=True, model=request.generation_model or None)
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        system_with_date = SYSTEM_PROMPT_TEXT.replace("{current_date}", today_str)
+        answer, llm_usage = await ollama_generate(prompt, system=system_with_date, return_usage=True, model=request.generation_model or None)
         t_llm2 = _time.monotonic()
         llm_latency_ms = round((t_llm2 - t_llm) * 1000)
 
@@ -1851,7 +1853,7 @@ async def _run_content_query(
             lf_trace.generation(
                 name="llm_answer",
                 model=get_active_model(),
-                input={"prompt": prompt, "system": SYSTEM_PROMPT_V9},
+                input={"prompt": prompt, "system": system_with_date},
                 output={"answer": answer},
                 usage=llm_usage,
                 metadata={"latency_ms": llm_latency_ms, "system_prompt_version": SYSTEM_PROMPT_VERSION},
@@ -1933,7 +1935,7 @@ async def _run_content_query(
             },
             "llm_input": {
                 "model": request.generation_model or get_active_model(),
-                "system": SYSTEM_PROMPT_V9,
+                "system": system_with_date,
                 "prompt": prompt,
                 "options": {"num_ctx": 12288},
             },
@@ -3166,7 +3168,7 @@ async def get_system_prompt():
     """Return the active system prompt text and version for the UI prompt viewer."""
     return {
         "version": SYSTEM_PROMPT_VERSION,
-        "text": SYSTEM_PROMPT_V9,
+        "text": SYSTEM_PROMPT_TEXT,
     }
 
 
