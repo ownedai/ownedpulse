@@ -18,6 +18,14 @@ Typical queries:
 
 ---
 
+## Demo
+
+[Watch on YouTube](https://youtu.be/b8GvY9ZtY5Y)
+
+Recorded on v1.0.14. Corpus and retrieval improvements applied since recording.
+
+---
+
 ## Who It Is For
 
 Regulatory Affairs and QA professionals who need fast, sourced answers across multiple regulatory frameworks — without sending documents to a cloud service.
