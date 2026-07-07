@@ -137,6 +137,48 @@
       "source_filename": "source.pdf",
       "download_url": "https://database.ich.org/sites/default/files/ICH_Q9%28R1%29_Guideline_Step4_2023_0126_0.pdf",
       "source_url": "https://database.ich.org/sites/default/files/ICH_Q9%28R1%29_Guideline_Step4_2023_0126_0.pdf"
+    },
+    {
+      "document_id": "FDA-CSV-2003",
+      "title": "Computerized Systems Used in Clinical Investigations",
+      "issuing_body": "FDA",
+      "document_class": "regulatory-public",
+      "document_type": "guidance",
+      "document_status": "final",
+      "document_version": "May 2003",
+      "publication_date": "2003-05-01",
+      "archive_path": "/archive/fda/fda-csv-2003",
+      "source_filename": "source.pdf",
+      "download_url": "https://www.fda.gov/media/70975/download",
+      "source_url": "https://www.fda.gov/media/70975/download"
+    },
+    {
+      "document_id": "FDA-Part11-Scope-2003",
+      "title": "Part 11, Electronic Records; Electronic Signatures — Scope and Application",
+      "issuing_body": "FDA",
+      "document_class": "regulatory-public",
+      "document_type": "guidance",
+      "document_status": "final",
+      "document_version": "Aug 2003",
+      "publication_date": "2003-08-01",
+      "archive_path": "/archive/fda/fda-part11-scope-2003",
+      "source_filename": "source.pdf",
+      "download_url": "https://www.fda.gov/media/75414/download",
+      "source_url": "https://www.fda.gov/media/75414/download"
+    },
+    {
+      "document_id": "FDA-CSA-2022",
+      "title": "Computer Software Assurance for Production and Quality System Software",
+      "issuing_body": "FDA",
+      "document_class": "regulatory-public",
+      "document_type": "guidance",
+      "document_status": "draft",
+      "document_version": "Sep 2022 draft",
+      "publication_date": "2022-09-01",
+      "archive_path": "/archive/fda/fda-csa-2022",
+      "source_filename": "source.pdf",
+      "download_url": "https://www.fda.gov/media/161521/download",
+      "source_url": "https://www.fda.gov/media/161521/download"
     }
   ]
 }

@@ -463,6 +463,128 @@ def fetch_fda_press(feed: dict, months_override: int | None = None, cutoff_date=
     logger.info("FDA press scrape complete: %d new items", len(items))
     return items, {"items_fetched": len(items), "items_new": len(items),
                    "items_skipped": 0}
+
+# ── FDA guidance catalogue scraper ──────────────────────────────────────────
+
+def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None, cutoff_date=None) -> tuple:
+    """
+    Fetches the full FDA guidance document catalogue from the static JSON endpoint.
+    Registers ALL records into document_registry with corpus_doc=FALSE (catalogue-only).
+    Does NOT download PDFs — download is triggered per-document via app UI or seed_registry.py.
+    Returns (items, errors) where items are document_registry upsert dicts.
+    """
+    import requests as _requests
+    from datetime import datetime
+    import re, hashlib
+    from html.parser import HTMLParser
+
+    class _AnchorText(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.text = ""
+        def handle_data(self, data):
+            self.text += data
+
+    def _extract_text(html_str: str) -> str:
+        p = _AnchorText()
+        p.feed(html_str or "")
+        return p.text.strip()
+
+    def _parse_date(val: str) -> str | None:
+        if not val:
+            return None
+        try:
+            return datetime.strptime(val.strip(), "%m/%d/%Y").strftime("%Y-%m-%d")
+        except Exception:
+            return None
+
+    def _make_doc_id(title: str, date: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower())[:60].strip("-")
+        suffix = hashlib.md5((title + (date or "")).encode()).hexdigest()[:6]
+        return f"fda-{slug}-{suffix}"
+
+    url = feed["feed_url"]
+    items = []
+    errors = []
+
+    logger.info("Fetching FDA guidance catalogue from %s", url)
+    try:
+        r = _requests.get(url, headers={"User-Agent": "OwnedPulse/1.0"}, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        logger.error("FDA guidance catalogue fetch failed: %s", e)
+        return [], [str(e)]
+
+    if not isinstance(data, list):
+        logger.error("FDA guidance catalogue: unexpected format (expected list, got %s)", type(data).__name__)
+        return [], ["unexpected-response-format"]
+
+    logger.info("FDA guidance catalogue: %d raw records", len(data))
+
+    for row in data:
+        try:
+            title_raw = row.get("title") or ""
+            title = _extract_text(title_raw)
+            if not title:
+                continue
+
+            issue_date_raw = row.get("field_issue_datetime") or ""
+            issue_date = _parse_date(issue_date_raw)
+
+            status_raw = (row.get("field_final_guidance_1") or "").strip().lower()
+            status = "final" if "final" in status_raw else "draft"
+
+            pdf_raw = row.get("field_associated_media_2") or ""
+            pdf_path = _extract_text(pdf_raw) if "<" in pdf_raw else pdf_raw.strip()
+            if pdf_path and not pdf_path.startswith("http"):
+                pdf_path = "https://www.fda.gov" + pdf_path
+            pdf_url = pdf_path or None
+
+            topics = row.get("field_topics") or ""
+            org = row.get("field_issuing_office_taxonomy") or ""
+            product_area = row.get("field_regulated_product_field") or ""
+            doc_type = row.get("field_communication_type") or "guidance"
+            docket = row.get("field_docket_number") or ""
+
+            doc_id = _make_doc_id(title, issue_date)
+
+            item = {
+                "document_id": doc_id,
+                "title": title,
+                "issuing_body": "FDA",
+                "feed_id": feed["feed_id"],
+                "authority": "FDA",
+                "document_class": "regulatory-public",
+                "document_type": doc_type or "guidance",
+                "document_status": status,
+                "publication_date": issue_date,
+                "source_url": pdf_url,
+                "pdf_url": pdf_url,
+                "topics": topics,
+                "organization": org,
+                "product_area": product_area,
+                "docket": docket,
+                "corpus_doc": False,
+                "metadata_json": {
+                    "title": title,
+                    "document_title": title,
+                    "issuing_body": "FDA",
+                    "topics": topics,
+                    "organization": org,
+                    "product_area": product_area,
+                    "docket": docket,
+                    "pdf_url": pdf_url,
+                },
+            }
+            items.append(item)
+        except Exception as e:
+            errors.append(str(e))
+            continue
+
+    logger.info("FDA guidance catalogue: %d items parsed, %d errors", len(items), len(errors))
+    return items, errors
+
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
 def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None,
@@ -489,6 +611,11 @@ def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None,
         if feed_id == "fda_press_releases":
             return fetch_fda_press(feed, months_override=months_override, cutoff_date=cutoff)
         logger.warning("Unknown html_pagination feed_id: %s", feed_id)
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
+    if ft == "json_static":
+        if feed_id == "fda_guidance_catalogue":
+            return fetch_fda_guidance_catalogue(feed, months_override=months_override, cutoff_date=cutoff)
+        logger.warning("Unknown json_static feed_id: %s", feed_id)
         return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
 
 def main():

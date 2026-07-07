@@ -41,6 +41,16 @@
       "default_document_class": "regulatory-public",
       "default_document_type": "guidance",
       "default_document_status": "final"
+    },
+    {
+      "feed_id": "fda_guidance_catalogue",
+      "name": "FDA Guidance Documents Catalogue",
+      "authority": "FDA",
+      "feed_type": "json_static",
+      "feed_url": "https://www.fda.gov/files/api/datatables/static/search-for-guidance.json",
+      "default_document_class": "regulatory-public",
+      "default_document_type": "guidance",
+      "default_document_status": "final"
     }
   ]
 }
