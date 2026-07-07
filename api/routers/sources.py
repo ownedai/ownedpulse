@@ -23,10 +23,11 @@ QDRANT_PORT       = int(os.getenv("QDRANT_PORT", "6333"))
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 # Presentation metadata per feed_id — fixed set of known feeds.
 FEED_METADATA: dict = {
-    "ema_reg_guidance":   {"agency": "EMA", "label": "Regulatory Guidance",  "description": "Regulatory guidance and procedural documents"},
-    "ema_sci_guidelines": {"agency": "EMA", "label": "Scientific Guidelines", "description": "Guidelines, reflection papers, scientific annexes"},
-    "fda_press_releases": {"agency": "FDA", "label": "Press Releases",        "description": "News and announcements"},
-    "ich_guidelines":     {"agency": "ICH", "label": "All ICH Guidelines",    "description": "Quality, safety, efficacy guidelines"},
+    "ema_reg_guidance":         {"agency": "EMA", "label": "Regulatory Guidance",     "description": "Regulatory guidance and procedural documents"},
+    "ema_sci_guidelines":       {"agency": "EMA", "label": "Scientific Guidelines",    "description": "Guidelines, reflection papers, scientific annexes"},
+    "fda_guidance_catalogue":   {"agency": "FDA", "label": "Guidance Documents",       "description": "FDA guidance catalogue — downloadable PDFs + landing pages"},
+    "fda_press_releases":       {"agency": "FDA", "label": "Press Releases",           "description": "News and announcements"},
+    "ich_guidelines":           {"agency": "ICH", "label": "All ICH Guidelines",       "description": "Quality, safety, efficacy guidelines"},
 }
 
 
