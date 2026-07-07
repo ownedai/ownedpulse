@@ -1277,27 +1277,45 @@ def build_supersede_framing(supersede_context: dict) -> str:
 
 def build_context(chunks: list[dict]) -> str:
     """Build the context string from retrieved chunks for the LLM prompt."""
+    from datetime import date as _date
+    _today = _date.today()
     parts = []
     for i, chunk in enumerate(chunks, 1):
         title = strip_title_suffix(chunk.get("document_title", "Unknown"))
         agency = normalise_agency(chunk.get("issuing_body", "Unknown"))
         clause = chunk.get("clause_id")
         version = chunk.get("document_version")
-        date = chunk.get("publication_date")
+        pub_date = chunk.get("publication_date")
         superseded = chunk.get("superseded", False)
-        doc_type = chunk.get("document_type", "")  # hyphenated: guidance, other, reflection_paper, etc.
+        doc_type = chunk.get("document_type", "")
+        doc_status = chunk.get("document_status", "")
 
         header = f"[{i}] {title} — {agency}"
         if doc_type:
             header += f", {doc_type}"
         if version:
             header += f", {version}"
+
+        # Pre-compute document status for the model — avoids phi4 misreading dates
+        status_tag = ""
+        if superseded:
+            status_tag = " [SUPERSEDED]"
+        elif doc_status and doc_status.lower() in ("draft", "concept", "consultation"):
+            status_tag = " [DRAFT — not yet finalised]"
+        elif pub_date:
+            try:
+                pd = _date.fromisoformat(str(pub_date)[:10])
+                if pd > _today:
+                    status_tag = " [FORTHCOMING — publication date is in the future]"
+            except (ValueError, TypeError):
+                pass
+
         if clause:
             header += f", §{clause}"
-        if date:
-            header += f" ({date})"
-        if superseded:
-            header += " [SUPERSEDED]"
+        if pub_date:
+            header += f" ({pub_date})"
+        if status_tag:
+            header += status_tag
 
         parts.append(f"{header}\n{chunk.get('chunk_text', '')}")
 
