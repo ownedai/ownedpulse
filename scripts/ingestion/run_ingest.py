@@ -1002,8 +1002,15 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
         except Exception:
             pass
 
-    cls       = classify(title, excerpt, feed_id, authority)
-    meta      = build_rss_meta(doc_id, archive_dir, metadata, cls)
+    # Base corpus docs (corpus_doc=TRUE) use the manifest's document_type directly —
+    # do not run the LLM classifier which can misclassify (e.g. FDA-CSV-2003 as reflection_paper).
+    is_corpus_doc = metadata.get("corpus_doc") or metadata.get("document_class") == "regulatory-public-corpus"
+    if is_corpus_doc and metadata.get("document_type"):
+        cls = {"doc_type": metadata["document_type"], "classifier_confidence": 1.0,
+               "classified_by": "manifest", "doc_type_classified_at": datetime.now(timezone.utc).isoformat()}
+    else:
+        cls = classify(title, excerpt, feed_id, authority)
+    meta = build_rss_meta(doc_id, archive_dir, metadata, cls)
     write_meta_json(doc_id, meta)
 
     # Clean stale chunk dir from previous runs (may be root-owned from Docker).
