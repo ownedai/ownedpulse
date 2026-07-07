@@ -28,7 +28,7 @@ END $$;
 -- 3. Fix feed_type CHECK constraint
 ALTER TABLE feed_config DROP CONSTRAINT IF EXISTS feed_config_feed_type_check;
 ALTER TABLE feed_config ADD CONSTRAINT feed_config_feed_type_check
-    CHECK (feed_type IN ('rss','json_api','json_bulk','html_pagination'));
+    CHECK (feed_type IN ('rss','json_api','json_bulk','html_pagination','json_static'));
 
 -- 4. Upsert feed sources (INSERT on fresh install, UPDATE on legacy upgrade)
 INSERT INTO feed_config (feed_id, name, feed_url, feed_type, authority, default_doc_type,
@@ -69,6 +69,13 @@ VALUES
         'json_api', 'ICH', 'guidance_pdf', 60, true, 50, true,
         '{"/page/safety-guidelines":"687f43a9b8c7f7de0c47ba370013cc2b94ff2abfc75b8ca8eb06ccc43579b50f","/page/quality-guidelines":"6e779832d8d30fc553e403916c9e3ca3ac1a8507d140f63741435982b85f678d","/page/efficacy-guidelines":"bb2c18c00c3aa0a2fe27cb24948c25faa5467731bcc8aee3d08f9eb8356ba42f","/page/multidisciplinary-guidelines":"ecd2dba31818f78bb862ef31b5323c2339cd5a46d478953a845f995602d2adce"}'::jsonb,
         '{"notes":"admin.ich.org Drupal JSON API. 160 items as of 2026-05-21. Change detection via ich_page_hashes column.","method":"json_api_subdivisions","base_url":"https://admin.ich.org/api/v1/nodes","subdivisions":["/page/quality-guidelines","/page/safety-guidelines","/page/efficacy-guidelines","/page/multidisciplinary-guidelines"],"delay_seconds":0.5,"change_detection":"sha256_per_subdivision"}'::jsonb
+    ),
+    (
+        'fda_guidance_catalogue', 'FDA Guidance Documents',
+        'https://www.fda.gov/files/api/datatables/static/search-for-guidance.json',
+        'json_static', 'FDA', 'guidance', 12, true, 15, true,
+        NULL::jsonb,
+        '{"notes":"FDA static JSON catalogue endpoint. ~2788 records. Register only, no PDF download.","method":"json_static_fetch","base_url":"https://www.fda.gov/files/api/datatables/static/search-for-guidance.json","delay_seconds":1.0}'::jsonb
     )
 ON CONFLICT (feed_id) DO UPDATE SET
     name             = EXCLUDED.name,
