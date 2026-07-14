@@ -1002,11 +1002,24 @@ def run_ingest_v2(doc_id: str, phase: str = "live", run_id: str = None,
         except Exception:
             pass
 
-    # Base corpus docs (corpus_doc=TRUE) use the manifest's document_type directly —
-    # do not run the LLM classifier which can misclassify (e.g. FDA-CSV-2003 as reflection_paper).
+    # Base corpus docs (corpus_doc=TRUE) skip the LLM classifier — do not run it
+    # (it can misclassify, e.g. FDA-CSV-2003 as reflection_paper). The manifest's
+    # document_type (e.g. "annex", "regulation", "qa-guidance") is NOT a canonical
+    # doc_type — it must be mapped to satisfy document_registry_doc_type_check.
+    # document_type itself is preserved verbatim in the document_type column by
+    # seed_registry.py at registration time and is untouched here.
+    CORPUS_DOC_TYPE_TO_CANONICAL = {
+        "guidance": "guidance",
+        "annex": "guidance",
+        "regulation": "guidance",
+        "qa-guidance": "guidance",
+        "reflection-paper": "reflection_paper",
+        "reflection_paper": "reflection_paper",
+    }
     is_corpus_doc = metadata.get("corpus_doc") or metadata.get("document_class") == "regulatory-public-corpus"
     if is_corpus_doc and metadata.get("document_type"):
-        cls = {"doc_type": metadata["document_type"], "classifier_confidence": 1.0,
+        canonical_doc_type = CORPUS_DOC_TYPE_TO_CANONICAL.get(metadata["document_type"], "guidance")
+        cls = {"doc_type": canonical_doc_type, "classifier_confidence": 1.0,
                "classified_by": "manifest", "doc_type_classified_at": datetime.now(timezone.utc).isoformat()}
     else:
         cls = classify(title, excerpt, feed_id, authority)
