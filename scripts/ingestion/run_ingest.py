@@ -64,7 +64,7 @@ try:
     import time, hashlib, uuid, requests, psycopg2, shutil
     from datetime import datetime, timezone
     from pathlib import Path
-    from qdrant_client.models import PointStruct
+    from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
 
     from lib.trace_emitter import start_document_span
     from ingestion.ingest import ingest_document, supersede_by_family_id
@@ -159,12 +159,37 @@ def get_regulatory_domain(feed_id: str, doc_type: str) -> list:
 def get_document_type(doc_type: str) -> str:
     return DOC_TYPE_TO_DOCUMENT_TYPE.get(doc_type, "other")
 
+def _has_qdrant_chunks(doc_id: str) -> bool:
+    """Return True if at least one chunk exists in Qdrant for doc_id.
+
+    Guards get_archive_dir() against trusting a stale 'indexed'/'success'
+    ingestion_status when the document's vectors were lost independently
+    of the PostgreSQL registry (e.g. Qdrant collection reset, restored
+    from a stale snapshot). If Qdrant is unreachable, fail open (assume
+    chunks exist) so a transient Qdrant outage doesn't force a mass
+    re-ingestion of already-good documents.
+    """
+    try:
+        count = get_client().count(
+            collection_name=QDRANT_COLLECTION,
+            count_filter=Filter(must=[
+                FieldCondition(key="document_id", match=MatchValue(value=doc_id)),
+            ]),
+            exact=True,
+        )
+        return count.count > 0
+    except Exception:
+        return True
+
+
 def get_archive_dir(doc_id: str, force: bool = False) -> Path:
     """Return archive Path for doc_id, or None if already ingested and not forced.
 
     Returns None when the document has already been successfully ingested
-    (ingestion_status in 'success'/'indexed') and force=False. This is NOT
-    an error — the document is up-to-date and needs no work.
+    (ingestion_status in 'success'/'indexed'), force=False, AND Qdrant still
+    has vectors for it. This is NOT an error — the document is up-to-date
+    and needs no work. If Qdrant vectors are missing despite a success/indexed
+    status, the document is treated as needing reprocessing regardless of force.
     """
     with pg_conn() as conn:
         with conn.cursor() as c:
@@ -173,7 +198,7 @@ def get_archive_dir(doc_id: str, force: bool = False) -> Path:
             row = c.fetchone()
     if not row:
         raise ValueError(f"Not in registry: {doc_id}")
-    if not force and row[1] in ("success", "indexed"):
+    if not force and row[1] in ("success", "indexed") and _has_qdrant_chunks(doc_id):
         return None
     if not row[0]:
         raise ValueError(f"archive_path is NULL for {doc_id}")

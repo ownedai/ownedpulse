@@ -288,7 +288,7 @@ def _ingest_mode_a(docs: list, *, source: str, triggered_by: str,
             chunk_count = r.get("chunk_count", r.get("chunks", 0))
             status = r.get("status", "error")
 
-            if status == "ok" and r.get("note") == "already ingested":
+            if status == "ok" and (r.get("note") or "").startswith("already ingested"):
                 ok = None
                 detail = r.get("note")
                 trace.finalize(
