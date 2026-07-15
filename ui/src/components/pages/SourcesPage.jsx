@@ -205,7 +205,7 @@ function BaseCorpusCard() {
         </Link>
       </div>
 
-      <table className="rp-table" style={{ fontSize: 12.5 }}>
+      <table className="rp-table" style={{ fontSize: 12.5, tableLayout: 'fixed' }}>
         <thead>
           <tr>
             <th>Document</th>
