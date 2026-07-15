@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny
 from lib import ingestion_lock
 from lib.ingest_documents import SECONDS_PER_DOC
 from lib.db import get_pg_conn
@@ -27,26 +27,53 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
 
 
-def _has_qdrant_chunks(client: QdrantClient, doc_id: str) -> bool:
-    """Return True if at least one active chunk exists in Qdrant for doc_id.
+def _docs_with_qdrant_chunks(client: QdrantClient, doc_ids: list, batch_size: int = 300) -> set:
+    """Return the subset of doc_ids that have at least one chunk in Qdrant.
 
     Used by the 'missing only' pre-scan to catch documents that PostgreSQL
     reports as indexed but whose vectors are absent (e.g. Qdrant was wiped
     or restored from a stale backup while document_registry was not).
+
+    Batches doc_ids via MatchAny + scroll instead of issuing one count()
+    call per document — the naive per-doc approach does N sequential
+    network round-trips (~0.3-0.5s each locally), which turns a 1000+
+    document pre-scan into many minutes of dead time before ingestion
+    even starts. This does a small, bounded number of calls regardless
+    of corpus size.
     """
-    try:
-        count = client.count(
-            collection_name=QDRANT_COLLECTION,
-            count_filter=Filter(must=[
-                FieldCondition(key="document_id", match=MatchValue(value=doc_id)),
-            ]),
-            exact=True,
-        )
-        return count.count > 0
-    except Exception:
-        # If Qdrant is unreachable, don't block the pre-scan — fall back to
-        # treating the document as already ingested per the PG-only signal.
-        return True
+    if not doc_ids:
+        return set()
+    present: set = set()
+    for i in range(0, len(doc_ids), batch_size):
+        batch = doc_ids[i:i + batch_size]
+        remaining = set(batch)
+        offset = None
+        while remaining:
+            try:
+                points, offset = client.scroll(
+                    collection_name=QDRANT_COLLECTION,
+                    scroll_filter=Filter(must=[
+                        FieldCondition(key="document_id", match=MatchAny(any=list(remaining))),
+                    ]),
+                    limit=2000,
+                    with_payload=["document_id"],
+                    offset=offset,
+                )
+            except Exception:
+                # Qdrant unreachable — fail open, treat remaining as present
+                # so a transient outage doesn't force a mass re-ingestion.
+                present.update(remaining)
+                break
+            if not points:
+                break
+            for p in points:
+                did = p.payload.get("document_id")
+                if did in remaining:
+                    present.add(did)
+                    remaining.discard(did)
+            if offset is None:
+                break
+    return present
 
 # In-memory session state — single-worker container, survives per-process
 _sessions: dict = {}
@@ -441,59 +468,77 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
     # the user explicitly selected them and they should never be skipped.
     if redownload == "check":
         from lib.db import get_pg_conn as _get_conn
+        from pathlib import Path
         ingest_docs = []
         already = 0
-        _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
         try:
+            all_ids = [d["doc_id"] for d in docs]
             _conn = _get_conn()
             with _conn.cursor() as _cur:
-                for doc in docs:
-                    doc_id = doc["doc_id"]
-                    # Always include base corpus docs — they're explicitly selected
-                    _cur.execute(
-                        "SELECT corpus_doc FROM document_registry WHERE document_id = %s",
-                        (doc_id,),
-                    )
-                    _cd = _cur.fetchone()
-                    if _cd and _cd[0]:
-                        ingest_docs.append(doc)
-                        continue
-                    _cur.execute(
-                        "SELECT 1 FROM ingestion_state "
-                        "WHERE document_id = %s AND ingestion_status IN ('success','indexed')",
-                        (doc_id,),
-                    )
-                    if _cur.fetchone():
-                        # PostgreSQL reports this document as ingested, but Qdrant may
-                        # have been wiped/restored independently (e.g. stale snapshot,
-                        # manual collection reset). Re-ingest if its vectors are gone —
-                        # otherwise the doc is silently unsearchable despite "indexed".
-                        if _has_qdrant_chunks(_qdrant, doc_id):
-                            already += 1
-                            continue
-                        ingest_docs.append(doc)
-                        continue
-                    # Fallback: some docs may be ingested but their ingestion_state
-                    # row was not committed (e.g. process was killed mid-run).
-                    # Check whether an archive directory with source files exists.
-                    _cur.execute(
-                        "SELECT archive_path FROM document_registry "
-                        "WHERE document_id = %s AND archive_path IS NOT NULL",
-                        (doc_id,),
-                    )
-                    _row = _cur.fetchone()
-                    if _row:
-                        from pathlib import Path
-                        _dir = Path(_row[0])
-                        if _dir.exists() and (
-                            (_dir / "source.pdf").exists() or
-                            (_dir / "source.html").exists() or
-                            (_dir / "source_structured.html").exists()
-                        ):
-                            already += 1
-                            continue
-                    ingest_docs.append(doc)
+                # Batch 1: which of these are base corpus docs (always re-ingested)
+                _cur.execute(
+                    "SELECT document_id FROM document_registry "
+                    "WHERE document_id = ANY(%s) AND corpus_doc = TRUE",
+                    (all_ids,),
+                )
+                corpus_doc_ids = {r[0] for r in _cur.fetchall()}
+
+                # Batch 2: which are marked indexed/success in PG
+                _cur.execute(
+                    "SELECT document_id FROM ingestion_state "
+                    "WHERE document_id = ANY(%s) AND ingestion_status IN ('success','indexed')",
+                    (all_ids,),
+                )
+                pg_indexed_ids = {r[0] for r in _cur.fetchall()}
+
+                # Batch 3: archive_path fallback for docs with no ingestion_state row
+                _cur.execute(
+                    "SELECT document_id, archive_path FROM document_registry "
+                    "WHERE document_id = ANY(%s) AND archive_path IS NOT NULL",
+                    (all_ids,),
+                )
+                archive_path_map = dict(_cur.fetchall())
             _conn.close()
+
+            # Single batched Qdrant check (instead of one round-trip per document)
+            # for docs PG says are indexed but aren't base corpus — those verify
+            # their vectors actually still exist before being counted as "skip".
+            candidates_for_qdrant_check = [
+                d for d in pg_indexed_ids if d not in corpus_doc_ids
+            ]
+            _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            qdrant_present_ids = _docs_with_qdrant_chunks(_qdrant, candidates_for_qdrant_check)
+
+            for doc in docs:
+                doc_id = doc["doc_id"]
+                # Always include base corpus docs — they're explicitly selected
+                if doc_id in corpus_doc_ids:
+                    ingest_docs.append(doc)
+                    continue
+                if doc_id in pg_indexed_ids:
+                    # PostgreSQL reports this document as ingested, but Qdrant may
+                    # have been wiped/restored independently (e.g. stale snapshot,
+                    # manual collection reset). Re-ingest if its vectors are gone —
+                    # otherwise the doc is silently unsearchable despite "indexed".
+                    if doc_id in qdrant_present_ids:
+                        already += 1
+                        continue
+                    ingest_docs.append(doc)
+                    continue
+                # Fallback: some docs may be ingested but their ingestion_state
+                # row was not committed (e.g. process was killed mid-run).
+                # Check whether an archive directory with source files exists.
+                _archive_path = archive_path_map.get(doc_id)
+                if _archive_path:
+                    _dir = Path(_archive_path)
+                    if _dir.exists() and (
+                        (_dir / "source.pdf").exists() or
+                        (_dir / "source.html").exists() or
+                        (_dir / "source_structured.html").exists()
+                    ):
+                        already += 1
+                        continue
+                ingest_docs.append(doc)
         except Exception:
             ingest_docs = docs  # fall back to full list on error
             already = 0
