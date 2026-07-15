@@ -13,12 +13,40 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 from lib import ingestion_lock
 from lib.ingest_documents import SECONDS_PER_DOC
 from lib.db import get_pg_conn
 from lib.text_utils import normalise_agency
 
 router = APIRouter()
+
+QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge_base")
+
+
+def _has_qdrant_chunks(client: QdrantClient, doc_id: str) -> bool:
+    """Return True if at least one active chunk exists in Qdrant for doc_id.
+
+    Used by the 'missing only' pre-scan to catch documents that PostgreSQL
+    reports as indexed but whose vectors are absent (e.g. Qdrant was wiped
+    or restored from a stale backup while document_registry was not).
+    """
+    try:
+        count = client.count(
+            collection_name=QDRANT_COLLECTION,
+            count_filter=Filter(must=[
+                FieldCondition(key="document_id", match=MatchValue(value=doc_id)),
+            ]),
+            exact=True,
+        )
+        return count.count > 0
+    except Exception:
+        # If Qdrant is unreachable, don't block the pre-scan — fall back to
+        # treating the document as already ingested per the PG-only signal.
+        return True
 
 # In-memory session state — single-worker container, survives per-process
 _sessions: dict = {}
@@ -415,6 +443,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
         from lib.db import get_pg_conn as _get_conn
         ingest_docs = []
         already = 0
+        _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
         try:
             _conn = _get_conn()
             with _conn.cursor() as _cur:
@@ -435,7 +464,14 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                         (doc_id,),
                     )
                     if _cur.fetchone():
-                        already += 1
+                        # PostgreSQL reports this document as ingested, but Qdrant may
+                        # have been wiped/restored independently (e.g. stale snapshot,
+                        # manual collection reset). Re-ingest if its vectors are gone —
+                        # otherwise the doc is silently unsearchable despite "indexed".
+                        if _has_qdrant_chunks(_qdrant, doc_id):
+                            already += 1
+                            continue
+                        ingest_docs.append(doc)
                         continue
                     # Fallback: some docs may be ingested but their ingestion_state
                     # row was not committed (e.g. process was killed mid-run).
