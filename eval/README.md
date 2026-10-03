@@ -1,31 +1,35 @@
 # Evaluation
 
-_Stub — full text to follow._
+This directory contains the evaluation set, rubric, scoring scripts and result files behind the Evaluation section of the main README.
+
+## Reproduce the README tables
+
+```bash
+python3 eval/summarise.py
+```
+
+Standard library only; no API keys or running services needed. Scores are 0–3 per question; percentage = mean score / 3 × 100.
 
 ## Contents
 
-| File | Role |
+| File | What it is |
 |---|---|
-| `questions_v2.json` | Question bank: 51 questions across categories A (core lookup), B (cross-framework), C (boundary/scope) |
-| `generation_fixture.json` | Frozen baseline run — the 50 questions with the exact retrieved context and phi4:14b-q8_0 answer each was scored against. |
-| `eval_runner_v2.py` | Runs the question bank against the query API and scores each answer with four evaluator models. Holds the scoring rubric. |
-| `eval_score_answers.py` | Scores externally generated answers (OpenRouter models) with the same evaluators and rubric. Reads `generation_fixture.json` for the retrieved context. |
-| `eval_score_sonnet.py` | Scores Claude Sonnet answers with the same evaluators and rubric. |
-| `summarise.py` | Recomputes every percentage quoted in the README from the six result files below. |
-| `results_v2_20260613_160027.json` | Baseline run — ownedpulse with phi4:14b-q8_0 as the generation model. |
-| `results_llama4scout_20260614_063214.json` | Generation model comparison — Llama 4 Scout. |
-| `results_qwen25_72b_20260614_072311.json` | Generation model comparison — Qwen2.5-72B. |
-| `results_gptoss20b_20260614_074613.json` | Generation model comparison — GPT-OSS-20B. |
-| `results_gptoss120b_20260614_065717.json` | Generation model comparison — GPT-OSS-120B. |
-| `results_sonnet_20260613_201401.json` | Generation model comparison — Claude Sonnet 4.6 (cloud reference). |
+| `questions_v2.json` | Question bank: 51 questions in categories A, B, C. 50 were scored; Q052 was added after the scored runs and has not been scored. |
+| `eval_runner_v2.py` | Runs the questions and collects judge scores. Contains the scoring rubric (`RUBRIC`). |
+| `eval_score_answers.py` | Scores a frozen set of answers with the judge models. Reads `generation_fixture.json`. |
+| `eval_score_sonnet.py` | Scoring script used for the Claude Sonnet 4.6 generation run. |
+| `generation_fixture.json` | Frozen baseline: for each of the 50 questions, the retrieved context passed to the model and the phi4:14b-q8_0 answer that was scored. The comparison models received the same retrieved context. |
+| `results_v2_20260613_160027.json` | Scores, phi4:14b-q8_0 (baseline) |
+| `results_llama4scout_20260614_063214.json` | Scores, Llama 4 Scout |
+| `results_qwen25_72b_20260614_072311.json` | Scores, Qwen2.5-72B |
+| `results_gptoss20b_20260614_074613.json` | Scores, GPT-OSS-20B |
+| `results_gptoss120b_20260614_065717.json` | Scores, GPT-OSS-120B |
+| `results_sonnet_20260613_201401.json` | Scores, Claude Sonnet 4.6 |
+| `summarise.py` | Recomputes every number in the README evaluation tables from the result files. |
 
-Each `results_*.json` holds per-question answers, retrieved sources, and one
-score plus a faithfulness verdict per evaluator. Percentages in the README are
-recomputed from these files; the evaluator averages are derived from the three
-independent evaluators (claude, gpt, deepseek) — `phi4` scores in the same
-files are the generation model's self-assessment and are not part of any
-independent average.
+## Notes
 
-Running the scripts requires `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and
-`DEEPSEEK_API_KEY` in the environment (see `.env.example`). No keys are
-stored in this directory.
+- Judges: Claude Sonnet 4.6, GPT-4.1, DeepSeek V4 Pro. The result files also contain a phi4 self-score; it is shown by `summarise.py` but excluded from all means because the generation model is not an independent judge.
+- DeepSeek returned usable scores for 49 of 50 questions in most runs (48 for Qwen2.5-72B); its percentages use that denominator.
+- Re-running the judges needs `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `DEEPSEEK_API_KEY` in the environment. Only public-corpus questions, retrieved public text and generated answers are sent to the hosted judge models.
+- Answers for the comparison models were generated through hosted APIs from the frozen retrieved context. The generation scripts are not included.
