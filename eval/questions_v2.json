@@ -1,0 +1,603 @@
+{
+  "version": "v2",
+  "generated_at": "2026-06-13T10:17:42.419158Z",
+  "source_file": "questions_v2_candidates.json",
+  "model": "claude-sonnet-4-6",
+  "total_questions": 51,
+  "counts_by_category": {
+    "A": 15,
+    "B": 25,
+    "C": 11
+  },
+  "questions": [
+    {
+      "question_id": "Q001",
+      "question_text": "Our change control SOP for computerised systems needs to be updated. What specific controls does Annex 11 clause 10 require that we must verify are covered in our procedure?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover the requirement that changes to computerised systems including configurations be made in a controlled manner according to a defined procedure, referencing clause 10.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q002",
+      "question_text": "What does Annex 11 require us to include in a periodic evaluation of a computerised system to confirm it remains in a validated state?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover functionality review, deviation records, incidents, problems, upgrade history, performance, reliability, security, and validation status reports as listed in clause 11.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q003",
+      "question_text": "We are implementing a password-based electronic signature system. What specific controls does 21 CFR Part 11 §11.300 require we put in place to ensure compliance?",
+      "category": "A",
+      "primary_documents": [
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover uniqueness of ID/password combinations, ensuring no two individuals share credentials, and the additional controls specified in §11.300.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q004",
+      "question_text": "Before our FDA inspection, I need to confirm our electronic batch record system's audit trail meets all 21 CFR Part 11 §11.10(e) requirements. What are the specific elements the regulation requires?",
+      "category": "A",
+      "primary_documents": [
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover §11.10(e): secure, computer-generated, time-stamped audit trails, non-obscuring of prior entries, and retention period at least as long as the subject records.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q005",
+      "question_text": "According to the FDA data integrity Q&A guidance, what does FDA require when login credentials are shared among multiple users?",
+      "category": "A",
+      "primary_documents": [
+        "FDA-DI-CGMP-QA"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must state that shared login credentials fail to identify a unique individual and do not conform to CGMP requirements under parts 211 and 212, making the system non-compliant.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q006",
+      "question_text": "We are reviewing a draft URS for a new LIMS. According to Annex 15, what role must the URS play throughout the validation lifecycle, and what essential quality elements must it define?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex15"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference clause 3.2 requirement that the URS defines essential quality elements, mitigates GMP risks, and serves as a reference point throughout the entire validation lifecycle.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q007",
+      "question_text": "Under Annex 15, when can continuous process verification be used as an alternative to traditional process validation?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex15"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference clause 5.23: CPV can replace traditional validation for products developed by quality by design where it has been scientifically established that the control strategy provides high assurance of product quality.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q008",
+      "question_text": "What does Annex 15 require regarding re-qualification frequency for equipment, facilities, utilities, and systems?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex15"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover clause 4.1 and 4.2: evaluation at appropriate frequency to confirm state of control, and where re-qualification is time-period based, the period must be justified with evaluation criteria defined.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q009",
+      "question_text": "We are setting up our annual PQS management review agenda. According to ICH Q10 section 4.2, what external factors must management specifically consider and monitor as part of that review?",
+      "category": "A",
+      "primary_documents": [
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference section 4.2 factors: emerging regulations and guidance, innovations enhancing the PQS, changes in business environment and objectives, and changes in product ownership.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q010",
+      "question_text": "What does EU GMP Annex 22 require regarding the independence of test data used to evaluate an AI model?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover clause 6.1: technical and/or procedural controls must ensure test data is not used during development, training, or validation of the model, achieved either by capturing test data after training or by splitting from a complete dataset.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q011",
+      "question_text": "What explainability techniques does EU GMP Annex 22 recommend for AI models used in critical GMP applications?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference clause 8.1: feature attribution techniques such as SHAP values or LIME, and visual tools such as heat maps, to capture and record features contributing to classifications or decisions.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q012",
+      "question_text": "We are designing an interface between our MES and LIMS that will exchange electronic data automatically. What does Annex 11 clause 5 require we implement and document to ensure data transferred between these systems is correct and secure?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference Annex 11 clause 5 requirement for appropriate built-in checks for correct and secure entry and processing of data when systems exchange data electronically to minimise risks.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q013",
+      "question_text": "According to EU GMP Annex 22, what must be documented in the intended use description before an AI model is deployed in a GMP environment?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover Annex 22 clause 3.1 requirements: detailed description of the intended use, specific tasks the model assists or automates, comprehensive characterisation of input data including common and rare variations constituting the input sample space.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q014",
+      "question_text": "What are the specific personnel cooperation requirements that EU GMP Annex 22 mandates for AI model development, training, and validation in a GMP environment?",
+      "category": "A",
+      "primary_documents": [
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference Annex 22 clause 2.1 requirement for close cooperation between all relevant parties including process subject matter experts during algorithm selection, model training, validation, testing, and operation.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q015",
+      "question_text": "FDA has requested that we certify in writing that our electronic signatures are the legally binding equivalent of handwritten signatures. What does 21 CFR Part 11 §11.100 require us to submit and under what circumstances?",
+      "category": "A",
+      "primary_documents": [
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference §11.100(2) requirement that persons using electronic signatures must, upon agency request, provide additional certification or testimony that a specific electronic signature is the legally binding equivalent of a handwritten signature.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q016",
+      "question_text": "We are deploying an AI-based visual inspection system for batch release decisions. How do EU GMP Annex 22 and Annex 11 together define the validation and change control requirements we must meet before go-live?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex22",
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must synthesise Annex 11 requirements for validated computerised systems with URS traceability, and Annex 22 requirements for model testing, test data independence, fit-for-intended-use testing, and change control before deployment in operation.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q017",
+      "question_text": "When preparing for an FDA inspection, how do the data integrity Q&A guidance and 21 CFR Part 11 together define what constitutes an acceptable audit trail for electronic batch records?",
+      "category": "B",
+      "primary_documents": [
+        "FDA-DI-CGMP-QA",
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must combine FDA DI Q&A requirements on authorised access and CGMP documentation controls with 21 CFR Part 11 §11.10(e) requirements for secure, computer-generated, time-stamped audit trails that do not obscure prior records.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q018",
+      "question_text": "How do the requirements for computerised system periodic evaluation differ between EU GMP Annex 11 and what ICH Q10 requires for ongoing process performance monitoring?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must contrast Annex 11 clause 11 (system-level periodic evaluation of functionality, deviations, security, validation status) with ICH Q10 section 3.2.1 (process and product monitoring to ensure state of control and identify improvement opportunities).",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q019",
+      "question_text": "We are writing a change management SOP that must satisfy both ICH Q10 and EU GMP Annex 11. What are the specific requirements from each framework we need to incorporate?",
+      "category": "B",
+      "primary_documents": [
+        "ICH-Q10",
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover ICH Q10 section 3.2.3 change management system requirements for evaluating, approving, and implementing changes, and Annex 11 clause 10 requirement for controlled changes to computerised systems via defined procedure.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q020",
+      "question_text": "How do EU GMP Annex 22 and the EMA Reflection Paper on AI together address the use of AI in manufacturing process control and what governance requirements apply?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex22",
+        "EMA-Reflection-AI"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must synthesise Annex 22 GMP-specific requirements for AI model validation and operation with EMA Reflection Paper section 2.3.6 guidance on quality risk management, patient safety, data integrity, and lifecycle management for AI in manufacturing.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q021",
+      "question_text": "What are the combined personnel and training requirements for managing computerised systems across EU GMP Annex 11 and 21 CFR Part 11?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover Annex 11 clause 2 (close cooperation, appropriate qualifications, defined responsibilities for Process Owner, System Owner, QP, IT) and 21 CFR Part 11 §11.10(i) requirement that developers, maintainers, and users have appropriate education, training, and experience.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q022",
+      "question_text": "How do the CAPA requirements under ICH Q10 relate to the incident management requirements in EU GMP Annex 11 when addressing a critical computerised system failure?",
+      "category": "B",
+      "primary_documents": [
+        "ICH-Q10",
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must link Annex 11 clause 13 (all incidents reported, root cause of critical incidents identified to drive CAPA) with ICH Q10 section 3.2 CAPA system requirements as a core PQS element.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q023",
+      "question_text": "For a data migration project moving legacy batch records to a new LIMS, what validation requirements apply under both EU GMP Annex 11 and 21 CFR Part 11?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference Annex 11 clause 4.8 (validation must confirm data not altered in value or meaning during migration) and 21 CFR Part 11 §11.10 requirements for validated systems ensuring accuracy and integrity of electronic records.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q024",
+      "question_text": "How should we structure the URS and qualification documentation for a new AI-assisted process analytical technology (PAT) system to satisfy both Annex 11 and Annex 22 requirements?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must combine Annex 11 clause 4.4 (URS based on documented risk assessment and GMP impact, traceable throughout lifecycle) with Annex 22 clause 3.1 (intended use described in detail, input data characterised, tasks described) and acceptance criteria requirements.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q025",
+      "question_text": "When transferring a legacy product to a new manufacturing site, what do Annex 15 and ICH Q10 jointly require to ensure the process validation and quality system are aligned?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex15",
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must combine Annex 15 clause 5.6 (manufacturing process and controls must comply with MA and meet current standards, variations submitted if needed) with ICH Q10 section 3.2.1 (monitoring during technology transfer provides preliminary indication of process performance).",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q026",
+      "question_text": "How do FDA data integrity requirements and ICH Q10 change management requirements together govern a planned upgrade to a validated manufacturing execution system?",
+      "category": "B",
+      "primary_documents": [
+        "FDA-DI-CGMP-QA",
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover FDA DI Q&A requirements for authorised personnel making changes to computerised CGMP records and ICH Q10 section 3.2.3 change management system for evaluating, approving, and implementing changes.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q027",
+      "question_text": "What do Annex 15 and ICH Q10 together require for ongoing process monitoring after initial process validation is complete?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex15",
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must synthesise Annex 15 clause 5.29 (monitoring product quality to ensure state of control, evaluating relevant process trends) with ICH Q10 section 3.2.1 (monitoring system to ensure continued capability and identify improvement areas).",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q028",
+      "question_text": "How do the electronic signature requirements in 21 CFR Part 11 compare with the data security and access control requirements in EU GMP Annex 11 when implementing a global electronic batch record system?",
+      "category": "B",
+      "primary_documents": [
+        "21-CFR-Part-11",
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must compare 21 CFR Part 11 §11.100 and §11.300 signature binding and credential uniqueness requirements with Annex 11 clause 7.1 data security requirements and access controls to highlight similarities and any gaps for a dual-compliance implementation.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q029",
+      "question_text": "For a cloud-based computerised system supporting critical GMP processes, what business continuity and data integrity requirements must be addressed under Annex 11 and the FDA data integrity guidance?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "FDA-DI-CGMP-QA"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cover Annex 11 clause 16 (continuity provisions for critical process systems, risk-based time to bring alternative arrangements into use) and FDA DI Q&A requirements for authorised controls and record accessibility.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q030",
+      "question_text": "How do the EMA Reflection Paper on AI and EU GMP Annex 22 together define the ethical and quality governance framework for AI used in pharmacovigilance signal detection?",
+      "category": "B",
+      "primary_documents": [
+        "EMA-Reflection-AI",
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must note that EMA Reflection Paper section 2.3.7 addresses pharmacovigilance AI applications and section 2.8 covers ethical principles, while Annex 22 scope is limited to manufacturing; answer should flag that Annex 22 does not directly apply to pharmacovigilance.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q031",
+      "question_text": "What do ICH Q10 management review requirements and EU GMP Annex 22 AI governance requirements together demand of senior management when an AI model used in batch disposition is underperforming?",
+      "category": "B",
+      "primary_documents": [
+        "ICH-Q10",
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must combine ICH Q10 section 4.3 management review outputs (resources, policy revisions, PQS improvements) with Annex 22 clause 10.1 change control requirements and confidence/threshold monitoring requirements for deployed AI models.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q032",
+      "question_text": "We are building our computerised system register to satisfy Annex 11. What does Annex 11 require the register to contain, and how should ICH Q10 change management requirements inform what additional system knowledge we document?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must reference Annex 11 clause 4.3 (up-to-date inventory of all relevant systems and GMP functionality, detailed system description for critical systems) alongside ICH Q10 change management knowledge management framing.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q033",
+      "question_text": "What requirements do 21 CFR Part 11 and the FDA data integrity guidance together impose on the design of a system where paper printouts are used as original records alongside the electronic system?",
+      "category": "B",
+      "primary_documents": [
+        "21-CFR-Part-11",
+        "FDA-DI-CGMP-QA"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must combine FDA DI Q&A section on static vs dynamic records and paper printout retention with 21 CFR Part 11 §11.2 on using electronic records in lieu of paper, clarifying when each applies.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q034",
+      "question_text": "We are qualifying a new AI-based automated visual inspection system under EU GMP. How do Annex 22 test metrics requirements and Annex 15 qualification requirements together define what our qualification protocol must contain?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex22",
+        "EU-GMP-Annex15"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must synthesise Annex 22 clause 4.1 (test metrics such as confusion matrix, sensitivity, specificity, accuracy, F1 score) with Annex 15 OQ/PQ definitions and qualification documentation requirements.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q035",
+      "question_text": "How do the data integrity requirements in the FDA Q&A guidance align with or differ from EU GMP Annex 11 requirements for data security, storage, and retention?",
+      "category": "B",
+      "primary_documents": [
+        "FDA-DI-CGMP-QA",
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must contrast FDA DI Q&A requirements on authorised access, static/dynamic records, and CGMP data controls with Annex 11 clause 7.1 requirements for physical and electronic security, accessibility, readability, and accuracy throughout retention period.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q036",
+      "question_text": "For an AI model used in continuous process verification, what do EU GMP Annex 22 and Annex 15 together require for ongoing performance monitoring and when a re-validation would be triggered?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex22",
+        "EU-GMP-Annex15"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must combine Annex 22 confidence score and threshold monitoring (clauses 9.1, 9.2) and change control (clause 10.1) with Annex 15 clauses 5.29-5.30 on ongoing process verification frequency and state of control monitoring.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q037",
+      "question_text": "We are investigating a data integrity deviation where an analyst was found to have deleted and re-entered out-of-trend HPLC results. What do ICH Q10 CAPA requirements and the FDA data integrity Q&A guidance together require us to document and implement before we can close this investigation?",
+      "category": "B",
+      "primary_documents": [
+        "ICH-Q10",
+        "FDA-DI-CGMP-QA"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "A correct answer must address FDA DI guidance requirements for investigation scope, retrospective data review, and extent-of-impact assessment alongside ICH Q10 CAPA requirements for root cause analysis, effectiveness checks, and management escalation as quality system outputs.",
+      "source": "generated_v2"
+    },
+    {
+      "question_id": "Q038",
+      "question_text": "During preparation for a pre-approval inspection, our team needs to demonstrate that process validation data stored in a legacy chromatography data system meets current standards. What do the FDA data integrity Q&A guidance and EU GMP Annex 15 together require us to verify or remediate about those historical validation records before the inspection?",
+      "category": "B",
+      "primary_documents": [
+        "FDA-DI-CGMP-QA",
+        "EU-GMP-Annex15"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "A correct answer must cover FDA DI guidance requirements for original record availability, audit trail completeness, and metadata integrity alongside Annex 15 requirements for contemporaneous documentation, protocol traceability, and the completeness of validation reports.",
+      "source": "generated_v2"
+    },
+    {
+      "question_id": "Q039",
+      "question_text": "We are implementing a new MES that will generate electronic batch records as the primary GMP record, replacing paper. What do EU GMP Annex 11, 21 CFR Part 11, and ICH Q10 together require us to address in the validation plan, change management documentation, and quality system procedures before go-live?",
+      "category": "B",
+      "primary_documents": [
+        "EU-GMP-Annex11",
+        "21-CFR-Part-11",
+        "ICH-Q10"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "A correct answer must integrate Annex 11 validation and audit trail requirements, 21 CFR Part 11 electronic record and signature controls, and ICH Q10 change management and knowledge management obligations that collectively govern the transition from paper to electronic batch records.",
+      "source": "generated_v2"
+    },
+    {
+      "question_id": "Q040",
+      "question_text": "Our QMS SOP for supplier qualification currently covers approved supplier lists and audits. How do ICH Q10 requirements for oversight of outsourced activities and the FDA data integrity Q&A guidance together require us to extend this SOP to cover data integrity risks at contract laboratories?",
+      "category": "B",
+      "primary_documents": [
+        "ICH-Q10",
+        "FDA-DI-CGMP-QA"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "A correct answer must specify ICH Q10 requirements for quality agreements and outsourced activity oversight combined with FDA DI guidance expectations for verifying contractor data integrity controls, audit trail availability, and raw data access during audits.",
+      "source": "generated_v2"
+    },
+    {
+      "question_id": "Q041",
+      "question_text": "Does EU GMP Annex 22 currently have regulatory force, or is it still in draft, and how should we factor its requirements into our AI validation strategy right now?",
+      "category": "C",
+      "primary_documents": [
+        "EU-GMP-Annex22"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must correctly identify EU-GMP-Annex22 as a draft annex (the corpus metadata confirms this), advise that it does not yet have binding force but represents regulatory intent, and recommend using it alongside Annex 11 for current AI validation planning.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q042",
+      "question_text": "What does current EU GMP guidance say about the use of AI models for automated batch release decisions, and is there binding guidance I can cite to an inspector today?",
+      "category": "C",
+      "primary_documents": [
+        "EU-GMP-Annex22",
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must flag that Annex 22 is draft and not yet binding, note Annex 11 provides the current binding computerised system framework, and acknowledge the regulatory gap, directing the user to apply Annex 11 with risk-based rationale until Annex 22 is finalised.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q043",
+      "question_text": "What does the corpus say about FDA requirements for validating AI and machine learning models used in pharmaceutical manufacturing?",
+      "category": "C",
+      "primary_documents": [
+        "FDA-DI-CGMP-QA",
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must acknowledge the corpus contains no FDA-specific AI/ML guidance document, note the FDA DI Q&A and 21 CFR Part 11 provide general computerised system and data integrity requirements applicable to AI systems, and flag this as a boundary case requiring external FDA AI guidance.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q044",
+      "question_text": "Is there guidance in this system on the EU Clinical Trials Regulation (CTR) requirements for electronic informed consent documentation?",
+      "category": "C",
+      "primary_documents": [],
+      "corpus_scope": "out_of_scope",
+      "expected_answer_scope": "Must correctly state the corpus does not contain EU CTR guidance or specific electronic informed consent documentation requirements, and decline to answer rather than extrapolate from available documents.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q045",
+      "question_text": "What does the corpus say about GDP (Good Distribution Practice) requirements for temperature monitoring systems under EU regulations?",
+      "category": "C",
+      "primary_documents": [],
+      "corpus_scope": "out_of_scope",
+      "expected_answer_scope": "Must correctly identify that EU GDP guidelines are not in the corpus, note that Annex 15 transport clauses touch on transportation validation but GDP temperature monitoring systems are out of scope, and not extrapolate an answer.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q046",
+      "question_text": "Does the corpus contain the ICH Q9 Quality Risk Management guideline, and if so, what does it say about risk assessment tools applicable to computerised system validation?",
+      "category": "C",
+      "primary_documents": [
+        "ICH-Q10"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must correctly note that ICH Q9 is referenced in ICH Q10 section 1.6.2 as providing principles and tools for quality risk management, but ICH Q9 itself is not a seed document in the corpus, so detailed risk tool content cannot be retrieved.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q047",
+      "question_text": "What does the available guidance say about requirements for blockchain technology used in pharmaceutical supply chain track and trace?",
+      "category": "C",
+      "primary_documents": [],
+      "corpus_scope": "out_of_scope",
+      "expected_answer_scope": "Must correctly identify that blockchain or distributed ledger technology for supply chain is not addressed in the corpus documents and decline to answer, not attempting to extrapolate from electronic records or data integrity guidance.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q048",
+      "question_text": "Is there guidance in this system about the specific FDA predicate rule requirements that determine when 21 CFR Part 11 applies versus when it is exempt for a given record type?",
+      "category": "C",
+      "primary_documents": [
+        "21-CFR-Part-11"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must note that 21 CFR Part 11 §11.1 contains multiple exclusions for specific subpart records, that §11.2 addresses when electronic records may substitute for paper, but that comprehensive predicate rule mapping requires external FDA guidance documents not fully in corpus.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q049",
+      "question_text": "What does the EMA Reflection Paper on AI say about the regulatory classification of AI software as a medical device, and is there sufficient guidance in the corpus to make that determination?",
+      "category": "C",
+      "primary_documents": [
+        "EMA-Reflection-AI"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must reference the EMA Reflection Paper citation of the EU Medical Device Regulation 2017/745 and the EC infographic on software as medical device, but correctly note the actual MDR text and SaMD classification criteria are not in the corpus.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q051",
+      "question_text": "What does the corpus say about specific cybersecurity requirements for pharmaceutical computerised systems beyond access controls and audit trails?",
+      "category": "C",
+      "primary_documents": [
+        "EU-GMP-Annex11"
+      ],
+      "corpus_scope": "boundary",
+      "expected_answer_scope": "Must note Annex 11 references physical and electronic security measures and security in system descriptions for critical systems, but comprehensive cybersecurity frameworks (e.g., NIS2, NIST) are not in the corpus and the coverage on this topic is limited.",
+      "source": "generated_v1"
+    },
+    {
+      "question_id": "Q052",
+      "question_text": "What FDA guidance applies to computerised system validation?",
+      "category": "C",
+      "primary_documents": [
+        "FDA-CSV-2003",
+        "FDA-Part11-Scope-2003",
+        "21-CFR-Part-11"
+      ],
+      "optional_documents": [
+        "FDA-CSA-2025",
+        "FDA-DI-CGMP-QA"
+      ],
+      "corpus_scope": "in_corpus",
+      "expected_answer_scope": "Must cite at minimum 2 of 3 primary documents (FDA-CSV-2003, FDA-Part11-Scope-2003, 21-CFR-Part-11). CSA-2025 and DI-CGMP-QA are optional bonus. ICH E6(R3) may appear naturally but should not dominate — FDA guidance documents must be prioritised. Acceptable if answer notes CSA-2025 scope is medical device production/QMS (CDRH/CBER), not pharma CGMP directly.",
+      "source": "generated_v2"
+    }
+  ]
+}
