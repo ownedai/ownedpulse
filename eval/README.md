@@ -7,9 +7,11 @@ _Stub — full text to follow._
 | File | Role |
 |---|---|
 | `questions_v2.json` | Question bank: 51 questions across categories A (core lookup), B (cross-framework), C (boundary/scope) |
+| `generation_fixture.json` | Frozen baseline run — the 50 questions with the exact retrieved context and phi4:14b-q8_0 answer each was scored against. |
 | `eval_runner_v2.py` | Runs the question bank against the query API and scores each answer with four evaluator models. Holds the scoring rubric. |
-| `eval_score_answers.py` | Scores externally generated answers (OpenRouter models) with the same evaluators and rubric. |
+| `eval_score_answers.py` | Scores externally generated answers (OpenRouter models) with the same evaluators and rubric. Reads `generation_fixture.json` for the retrieved context. |
 | `eval_score_sonnet.py` | Scores Claude Sonnet answers with the same evaluators and rubric. |
+| `summarise.py` | Recomputes every percentage quoted in the README from the six result files below. |
 | `results_v2_20260613_160027.json` | Baseline run — ownedpulse with phi4:14b-q8_0 as the generation model. |
 | `results_llama4scout_20260614_063214.json` | Generation model comparison — Llama 4 Scout. |
 | `results_qwen25_72b_20260614_072311.json` | Generation model comparison — Qwen2.5-72B. |
