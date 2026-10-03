@@ -168,6 +168,7 @@ services:
     environment:
       VITE_API_URL: ${VITE_API_URL:-}
       VITE_HMR_DISABLED: ${VITE_HMR_DISABLED:-false}
+      VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
     volumes:
       - ./ui:/app
       - /app/node_modules

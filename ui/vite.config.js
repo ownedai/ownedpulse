@@ -11,7 +11,12 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
-    allowedHosts: ['rp.ownedai.dev'],
+    // Comma-separated hostnames the dev server will answer for. Empty by
+    // default, which means Vite accepts only localhost — set
+    // VITE_ALLOWED_HOSTS when serving the UI through a proxy or tunnel.
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS
+      ? process.env.VITE_ALLOWED_HOSTS.split(',')
+      : [],
     hmr: process.env.VITE_HMR_DISABLED === 'true' ? false : { overlay: false },
   },
 });
