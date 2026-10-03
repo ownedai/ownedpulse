@@ -54,7 +54,7 @@ services:
               capabilities: [gpu]
   docling:
     profiles: [docling]
-    image: quay.io/docling-project/docling-serve-cu128:v1.35.0
+    image: ${DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cu128:v1.35.0}
     container_name: ownedpulse-docling
     restart: unless-stopped
     environment:

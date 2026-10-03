@@ -102,6 +102,22 @@ LANGFUSE_URL="${LANGFUSE_URL:-http://localhost:${LANGFUSE_HOST_PORT}}"
 API_PORT="${API_PORT:-8001}"
 UI_PORT="${UI_PORT:-5173}"
 
+# ── Compose files ────────────────────────────────────────────────────────
+# Docling runs on the GPU by default. DOCLING_VARIANT=cpu swaps in the CPU
+# image and drops the GPU reservation, which frees VRAM for Ollama at the
+# cost of slower PDF parsing during ingestion.
+
+DOCLING_VARIANT="${DOCLING_VARIANT:-gpu}"
+case "$DOCLING_VARIANT" in
+  gpu|cpu) ;;
+  *) die "DOCLING_VARIANT must be 'gpu' or 'cpu' (got '$DOCLING_VARIANT')" ;;
+esac
+
+COMPOSE_FILES=(-f docker-compose.yml)
+if [[ "$DOCLING_VARIANT" == "cpu" ]]; then
+  COMPOSE_FILES+=(-f docker-compose.docling-cpu.yml)
+fi
+
 LLM_MODEL="${OLLAMA_GEN_MODEL:-phi4:14b-q8_0}"
 EMBED_MODEL="${OLLAMA_EMBED_MODEL:-mxbai-embed-large}"
 
@@ -109,7 +125,7 @@ EMBED_MODEL="${OLLAMA_EMBED_MODEL:-mxbai-embed-large}"
 
 if [[ "$STOP_ONLY" == true ]]; then
   log_info "Stopping ownedpulse-api and ownedpulse-ui..."
-  docker compose stop ownedpulse-api ownedpulse-ui 2>/dev/null || true
+  docker compose "${COMPOSE_FILES[@]}" stop ownedpulse-api ownedpulse-ui 2>/dev/null || true
   log_ok "Stopped. Infrastructure services are untouched."
   exit 0
 fi
@@ -129,10 +145,11 @@ if [[ "${POSTGRES_PASSWORD:-}" == "change_me" ]] || [[ -z "${POSTGRES_PASSWORD:-
 fi
 log_ok "POSTGRES_PASSWORD is set"
 
-# OLLAMA / DOCLING GPU checks — only needed if those services are bundled
+# OLLAMA / DOCLING GPU checks — bundled Ollama always needs a GPU; bundled
+# Docling needs one only when running the GPU variant.
 NEED_GPU=false
 [[ "${OLLAMA_MODE}" == "bundled" ]] && NEED_GPU=true
-[[ "${DOCLING_MODE}" == "bundled" ]] && NEED_GPU=true
+[[ "${DOCLING_MODE}" == "bundled" && "${DOCLING_VARIANT}" == "gpu" ]] && NEED_GPU=true
 
 if [[ "$NEED_GPU" == true ]]; then
   nvidia-smi > /dev/null 2>&1 || die "No NVIDIA GPU detected (nvidia-smi failed).\nOllama/Docling require an NVIDIA GPU with drivers and nvidia-container-toolkit."
@@ -145,7 +162,7 @@ if [[ "$NEED_GPU" == true ]]; then
     log_warn "nvidia-container-toolkit package not found. If GPU containers fail:\n  sudo apt install -y nvidia-container-toolkit && sudo systemctl restart docker"
   fi
 else
-  log_warn "Ollama and Docling both external — skipping GPU check"
+  log_warn "No bundled service requires the GPU — skipping GPU check"
 fi
 
 # Required env vars for Langfuse (only if bundled)
@@ -206,7 +223,7 @@ for svc in postgres qdrant ollama docling; do
 done
 
 if [[ ${#PROFILES[@]} -gt 0 ]]; then
-  docker compose "${PROFILES[@]}" up -d "${INFRA_SERVICES[@]}" 2>&1 \
+  docker compose "${COMPOSE_FILES[@]}" "${PROFILES[@]}" up -d "${INFRA_SERVICES[@]}" 2>&1 \
     || die "docker compose up failed for infrastructure services. Check output above."
   log_ok "Infrastructure started"
 fi
@@ -290,7 +307,7 @@ if [[ "${LANGFUSE_MODE}" == "bundled" ]]; then
   create_langfuse_db
 
   log_info "Starting Langfuse..."
-  docker compose --profile langfuse up -d langfuse 2>&1 || die "docker compose up failed for langfuse."
+  docker compose "${COMPOSE_FILES[@]}" --profile langfuse up -d langfuse 2>&1 || die "docker compose up failed for langfuse."
   log_ok "Langfuse started"
 fi
 
@@ -402,12 +419,12 @@ log_section "Step 8: Starting OwnedPulse"
 
 if [[ "$BUILD" == true ]]; then
   log_info "Building ownedpulse-api..."
-  docker compose build ownedpulse-api 2>&1 || die "Failed to build ownedpulse-api"
+  docker compose "${COMPOSE_FILES[@]}" build ownedpulse-api 2>&1 || die "Failed to build ownedpulse-api"
   log_info "Building ownedpulse-ui..."
-  docker compose build ownedpulse-ui 2>&1 || die "Failed to build ownedpulse-ui"
+  docker compose "${COMPOSE_FILES[@]}" build ownedpulse-ui 2>&1 || die "Failed to build ownedpulse-ui"
 fi
 
-docker compose up -d ownedpulse-api ownedpulse-ui 2>&1 \
+docker compose "${COMPOSE_FILES[@]}" up -d ownedpulse-api ownedpulse-ui 2>&1 \
   || die "Failed to start ownedpulse-api or ownedpulse-ui."
 
 wait_for "ownedpulse-api" "curl -s http://localhost:${API_PORT}/api/health | grep -q status" 120
@@ -421,7 +438,7 @@ echo "  Services:"
 printf "  %-12s %s  →  %s\n" "postgres"  "[${POSTGRES_MODE}]"  "${POSTGRES_HOST}:${POSTGRES_PORT}"
 printf "  %-12s %s  →  %s\n" "qdrant"    "[${QDRANT_MODE}]"    "${QDRANT_HOST}:${QDRANT_PORT}"
 printf "  %-12s %s  →  %s\n" "ollama"    "[${OLLAMA_MODE}]"    "${OLLAMA_HOST}"
-printf "  %-12s %s  →  %s\n" "docling"   "[${DOCLING_MODE}]"   "${DOCLING_HOST}"
+printf "  %-12s %s  →  %s\n" "docling"   "[${DOCLING_MODE}]"   "${DOCLING_HOST} (${DOCLING_VARIANT})"
 printf "  %-12s %s  →  %s\n" "langfuse"  "[${LANGFUSE_MODE}]"  "${LANGFUSE_URL}"
 echo ""
 echo "  OwnedPulse UI:  http://localhost:${UI_PORT}"

@@ -1,0 +1,23 @@
+# Override: run Docling on CPU instead of GPU.
+#
+# Applied automatically by install.sh when DOCLING_VARIANT=cpu. To use it
+# manually, always pass both files in this order:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.docling-cpu.yml ...
+#
+# The CPU image parses PDFs more slowly but holds no VRAM, which frees the
+# GPU for Ollama. Everything else about the service is unchanged.
+
+services:
+  docling:
+    image: ${DOCLING_CPU_IMAGE:-quay.io/docling-project/docling-serve:v1.35.0}
+    # Replace the environment map rather than merging into it, so the
+    # NVIDIA_* and PYTORCH_CUDA_ALLOC_CONF vars from the base file are
+    # dropped entirely instead of being overridden to empty values.
+    environment: !override
+      DOCLING_SERVE_ENABLE_UI: "1"
+      DOCLING_SERVE_DEFAULT_OCR_KIND: easyocr
+      DOCLING_SERVE_ALLOW_CUSTOM_OCR_CONFIG: "true"
+      DOCLING_CACHE_DIR: /tmp/docling
+    # Drop the GPU device reservation from the base file.
+    deploy: !reset {}
