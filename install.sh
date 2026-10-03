@@ -407,7 +407,7 @@ if [[ "${OLLAMA_MODE}" == "bundled" ]]; then
     log_ok "Model pulled: $model"
   }
 
-  pull_model "$LLM_MODEL" "9 GB"
+  pull_model "$LLM_MODEL" "15 GB"
   pull_model "$EMBED_MODEL" "670 MB"
 else
   log_info "Using external Ollama — skipping model pull"
