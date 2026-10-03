@@ -16,6 +16,6 @@ docling-core[chunking]==2.87.1
 semchunk==3.2.5
 transformers==5.14.1
 tree-sitter==0.26.0
-pypdf==6.14.2
+pypdf==6.19.0
 requests==2.34.2
 PySocks==1.7.1
