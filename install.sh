@@ -87,7 +87,17 @@ OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 DOCLING_HOST="${DOCLING_HOST:-http://ownedpulse-docling:5001}"
 
 LANGFUSE_HOST="${LANGFUSE_HOST:-http://ownedpulse-langfuse:3000}"
-LANGFUSE_URL="${LANGFUSE_URL:-http://localhost:${LANGFUSE_PORT:-3001}}"
+
+# Published host ports — these drive the compose `ports:` mappings and the
+# host-side health checks below. Inter-service traffic uses fixed container
+# ports (5432 / 6333 / 11434 / 5001 / 3000) and is unaffected by these.
+POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-5432}"
+QDRANT_HOST_PORT="${QDRANT_HOST_PORT:-6333}"
+OLLAMA_HOST_PORT="${OLLAMA_HOST_PORT:-11434}"
+DOCLING_HOST_PORT="${DOCLING_HOST_PORT:-5001}"
+LANGFUSE_HOST_PORT="${LANGFUSE_HOST_PORT:-3001}"
+
+LANGFUSE_URL="${LANGFUSE_URL:-http://localhost:${LANGFUSE_HOST_PORT}}"
 
 API_PORT="${API_PORT:-8001}"
 UI_PORT="${UI_PORT:-5173}"
@@ -306,13 +316,13 @@ else
 fi
 
 if [[ "${QDRANT_MODE}" == "bundled" ]]; then
-  wait_for "qdrant" "curl -sf http://localhost:${QDRANT_PORT}/healthz" 60
+  wait_for "qdrant" "curl -sf http://localhost:${QDRANT_HOST_PORT}/healthz" 60
 else
   wait_for "qdrant (external)" "curl -sf http://${QDRANT_HOST}:${QDRANT_PORT}/healthz" 60
 fi
 
 if [[ "${OLLAMA_MODE}" == "bundled" ]]; then
-  wait_for "ollama" "curl -sf http://localhost:${OLLAMA_PORT}/api/tags" 120
+  wait_for "ollama" "curl -sf http://localhost:${OLLAMA_HOST_PORT}/api/tags" 120
 else
   wait_for "ollama (external)" "curl -sf ${OLLAMA_HOST}/api/tags" 120
 fi
@@ -324,7 +334,7 @@ else
 fi
 
 if [[ "${LANGFUSE_MODE}" == "bundled" ]]; then
-  wait_for "langfuse" "curl -sf http://localhost:${LANGFUSE_PORT}/api/public/health" 60
+  wait_for "langfuse" "curl -sf http://localhost:${LANGFUSE_HOST_PORT}/api/public/health" 60
 else
   wait_for "langfuse (external)" "curl -sf ${LANGFUSE_HOST}/api/public/health" 60
 fi

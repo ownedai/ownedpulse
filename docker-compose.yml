@@ -1,21 +1,21 @@
 services:
   postgres:
     profiles: [postgres]
-    image: postgres:16
+    image: postgres:16.13
     container_name: ownedpulse-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-ownedpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-ownedpulse}
+      POSTGRES_DB: ${POSTGRES_DB:-knowledge_base}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     networks:
       - ownedpulse
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ownedpulse}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -23,26 +23,26 @@ services:
 
   qdrant:
     profiles: [qdrant]
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.19.1
     container_name: ownedpulse-qdrant
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
     ports:
-      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_HOST_PORT:-6333}:6333"
     networks:
       - ownedpulse
     # healthcheck omitted — qdrant image lacks curl/wget; install.sh checks from host
 
   ollama:
     profiles: [ollama]
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.35.1
     container_name: ownedpulse-ollama
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - "${OLLAMA_HOST_PORT:-11434}:11434"
     networks:
       - ownedpulse
     deploy:
@@ -54,7 +54,7 @@ services:
               capabilities: [gpu]
   docling:
     profiles: [docling]
-    image: quay.io/docling-project/docling-serve-cu128:main
+    image: quay.io/docling-project/docling-serve-cu128:v1.35.0
     container_name: ownedpulse-docling
     restart: unless-stopped
     environment:
@@ -68,7 +68,7 @@ services:
     volumes:
       - ${DOCLING_CACHE_DIR:-./data/docling}:/tmp/docling
     ports:
-      - "${DOCLING_PORT:-5001}:5001"
+      - "${DOCLING_HOST_PORT:-5001}:5001"
     networks:
       - ownedpulse
     deploy:
@@ -87,7 +87,7 @@ services:
 
   langfuse:
     profiles: [langfuse]
-    image: langfuse/langfuse:2
+    image: langfuse/langfuse:2.95.11
     container_name: ownedpulse-langfuse
     restart: unless-stopped
     # install.sh waits for postgres and creates the langfuse DB before
@@ -109,7 +109,7 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Admin}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
     ports:
-      - "${LANGFUSE_PORT:-3001}:3000"
+      - "${LANGFUSE_HOST_PORT:-3001}:3000"
     networks:
       - ownedpulse
     # healthcheck omitted — langfuse image lacks curl/wget; install.sh checks from host
@@ -119,6 +119,10 @@ services:
     container_name: ownedpulse-api
     restart: unless-stopped
     environment:
+      # Connect ports. Bundled services listen on fixed container-internal
+      # ports (qdrant 6333, postgres 5432, ollama 11434) — the published host
+      # ports (*_HOST_PORT) never appear here. Set *_PORT only in external
+      # mode, to the port the remote service listens on.
       QDRANT_HOST: ${QDRANT_HOST:-ownedpulse-qdrant}
       QDRANT_PORT: ${QDRANT_PORT:-6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-knowledge_base}
