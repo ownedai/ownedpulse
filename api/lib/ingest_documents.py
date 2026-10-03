@@ -24,7 +24,7 @@ Usage:
     results = ingest_documents(
         docs=[{"doc_id": "FDA-123", "phase": "live"}],
         source="n8n_rss",
-        triggered_by="n8n-scheduler",
+        triggered_by="scheduler",
     )
 """
 
@@ -449,7 +449,7 @@ def ingest_documents(docs: list, *, source: str, triggered_by: str,
     Args:
         docs: List of dicts, each with 'doc_id' (required) and optional 'phase'.
         source: 'n8n_rss', 'manual_cli', or 'bootstrap_ui'.
-        triggered_by: Human or system identifier (e.g. 'n8n-scheduler', 'zoran').
+        triggered_by: Human or system identifier (e.g. 'scheduler', 'operator').
         workflow_id: n8n workflow ID (nullable, Mode B only).
         workflow_execution_id: n8n execution ID (nullable, Mode B only).
         bulk: Force Mode A (per-document traces). Auto-set for 'bootstrap_ui'.

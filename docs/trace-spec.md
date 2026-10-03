@@ -35,7 +35,7 @@ One row per ingestion run. PK = `id` (integer sequence). Logical identifier = `r
 | `triggered_at` | TIMESTAMPTZ | When the run started (DEFAULT NOW()) |
 | `completed_at` | TIMESTAMPTZ | When the run finished (nullable until finalized) |
 | `trigger_source` | VARCHAR(20) | Ingestion source enum (see §5) |
-| `triggered_by` | TEXT | Human or system identifier (e.g. `n8n-scheduler`, `zoran`) |
+| `triggered_by` | TEXT | Human or system identifier (e.g. `scheduler`, `operator`) |
 | `workflow_id` | TEXT | n8n workflow ID (nullable) |
 | `n8n_execution_id` | VARCHAR(100) | n8n execution ID (nullable) |
 | `feed_source` | VARCHAR(50) | Feed identifier (nullable) |
@@ -190,7 +190,6 @@ Changes from pre-G-T1 schema:
 - [x] `trace_emitter.py` exposes three-level contract: `start_ingestion_trace()` → `start_document_span()` → `.finalize()`
 - [x] Smoke test produces complete run→doc→chunk trace (run_log + ingestion_doc rows)
 - [x] `payload.py` emits `trace_id` on every chunk
-- [x] This spec documents locked field names; CLAUDE.md updated
 
 ---
 

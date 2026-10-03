@@ -1,7 +1,7 @@
 """
 chunk_archive.py
 PostgreSQL chunk archive — dual-write companion to Qdrant.
-Provides Annex 11 §17 compliant chunk storage and RAG Inspector query foundation.
+Provides Annex 11 §17 compliant chunk storage and query provenance foundation.
 """
 
 import json

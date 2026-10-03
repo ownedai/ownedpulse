@@ -1,7 +1,5 @@
 """
 ownedpulse E2E UI tests — Playwright.
-Place at /opt/projects/ownedpulse/tests/e2e/test_ui.py
-
 Install: pip install playwright pytest-playwright && playwright install chromium
 Run: pytest tests/e2e/ --headed (or headless for CI)
 

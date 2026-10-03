@@ -74,7 +74,7 @@ if [ "$SUITE" = "all" ] || [ "$SUITE" = "fields" ]; then
         green "  Field names: CORRECT"
     else
         red "  Field names: INCORRECT — stopping before further tests"
-        red "  Check DEBRIEF.md and CLAUDE.md for correct Qdrant field names."
+        red "  Check docs/schema/qdrant-fields.md for correct Qdrant field names."
         exit 1
     fi
 fi

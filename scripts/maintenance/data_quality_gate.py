@@ -1,4 +1,3 @@
-# /opt/projects/ownedpulse/scripts/data_quality_gate.py
 """
 Data Quality Gate — OwnedPulse Corpus
 ====================================
@@ -6,8 +5,9 @@ Run after any full reingestion. All checks must pass before proceeding.
 Exit code 0 = GATE PASS. Exit code 1 = GATE FAIL.
 
 Usage:
-    python3 scripts/data_quality_gate.py
-    python3 scripts/data_quality_gate.py --verbose   (show detail on failures)
+    docker exec ownedpulse-api python3 /opt/scripts/maintenance/data_quality_gate.py
+    python3 scripts/maintenance/data_quality_gate.py
+    python3 scripts/maintenance/data_quality_gate.py --verbose   (show detail on failures)
 
 Checks:
     C01  Qdrant / PostgreSQL consistency

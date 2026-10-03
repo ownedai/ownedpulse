@@ -1,12 +1,14 @@
 """
 Backfill issuing_body in Qdrant payload for all RSS-ingested chunks where issuing_body is empty.
 Derives issuing_body from feed_id prefix if not in PostgreSQL document_registry.
-Run: python3 backfill_issuing_body.py [--dry-run]
+Run: python3 scripts/maintenance/backfill_issuing_body.py [--dry-run]
 """
 import sys
 import os
 import argparse
-sys.path.insert(0, "/opt/projects/ownedpulse/api")
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "api"))
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue

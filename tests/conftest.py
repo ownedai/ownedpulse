@@ -1,9 +1,8 @@
 """
 ownedpulse test configuration and shared fixtures.
-Place at /opt/projects/ownedpulse/tests/conftest.py
-
-Field names reflect ACTUAL Qdrant payload as verified in DEBRIEF.md.
-All old field names (agency, title, local_file_path, etc.) have been corrected.
+Field names reflect ACTUAL Qdrant payload as documented in
+docs/schema/qdrant-fields.md. All old field names (agency, title,
+local_file_path, etc.) have been corrected.
 """
 
 import pytest
@@ -80,7 +79,7 @@ HEALTH_REQUIRED_FIELDS = {
     "status", "qdrant", "postgres", "ollama", "langfuse"
 }
 
-# ── Verification queries (from CLAUDE.md) ─────────────────────────────────────
+# ── Verification queries ──────────────────────────────────────────────────────
 
 CONTENT_QUERIES = [
     "What are the Annex 11 requirements for audit trails?",

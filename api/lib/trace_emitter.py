@@ -7,7 +7,7 @@ Usage:
     from api.lib.trace_emitter import start_ingestion_trace, start_document_span
 
     trace = start_ingestion_trace(
-        source="n8n_rss", triggered_by="n8n-scheduler",
+        source="n8n_rss", triggered_by="scheduler",
         workflow_id="wf-123", workflow_execution_id="exec-456",
     )
     # trace.trace_id is the run_log.run_id UUID — stamp on every chunk
@@ -87,7 +87,7 @@ def start_ingestion_trace(*, source: str, triggered_by: str,
 
     Args:
         source: One of 'n8n_rss', 'manual_cli', 'bootstrap_ui'.
-        triggered_by: Human or system identifier (e.g. 'n8n-scheduler', 'zoran').
+        triggered_by: Human or system identifier (e.g. 'scheduler', 'operator').
         workflow_id: n8n workflow ID (nullable).
         workflow_execution_id: n8n execution ID (nullable).
         doc_id: document_registry.document_id for per-document traces (nullable).

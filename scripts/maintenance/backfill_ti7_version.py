@@ -9,11 +9,10 @@ import os, sys, re, json, time, requests
 from bs4 import BeautifulSoup
 from pathlib import Path
 
-# Add scripts path so we can import the new extractor
-sys.path.insert(0, "/opt/scripts/rss")
-from resolve_landing import _extract_version_structured, HEADERS
+# Resolved relative to this file so the script runs from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-SCRIPTS = Path("/opt/scripts")
+from rss.resolve_landing import _extract_version_structured, HEADERS
 
 import psycopg2
 from qdrant_client import QdrantClient

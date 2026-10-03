@@ -1,9 +1,7 @@
 """
 ownedpulse API endpoint tests.
-Place at /opt/projects/ownedpulse/tests/api/test_endpoints.py
-
 Tests every endpoint for correct HTTP status, response shape, and field
-presence. Uses corrected field names from DEBRIEF.md throughout.
+presence. Uses the field names documented in docs/schema/qdrant-fields.md.
 
 Changes from previous version:
 - All field names corrected (document_title, issuing_body, source_local_path,

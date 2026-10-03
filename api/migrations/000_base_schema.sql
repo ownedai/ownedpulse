@@ -1,4 +1,4 @@
--- 000_base_schema.sql — base tables required by regpulse
+-- 000_base_schema.sql — base tables required by ownedpulse
 -- Run first before incremental migrations 001 through 004.
 -- Idempotent — safe to re-run on an existing database.
 

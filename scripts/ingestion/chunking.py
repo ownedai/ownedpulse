@@ -1,4 +1,3 @@
-# /opt/scripts/ingestion/chunking.py
 import hashlib
 import uuid
 from .config import TOKENIZER_NAME, MAX_TOKENS

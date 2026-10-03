@@ -6,11 +6,8 @@ Inject missing document-level metadata into Qdrant chunk payloads for seed docum
 This is a one-time fix for chunks ingested before the payload schema included
 document_title, issuing_body, document_version, publication_date, etc.
 
-Run from ai-node (outside Docker):
-  python3 /opt/scripts/patch_qdrant_payloads.py
-
-Or inside ownedpulse-api container:
-  docker exec ownedpulse-api python3 /opt/scripts/patch_qdrant_payloads.py
+Run inside the ownedpulse-api container:
+  docker exec ownedpulse-api python3 /opt/scripts/maintenance/patch_qdrant_payloads.py
 """
 
 import os
