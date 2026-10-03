@@ -193,9 +193,3 @@ Changes from pre-G-T1 schema:
 
 ---
 
-## 9. Related
-
-- `docs/plans/G-T1_Trace_Schema_and_Spec.md` — implementation plan (this spec is the output)
-- `docs/plans/G-T2_Ingestion_Path_Unification.md` — enforces this contract across all paths
-- `docs/plans/G-T3_Full_Reingestion.md` — verifies 100% trace_id coverage
-- `CORRECTIONS.md` — Field-name divergences from plan spec
