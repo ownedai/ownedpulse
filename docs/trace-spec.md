@@ -190,6 +190,3 @@ Changes from pre-G-T1 schema:
 - [x] `trace_emitter.py` exposes three-level contract: `start_ingestion_trace()` → `start_document_span()` → `.finalize()`
 - [x] Smoke test produces complete run→doc→chunk trace (run_log + ingestion_doc rows)
 - [x] `payload.py` emits `trace_id` on every chunk
-
----
-
