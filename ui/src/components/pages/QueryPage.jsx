@@ -24,6 +24,17 @@ const INGESTION_SOURCE_LABELS = {
   manual_cli: 'Manual (CLI)', bootstrap_ui: 'Bootstrap (Initial load)', scheduled: 'Scheduled',
 };
 
+// Link targets in an answer are model output, so they are validated before
+// reaching <Link>: a single leading slash, no backslash (browsers rewrite it
+// to a slash) and no control characters. Anything with a second leading slash
+// is protocol-relative, i.e. an off-site URL wearing an internal path.
+const isSafeInternalPath = (p) =>
+  typeof p === 'string' &&
+  p.startsWith('/') &&
+  !p.startsWith('//') &&
+  !p.includes('\\') &&
+  !/[\u0000-\u001F\u007F]/.test(p);
+
 // ── SVG Icons ──────────────────────────────────────────────────────────────
 
 function CloseIcon() {
@@ -134,19 +145,21 @@ function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
       } else if (m[2] !== undefined) {
         const label = m[2];
         const url = m[3].trim();
-        if (url.startsWith('/')) {
+        if (isSafeInternalPath(url)) {
           parts.push(
             <Link key={`l-${m.index}`} to={url} style={{ color: 'var(--accent-l)', textDecoration: 'none' }}>
               {label}
             </Link>
           );
-        } else {
+        } else if (/^https?:\/\//i.test(url)) {
           parts.push(
             <a key={`l-${m.index}`} href={url} target="_blank" rel="noopener noreferrer"
               style={{ color: 'var(--accent-l)', textDecoration: 'none' }}>
               {label}
             </a>
           );
+        } else {
+          parts.push(<span key={`l-${m.index}`}>{label}</span>);
         }
       } else if (m[4] !== undefined) {
         parts.push(<strong key={`b-${m.index}`}>{m[4]}</strong>);
@@ -200,7 +213,9 @@ function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
                 <tr key={j}>
                   <td className="col-n">{j + 1}</td>
                   <td>
-                    <Link to={row.url} className="rp-list-link">{row.title}</Link>
+                    {isSafeInternalPath(row.url)
+                      ? <Link to={row.url} className="rp-list-link">{row.title}</Link>
+                      : row.title}
                   </td>
                   {hasVersion && <td className="col-ver">{row.version || '—'}</td>}
                   {hasDate && <td className="col-date">{row.date || '—'}</td>}
