@@ -27,6 +27,15 @@ This script repairs stores 1–3. Store 4 is repaired by the reset + Initial
 Load that must follow: chunk payloads are rebuilt from the archive sidecar at
 ingestion time, and the sidecar is the value this script corrects.
 
+What it will and will not change
+--------------------------------
+* Only values that are *provably* the swap: stored == swap(raw), where the raw
+  day is 12 or less and differs from the raw month. Anything else that differs
+  is reported as "other_difference" and left alone.
+* Base-corpus documents are excluded entirely — the manifest is authoritative.
+  Any whose stored dates differ from the feed are listed for review.
+* Absent values are never filled from the feed; the count is reported.
+
 Order of operations
 -------------------
     python3 scripts/maintenance/fix_ema_publication_dates.py            # dry run
@@ -130,6 +139,35 @@ def _sidecar_path(archive_path: str) -> Path | None:
     return Path(p) / "metadata.json"
 
 
+def swap_iso(iso: str) -> str | None:
+    """'2026-09-10' -> '2026-10-09'. None when the swap is not a valid date.
+
+    The day-first bug read an ISO date as Y-D-M, so a stored value is only a
+    symptom of it when stored == swap(raw). Days above 12 could not be swapped
+    (month 13+ is invalid) and dateutil fell back, so they are never swaps.
+    """
+    try:
+        y, m, d = iso.split("-")
+        if int(d) > 12 or int(d) == int(m):
+            return None
+        return f"{y}-{d}-{m}"
+    except Exception:
+        return None
+
+
+def load_base_corpus_ids() -> set:
+    """Document IDs declared in the corpus manifest — never touched."""
+    for cand in (Path("/app/config/corpus_manifest.json"),
+                 _HERE.parents[2] / "config" / "corpus_manifest.json"):
+        if cand.exists():
+            try:
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                return {d["document_id"] for d in data.get("documents", [])}
+            except Exception:
+                pass
+    return set()
+
+
 def collect_changes(ema_dates: dict) -> tuple[list, dict]:
     """Compare stored EMA dates against the feed. Returns (changes, stats)."""
 
@@ -138,7 +176,8 @@ def collect_changes(ema_dates: dict) -> tuple[list, dict]:
     cur.execute(
         """
         SELECT document_id, publication_date,
-               metadata_json->>'publication_date', source_url, archive_path
+               metadata_json->>'publication_date', source_url, archive_path,
+               COALESCE(corpus_doc, FALSE)
         FROM document_registry
         WHERE source_url LIKE '%%ema.europa.eu%%'
         ORDER BY document_id
@@ -148,10 +187,15 @@ def collect_changes(ema_dates: dict) -> tuple[list, dict]:
     cur.close()
     conn.close()
 
+    base_ids = load_base_corpus_ids()
     changes = []
-    stats = {"rows": len(rows), "matched": 0, "unmatched": 0, "already_correct": 0}
+    stats = {
+        "rows": len(rows), "matched": 0, "unmatched": 0, "already_correct": 0,
+        "base_excluded": 0, "base_differing": [], "missing": {}, "other": [],
+        "no_archive": 0,
+    }
 
-    for doc_id, col_date, meta_date, source_url, archive_path in rows:
+    for doc_id, col_date, meta_date, source_url, archive_path, corpus_doc in rows:
         want = ema_dates.get((source_url or "").strip())
         if not want:
             stats["unmatched"] += 1
@@ -162,27 +206,44 @@ def collect_changes(ema_dates: dict) -> tuple[list, dict]:
         meta_iso = meta_date or None
 
         p = _sidecar_path(archive_path)
-        sidecar_path = p
         sidecar = {}
         if p and p.exists():
             try:
                 sidecar = json.loads(p.read_text(encoding="utf-8"))
             except Exception:
                 sidecar = {}
+        else:
+            stats["no_archive"] += 1
 
-        sc_pub = sidecar.get("publication_date") or None
-        sc_pubdate = sidecar.get("pub_date") or None
+        stores = [
+            ("registry_column", col_iso),
+            ("registry_metadata_json", meta_iso),
+            ("archive_sidecar.publication_date", sidecar.get("publication_date")),
+            ("archive_sidecar.pub_date", sidecar.get("pub_date")),
+        ]
 
-        entry = {"doc_id": doc_id, "want": want, "sidecar_path": sidecar_path,
+        # Base corpus is registered from the manifest, which is authoritative.
+        if corpus_doc or doc_id in base_ids:
+            stats["base_excluded"] += 1
+            if any(v is not None and v != want for _s, v in stores):
+                stats["base_differing"].append(
+                    (doc_id, [(s, v) for s, v in stores if v is not None and v != want], want))
+            continue
+
+        entry = {"doc_id": doc_id, "want": want, "sidecar_path": p,
                  "sidecar": sidecar, "diffs": []}
-        if col_iso != want:
-            entry["diffs"].append(("registry_column", col_iso, want))
-        if meta_iso != want:
-            entry["diffs"].append(("registry_metadata_json", meta_iso, want))
-        if sc_pub is not None and sc_pub != want:
-            entry["diffs"].append(("archive_sidecar.publication_date", sc_pub, want))
-        if sc_pubdate is not None and sc_pubdate != want:
-            entry["diffs"].append(("archive_sidecar.pub_date", sc_pubdate, want))
+        swapped = swap_iso(want)
+
+        for store, val in stores:
+            if val is None:
+                stats["missing"][store] = stats["missing"].get(store, 0) + 1
+                continue
+            if val == want:
+                continue
+            if swapped is not None and val == swapped:
+                entry["diffs"].append((store, val, want))
+            else:
+                stats["other"].append((doc_id, store, val, want))
 
         if entry["diffs"]:
             changes.append(entry)
@@ -204,22 +265,50 @@ def report(changes: list, stats: dict) -> dict:
     log(f"  matched to a feed record       : {stats['matched']}")
     log(f"  unmatched (no feed record)     : {stats['unmatched']}")
     log(f"  already correct                : {stats['already_correct']}")
-    log(f"  documents needing a fix        : {len(changes)}")
+    log(f"  documents with a swap to fix   : {len(changes)}")
+    log(f"  base-corpus excluded           : {stats['base_excluded']}")
+    log(f"  rows with no archive sidecar   : {stats['no_archive']}")
+
     log("")
-    log("=== changes per store ===")
+    log("=== genuine day/month swaps to fix, per store ===")
     for store in ("registry_column", "registry_metadata_json",
                   "archive_sidecar.publication_date", "archive_sidecar.pub_date"):
         log(f"  {store:34s} {per_store.get(store, 0)}")
 
+    log("")
+    log("=== missing values (left alone, NOT filled from the feed) ===")
+    if stats["missing"]:
+        for store, n in sorted(stats["missing"].items()):
+            log(f"  {store:34s} {n}")
+    else:
+        log("  none")
+
+    log("")
+    log(f"=== other differences (NOT changed) — {len(stats['other'])} total ===")
+    for doc_id, store, old, want in stats["other"][:20]:
+        log(f"  {doc_id[:44]:44s} {store:34s} {old}  (feed {want})")
+    if not stats["other"]:
+        log("  none")
+
+    log("")
+    log(f"=== base corpus excluded — {stats['base_excluded']} documents ===")
+    if stats["base_differing"]:
+        log("  the following base-corpus dates differ from the feed (manifest wins, nothing changed):")
+        for doc_id, vals, want in stats["base_differing"]:
+            detail = ", ".join(f"{s}={v}" for s, v in vals)
+            log(f"  {doc_id[:44]:44s} {detail}  (feed {want})")
+    else:
+        log("  none differ from the feed")
+
     if changes:
         log("")
-        log("=== sample (doc_id, store, old -> new) ===")
+        log("=== sample swaps (doc_id, store, old -> new) ===")
         shown = 0
         for c in changes:
             for store, old, new in c["diffs"]:
                 if shown >= SAMPLE_ROWS:
                     break
-                log(f"  {c['doc_id'][:46]:46s} {store:34s} {old} -> {new}")
+                log(f"  {c['doc_id'][:44]:44s} {store:34s} {old} -> {new}")
                 shown += 1
             if shown >= SAMPLE_ROWS:
                 break
