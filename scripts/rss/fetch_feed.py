@@ -457,6 +457,86 @@ def fetch_fda_press(feed: dict, months_override: int | None = None, cutoff_date=
     return items, {"items_fetched": len(items), "items_new": len(items),
                    "items_skipped": 0}
 
+# ── Generic RSS feed reader ─────────────────────────────────────────────────
+
+def fetch_rss(feed: dict, months_override: int | None = None, cutoff_date=None) -> tuple:
+    """Read a plain RSS 2.0 feed. Items carry the same flat shape as the FDA
+    press scraper so the downstream pipeline treats them identically.
+    """
+    import feedparser
+
+    if months_override is not None:
+        cutoff = datetime.now(timezone.utc) - relativedelta(months=months_override)
+    elif cutoff_date is not None:
+        cutoff = cutoff_date
+    else:
+        cutoff = None
+
+    url = feed["feed_url"]
+    feed_id = feed["feed_id"]
+    items = []
+    skipped = 0
+
+    try:
+        r = requests.get(url, headers={"User-Agent": "OwnedPulse/1.0"}, timeout=60)
+        r.raise_for_status()
+    except Exception as e:
+        logger.error("RSS fetch failed for %s: %s", feed_id, e)
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
+
+    parsed = feedparser.parse(r.content)
+    if getattr(parsed, "bozo", 0) and not parsed.entries:
+        logger.error("RSS feed %s could not be parsed: %s", feed_id, parsed.get("bozo_exception"))
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
+
+    for entry in parsed.entries:
+        try:
+            link = (entry.get("link") or "").strip()
+            title = (entry.get("title") or "").strip()
+            if not link or not title:
+                logger.warning("RSS %s: skipping entry without title or link", feed_id)
+                skipped += 1
+                continue
+
+            dt = None
+            for field in ("published_parsed", "updated_parsed"):
+                parsed_time = entry.get(field)
+                if parsed_time:
+                    dt = datetime(*parsed_time[:6], tzinfo=timezone.utc)
+                    break
+            if dt is None and entry.get("published"):
+                try:
+                    dt = dateparser.parse(entry["published"])
+                    if dt and dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    dt = None
+
+            if cutoff and dt and dt < cutoff:
+                continue
+            if is_ingested(link):
+                skipped += 1
+                continue
+
+            items.append({
+                "url":            link,
+                "title":          title,
+                "pub_date":       dt.date().isoformat() if dt else "",
+                "authority":      feed.get("authority") or "FDA",
+                "feed_id":        feed_id,
+                "rss_body":       (entry.get("summary") or "").strip(),
+                "feed_item_guid": (entry.get("id") or link).strip(),
+            })
+        except Exception as e:
+            logger.warning("RSS %s: skipping malformed entry: %s", feed_id, e)
+            skipped += 1
+            continue
+
+    logger.info("RSS %s: %d entries, %d new, %d skipped", feed_id,
+                len(parsed.entries), len(items), skipped)
+    return items, {"items_fetched": len(parsed.entries), "items_new": len(items),
+                   "items_skipped": skipped}
+
 # ── FDA guidance catalogue scraper ──────────────────────────────────────────
 
 def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None, cutoff_date=None) -> tuple:
@@ -628,6 +708,8 @@ def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None,
             return fetch_fda_guidance_catalogue(feed, months_override=months_override, cutoff_date=cutoff)
         logger.warning("Unknown json_static feed_id: %s", feed_id)
         return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
+    if ft == "rss":
+        return fetch_rss(feed, months_override=months_override, cutoff_date=cutoff)
 
 def main():
     parser = argparse.ArgumentParser()
