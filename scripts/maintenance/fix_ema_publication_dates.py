@@ -56,9 +56,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
-# scripts/ for the rss package (which owns the date parser), api/ for lib.db.
+# scripts/ for the rss package (which owns the date parser).
 sys.path.insert(0, str(_HERE.parents[1]))
-sys.path.insert(0, str(_HERE.parents[2] / "api"))
+# api/ for lib.db. From a checkout that is <repo>/api; in the api container the
+# scripts are mounted at /opt/scripts and the api package is the WORKDIR /app,
+# so parents[2] points outside the package. Take whichever exists.
+for _cand in (_HERE.parents[2] / "api", Path("/app")):
+    if _cand.is_dir():
+        sys.path.insert(0, str(_cand))
+        break
 
 # rss.fetch_feed imports ingestion.config, which requires PG_DSN at import time.
 # The api container carries POSTGRES_* rather than PG_DSN, so synthesise it.
