@@ -205,10 +205,31 @@ All settings live in `.env`; see the comments in [`.env.example`](.env.example).
 | Update to a new release | `git pull && ./install.sh` |
 | Stop everything | `docker compose --profile postgres --profile qdrant --profile ollama --profile docling --profile langfuse down` |
 | Remove everything, including all data | the command above with `-v`, then delete `./data` |
+| Reset the corpus and re-ingest from scratch | see **Resetting the corpus** below |
 
 With `DOCLING_VARIANT=cpu`, add `-f docker-compose.yml -f docker-compose.docling-cpu.yml` to manual `docker compose` commands. `down -v` deletes the database, vector store and downloaded models permanently.
 
 Maintenance scripts are documented in [`scripts/maintenance/README.md`](scripts/maintenance/README.md).
+
+### Resetting the corpus
+
+Resetting empties the vector store and the run history, re-registers the base corpus from archive metadata, and leaves the downloaded documents in place. The next Initial Load then re-ingests everything, rewriting chunk payloads and registry dates — which is what makes it the way to recover from ingestion-side defects in an earlier release.
+
+```bash
+curl -X POST http://localhost:8001/api/admin/reset-corpus \
+     -H 'Content-Type: application/json' -d '{"confirm": true}'
+```
+
+Then run **Initial Load** from the UI, or:
+
+```bash
+curl -X POST http://localhost:8001/api/bootstrap/run \
+     -H 'Content-Type: application/json' -d '{}'
+```
+
+The reset truncates `ingestion_doc`, `ingestion_state` and `run_log`, deletes and recreates the Qdrant collection, and re-seeds `document_registry`. It refuses with HTTP 409 while an ingestion is running, so wait for any run to finish first. Nothing is skipped afterwards: a document is only skipped when its registry status is `success`/`indexed` **and** Qdrant still holds its vectors, so an empty collection forces a full re-ingest.
+
+There is no UI button and no `install.sh` flag for this; it is an API call by design, because it is destructive. To keep the downloaded documents, do **not** use the `down -v` row above — that also deletes `./data`.
 
 ---
 

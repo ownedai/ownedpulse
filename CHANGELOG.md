@@ -18,6 +18,10 @@
 - The generation model is loaded in the background at API startup, and `install.sh` waits for it, so the first query after starting no longer pays a multi-minute model load. Measured at 218s before, when another model had taken the GPU.
 - Successful subprocess feed runs are recorded as `success` with their duration. They were written as `running` with `duration_ms = 0`, and the startup cleanup then rewrote every one of them to `error` with "Process was killed before run completed" — so the Run Log reported completed runs as failures.
 - The UI query timeout is 300s, above the model-load path and the API's own `OLLAMA_TIMEOUT`.
+- EMA publication dates are no longer stored with the month and day swapped. The feed publishes ISO 8601 and the date was parsed day-first, which reads `2026-09-10` as 10 September's *month* — 34.7% of EMA records were affected, and four landed in the future. Documents ingested by an earlier version keep their wrong dates until the corpus is reset.
+- Citation counts include grouped markers. An answer citing `[3, 9]` had only its lone-style markers counted, so cited chunks were reported as not cited in the traceability panel, the citation payload and the PDF export.
+- Base-corpus documents keep their manifest classification in chunk payloads. 21 CFR Part 11 and the EU GMP annexes were ingested as "guidance" because the payload type was derived from the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`.
+- The UI labels and can filter regulations and annexes; the type filter previously offered only Guidance, Press Release and Reflection Paper.
 - `OLLAMA_NUM_CTX` and `OLLAMA_TIMEOUT` are passed through to the API container; both were documented in `.env.example` but never forwarded, so setting either had no effect.
 
 ### Added
@@ -37,6 +41,17 @@
 ### Upgrading from 1.0.x
 - The UI no longer allows `rp.*` hostnames by default. Set `VITE_ALLOWED_HOSTS` to the hostnames you use, or the UI answers `Blocked request. This host is not allowed` for anything but localhost and IP addresses. Add it to the `ownedpulse-ui` service environment.
 - `OLLAMA_NUM_CTX` defaults to 12288. If the Ollama you point at is shared, every other client must request the same context size for the same model, or each will evict the other's loaded model.
+- **Stored EMA publication dates and chunk document types written by earlier versions are wrong.** The date fix and the type fix apply at ingestion, so a corpus ingested by 1.0.x keeps the swapped dates and the collapsed `guidance` type. To repair it, reset the corpus and run Initial Load again:
+
+  ```bash
+  curl -X POST http://localhost:8001/api/admin/reset-corpus \
+       -H 'Content-Type: application/json' -d '{"confirm": true}'
+  # then Initial Load from the UI, or:
+  curl -X POST http://localhost:8001/api/bootstrap/run \
+       -H 'Content-Type: application/json' -d '{}'
+  ```
+
+  The reset empties the vector store and run history and re-registers the base corpus; downloaded documents are kept, and the next Initial Load re-ingests everything because an empty Qdrant collection is never treated as already ingested. See **Resetting the corpus** in the README.
 
 ### Repository
 - The repository history was rewritten and the repository recreated on 2026-10-02 to remove an accidentally committed credential, which had already been rotated. If you cloned before that date, delete your clone and clone again.
