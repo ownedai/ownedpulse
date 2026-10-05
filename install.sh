@@ -430,6 +430,28 @@ docker compose "${COMPOSE_FILES[@]}" up -d ownedpulse-api ownedpulse-ui 2>&1 \
 wait_for "ownedpulse-api" "curl -s http://localhost:${API_PORT}/api/health | grep -q status" 120
 wait_for "ownedpulse-ui"   "curl -sf http://localhost:${UI_PORT}" 60
 
+# Load the generation model now so the first query does not pay for it. The
+# request itself returns immediately, so poll for the model to actually appear
+# in Ollama — loading it from disk can take minutes on a busy GPU.
+log_info "Warming up the generation model — this can take several minutes..."
+curl -sf -m 30 -X POST "http://localhost:${API_PORT}/api/admin/warmup" > /dev/null 2>&1 || true
+warm_waited=0
+warm_ok=false
+while (( warm_waited < 300 )); do
+  if curl -sf -m 10 "http://localhost:${API_PORT}/api/admin/model-status" 2>/dev/null \
+       | grep -qE '"loaded" *: *true'; then
+    warm_ok=true
+    break
+  fi
+  sleep 5; warm_waited=$(( warm_waited + 5 )); echo -n "."
+done
+echo ""
+if [[ "$warm_ok" == true ]]; then
+  log_ok "Model warm-up: ok"
+else
+  log_warn "Model warm-up: failed after ${warm_waited}s — the model will load on the first query instead"
+fi
+
 # ── Step 9 — Summary ─────────────────────────────────────────────────────
 
 log_section "Installation Complete"
