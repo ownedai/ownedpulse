@@ -648,7 +648,7 @@ class QueryRequest(BaseModel):
     generation_model: Optional[str] = None
 
 
-from lib.text_utils import normalise_agency, strip_title_suffix
+from lib.text_utils import normalise_agency, strip_title_suffix, parse_cited_indices
 
 
 def normalise_agency_for_filter(agency: str) -> list[str]:
@@ -1352,16 +1352,6 @@ def build_context(chunks: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
-def parse_citations(answer: str, num_chunks: int) -> set[int]:
-    """Find which [N] markers appear in the answer text."""
-    cited = set()
-    for match in re.finditer(r'\[(\d+)(?:\.\d+)?\]', answer):
-        n = int(match.group(1))
-        if 1 <= n <= num_chunks:
-            cited.add(n)
-    return cited
-
-
 def fetch_chunk_provenance_batch(pg_conn, doc_ids: list) -> dict:
     """Batch-fetch ingestion provenance for a list of doc_ids.
     Returns dict keyed by doc_id with trace/ingestion metadata."""
@@ -1965,7 +1955,7 @@ async def _run_content_query(
         answer = re.sub(r'\[(\d+)\.\d+\]', r'[\1]', answer)
 
         # Step 6: Determine which chunks were cited
-        cited_indices = parse_citations(answer, len(deduped_chunks))
+        cited_indices = parse_cited_indices(answer, len(deduped_chunks))
 
         # Fallback: if LLM didn't use any [N] markers, treat top 3 as cited
         if not cited_indices and deduped_chunks:
