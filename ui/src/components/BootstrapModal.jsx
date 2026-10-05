@@ -68,12 +68,18 @@ function StatusDot({ status }) {
 
 // ── Date window helpers ───────────────────────────────────────────────────────
 
+// Windows are counted in whole months back from the first of the current month,
+// so "Last 6 months" means six calendar months and not six times thirty days.
+// "All available" is the entire feed history and is gated by its own confirmation.
+const MONTH_WINDOWS = { '3months': 3, '6months': 6, '12months': 12 };
+const DEFAULT_DEPTH = '6months';
+
 const DATE_WINDOW_OPTIONS = [
-  { value: '1year',  label: '1 year' },
-  { value: '3years', label: '3 years' },
-  { value: '5years', label: '5 years' },
-  { value: 'all',    label: 'All available' },
-  { value: 'custom', label: 'Custom' },
+  { value: '3months',  label: 'Last 3 months' },
+  { value: '6months',  label: 'Last 6 months' },
+  { value: '12months', label: 'Last 12 months' },
+  { value: 'all',      label: 'All available' },
+  { value: 'custom',   label: 'Custom' },
 ];
 
 function getDateRange(dateWindow, customFromYear, customToYear) {
@@ -81,10 +87,13 @@ function getDateRange(dateWindow, customFromYear, customToYear) {
     const d = new Date(); d.setDate(d.getDate() - 30);
     return { date_from: d.toISOString().slice(0, 10), date_to: null };
   }
-  const thisYear = new Date().getFullYear();
-  if (dateWindow === '1year')  return { date_from: `${thisYear - 1}-01-01`, date_to: null };
-  if (dateWindow === '3years') return { date_from: `${thisYear - 3}-01-01`, date_to: null };
-  if (dateWindow === '5years') return { date_from: `${thisYear - 5}-01-01`, date_to: null };
+  const months = MONTH_WINDOWS[dateWindow];
+  if (months) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - months);
+    return { date_from: d.toISOString().slice(0, 10), date_to: null };
+  }
   if (dateWindow === 'all')    return { date_from: null, date_to: null };
   if (dateWindow === 'custom') return { date_from: `${customFromYear}-01-01`, date_to: `${customToYear}-12-31` };
   return { date_from: null, date_to: null };
@@ -102,12 +111,13 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     : { fda_press_releases: true, ema_reg_guidance: true, ema_sci_guidelines: true, ich_guidelines: true };
   const [includeBaseCorpus, setIncludeBaseCorpus] = useState(!autoSubmit);
   const [selectedSources, setSelectedSources]     = useState(defaultSources);
-  const [depth, setDepth]                         = useState(autoSubmit ? '30days' : '1year');
+  const [depth, setDepth]                         = useState(autoSubmit ? '30days' : DEFAULT_DEPTH);
   const [customFromYear, setCustomFromYear]       = useState(new Date().getFullYear() - 5);
   const [customToYear, setCustomToYear]           = useState(new Date().getFullYear());
   const [fileStrategy, setFileStrategy]           = useState('missing_only');
   const [confirmed, setConfirmed]                 = useState(false);
   const [nuclearConfirmed, setNuclearConfirmed]   = useState(false);
+  const [allConfirmed, setAllConfirmed]           = useState(false);
   const [estimate, setEstimate]                   = useState(null);
   const [submitting, setSubmitting]               = useState(false);
   const [submitError, setSubmitError]             = useState(null);
@@ -277,6 +287,12 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
 
   const ingestionRunning = uiMode === 'running';
 
+  // Leaving "All available" discards its confirmation, so returning to it
+  // always asks again.
+  useEffect(() => {
+    if (depth !== 'all') setAllConfirmed(false);
+  }, [depth]);
+
   const feedDateMin = bootstrapStatus?.sources
     ?.filter(f => f.date_min)
     ?.reduce((min, f) => (!min || f.date_min < min ? f.date_min : min), null);
@@ -290,7 +306,10 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
     fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
   };
   const hasSelection = includeBaseCorpus || activeSources.length > 0;
-  const canSubmit = (confirmed || fileStrategy === 'missing_only') && !submitting && !loading && !ingestionRunning && hasSelection && (fileStrategy !== 'nuclear' || nuclearConfirmed);
+  const allScope = depth === 'all';
+  const canSubmit = (confirmed || fileStrategy === 'missing_only') && !submitting && !loading && !ingestionRunning && hasSelection
+    && (fileStrategy !== 'nuclear' || nuclearConfirmed)
+    && (!allScope || allConfirmed);
   const rssEstimate = estimate?.estimated_docs ?? null;
   const baseCount = includeBaseCorpus ? (bootstrapStatus?.base_corpus?.length || 12) : 0;
   const totalEstimate = rssEstimate !== null ? rssEstimate + baseCount : (hasSelection ? baseCount + 30 : null);
@@ -579,6 +598,20 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                         })()
                   }
                 </div>
+                {allScope && (
+                  <label className="rp-wipe-check" onClick={() => setAllConfirmed(c => !c)} style={{ marginTop: 10 }}>
+                    <span className={`rp-check warn ${allConfirmed ? 'on' : ''}`}>
+                      {allConfirmed && <CheckIcon />}
+                    </span>
+                    <span className="ctxt">
+                      Ingest the entire available history
+                      {estimate?.estimated_docs != null
+                        ? ` — ~${estimate.estimated_docs.toLocaleString()} documents`
+                        : ''}
+                      . This is far more than a normal load and can take many hours.
+                    </span>
+                  </label>
+                )}
               </section>
 
               {/* ── Section 4: Ingestion and File Strategy ── */}
