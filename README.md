@@ -190,7 +190,7 @@ All settings live in `.env`; see the comments in [`.env.example`](.env.example).
 | `*_MODE=external` | Use an existing PostgreSQL, Qdrant, Ollama, Docling or Langfuse instead of the bundled container. Set the matching `*_HOST`, `*_PORT` and credentials. |
 | `DOCLING_VARIANT=cpu` | Run Docling on the CPU instead of the GPU. Usable and fully supported; PDF parsing during ingestion is slower, and VRAM is left free for the generation model. |
 | `OLLAMA_GEN_MODEL` | Generation model (default `phi4:14b-q8_0`). |
-| `UVICORN_RELOAD` | `true` restarts the API when a file under `api/` changes, for development. Off by default: a reload interrupts a running ingestion. |
+| `UVICORN_RELOAD` | Set to `true` to restart the API when a file under `api/` changes, for development. Off by default: a reload interrupts a running ingestion. |
 | `VITE_ALLOWED_HOSTS` | Comma-separated hostnames allowed to reach the UI, e.g. when opening it by server name instead of `localhost` or an IP address. |
 | `HF_TOKEN` | Optional Hugging Face token. |
 | `RSS_SCHEDULE_*` | Time of the daily feed run. |
