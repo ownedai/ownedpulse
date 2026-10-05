@@ -11,7 +11,7 @@ Output: JSON array on stdout. Each item:
 Exit:   0 on success, 1 on error
 """
 
-import os, sys, json, time, hashlib, argparse, uuid, logging
+import os, sys, re, json, time, hashlib, argparse, uuid, logging
 import psycopg2, requests
 from datetime import datetime, timezone
 
@@ -22,6 +22,9 @@ from dateutil.tz import tzoffset
 from bs4 import BeautifulSoup
 
 HEADERS = {"User-Agent": "ownedai-regulatory-pipeline/1.0"}
+
+# "YYYY-MM-DD" — unambiguous, must never be handed to a day-first parser.
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}')
 
 # EMA CloudFront CDN requires browser-like headers with a Referer pointing to
 # the EMA search page. Without this, requests get 404 HTML error pages.
@@ -282,7 +285,15 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
         raw_date = rec.get('first_published_date', '')
         if raw_date:
             try:
-                dt = dateparser.parse(raw_date, dayfirst=True)
+                # EMA publishes ISO 8601 ("2026-09-10T10:49:46Z"). dateutil with
+                # dayfirst=True reads that as Y-D-M, so 2026-09-10 became
+                # 2026-10-09 — a real swap for every value whose day is <= 12.
+                # Parse ISO directly; fall back to day-first only for the
+                # genuinely day-first formats.
+                if _ISO_DATE_RE.match(str(raw_date)):
+                    dt = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
+                else:
+                    dt = dateparser.parse(raw_date, dayfirst=True)
                 if dt:
                     pub_date = dt.date().isoformat()
             except Exception:
