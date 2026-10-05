@@ -12,6 +12,8 @@ const AGENCY_TIPS = {
 const DOC_TYPES = [
   { label: 'All types', value: null },
   { label: 'Guidance', value: 'guidance' },
+  { label: 'Regulation', value: 'regulation' },
+  { label: 'Annex', value: 'annex' },
   { label: 'Press Release', value: 'press-release' },
   { label: 'Reflection Paper', value: 'reflection-paper' },
 ];

@@ -14,8 +14,19 @@ import { formatDate, formatDateTime } from '../../dateFormat';
 
 const QUERY_STATES = { IDLE: 'idle', ANSWER: 'answer', TRACEABILITY: 'traceability' };
 
+// Two vocabularies reach this map. Chunk payloads carry `document_type` — the
+// filterable value, hyphenated ("regulation", "annex", "press-release") — and
+// `doc_type`, the canonical underscored form the registry constraint allows.
+// Both are mapped so the display never falls through to a raw slug.
 const DOCTYPE_LABEL = {
-  drug_approval: 'Drug Approval', guidance: 'Guidance', press_release: 'Press Release',
+  // document_type
+  guidance: 'Guidance', 'press-release': 'Press Release',
+  'reflection-paper': 'Reflection Paper', regulation: 'Regulation',
+  annex: 'Annex', 'qa-guidance': 'Q&A Guidance',
+  'safety-communication': 'Safety Communication', news: 'News',
+  'regulatory-decision': 'Regulatory Decision',
+  // doc_type
+  drug_approval: 'Drug Approval', press_release: 'Press Release',
   safety_alert: 'Safety Alert', reflection_paper: 'Reflection Paper',
   news_item: 'News Item', other: 'Unclassified',
 };
@@ -425,7 +436,7 @@ function ChunkCard({ chunk, highlighted, onViewSource, dimText = false }) {
       <div className="ch-meta">
         <span><span className="k">clause</span> <span className="v">{chunk.clause_id || '—'}</span></span>
         <span><span className="k">page</span> <span className="v">{chunk.page_no != null ? chunk.page_no + 1 : '—'}</span></span>
-        <span><span className="k">type</span> <span className="v">{DOCTYPE_LABEL[chunk.doc_type] || chunk.doc_type || '—'}</span></span>
+        <span><span className="k">type</span> <span className="v">{DOCTYPE_LABEL[chunk.document_type] || DOCTYPE_LABEL[chunk.doc_type] || chunk.document_type || chunk.doc_type || '—'}</span></span>
         <span><span className="k">published</span> <span className="v">{formatDate(chunk.publication_date) || '—'}</span></span>
         {chunk.score != null && (
           <span><span className="k">score</span> <span className="v">{chunk.score.toFixed(4)}</span></span>
