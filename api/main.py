@@ -7,6 +7,7 @@ import os
 import re
 import uuid
 import json
+import asyncio
 import logging
 import threading
 import subprocess
@@ -20,7 +21,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from routers.corpus import router as corpus_router
-from routers.admin import router as admin_router
+from routers.admin import router as admin_router, warm_models
 from routers.bootstrap import router as bootstrap_router
 from routers.ingestions import router as ingestions_router
 from routers.sources import router as sources_router
@@ -583,6 +584,10 @@ async def startup():
     logger.info("APScheduler started")
     threading.Thread(target=_seed_base_corpus, daemon=True).start()
     populate_registry_if_empty()
+    # Load the generation model in the background so the first query does not
+    # pay for it. Never awaited: startup and health must not depend on it.
+    asyncio.create_task(warm_models(OLLAMA_GEN_MODEL, OLLAMA_EMBED_MODEL))
+    logger.info("[startup] model warm-up scheduled for %s", OLLAMA_GEN_MODEL)
 
 
 @app.on_event("shutdown")

@@ -3,6 +3,7 @@
 import os
 import uuid
 import json
+import asyncio
 import logging
 import subprocess
 import httpx
@@ -430,6 +431,40 @@ async def admin_model_status():
 
 # ── POST /admin/warmup ────────────────────────────────────────────────────────
 
+async def warm_models(active_model: str, embed_model: str = "mxbai-embed-large") -> None:
+    """Load the generation and embedding models into Ollama.
+
+    The requests exist only to trigger the load; their responses are discarded.
+    A cold model is a latency problem, not a failure, so problems are logged and
+    never raised — callers may run this from startup.
+
+    num_ctx must match what queries request, or the query pays for a second load
+    of the same model at a different context size.
+    """
+    async def _post(path: str, payload: dict) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                await client.post(f"{OLLAMA_BASE}{path}", json=payload)
+            logger.info("[warmup] %s loaded", payload.get("model"))
+        except Exception as e:
+            logger.warning("[warmup] %s failed to load: %s", payload.get("model"), e)
+
+    await asyncio.gather(
+        _post("/api/generate", {
+            "model": active_model,
+            "prompt": "",
+            "stream": False,
+            "keep_alive": "10m",
+            "options": {"num_ctx": OLLAMA_NUM_CTX},
+        }),
+        _post("/api/embeddings", {
+            "model": embed_model,
+            "prompt": "warmup",
+            "keep_alive": "10m",
+        }),
+    )
+
+
 @router.post("/warmup")
 async def admin_warmup():
     """Fire a minimal generate request to trigger Ollama model load. Returns immediately."""
@@ -451,36 +486,8 @@ async def admin_warmup():
     if not active_model:
         return {"status": "no model configured"}
 
-    # Fire-and-forget: send a minimal prompt with keep_alive to load the models.
-    # We don't await the generation result — just triggering the load.
-    import asyncio
-
-    async def _load():
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                await client.post(f"{OLLAMA_BASE}/api/generate", json={
-                    "model": active_model,
-                    "prompt": "",
-                    "stream": False,
-                    "keep_alive": "10m",
-                    "options": {"num_ctx": OLLAMA_NUM_CTX},
-                })
-        except Exception:
-            pass
-
-    async def _load_embed():
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                await client.post(f"{OLLAMA_BASE}/api/embeddings", json={
-                    "model": "mxbai-embed-large",
-                    "prompt": "warmup",
-                    "keep_alive": "10m",
-                })
-        except Exception:
-            pass
-
-    asyncio.create_task(_load())
-    asyncio.create_task(_load_embed())
+    # Fire-and-forget: we don't await the load, just start it.
+    asyncio.create_task(warm_models(active_model))
     return {"status": "warmup initiated", "model": active_model, "embed_model": "mxbai-embed-large"}
 
 
