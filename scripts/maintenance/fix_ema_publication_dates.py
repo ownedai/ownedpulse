@@ -112,11 +112,26 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _sidecar_path(archive_path: str) -> Path | None:
+    """Map a registry archive_path onto the mounted archive root.
+
+    The registry stores the host-side path (/mnt/data/regulatory_archive/...)
+    while the container mounts that tree elsewhere — the same rewrite
+    run_ingest.get_archive_dir performs. Without it every sidecar lookup misses.
+    """
+    if not archive_path:
+        return None
+    host_root = "/mnt/data/regulatory_archive"
+    container_root = os.environ.get("ARCHIVE_ROOT") or (
+        "/archive" if Path("/archive").is_dir() else host_root)
+    p = archive_path
+    if p.startswith(host_root) and container_root != host_root:
+        p = container_root + p[len(host_root):]
+    return Path(p) / "metadata.json"
+
+
 def collect_changes(ema_dates: dict) -> tuple[list, dict]:
     """Compare stored EMA dates against the feed. Returns (changes, stats)."""
-    overrides = {}
-    if os.environ.get("REGULATORY_ARCHIVE_PATH"):
-        overrides["/archive"] = os.environ["REGULATORY_ARCHIVE_PATH"]
 
     conn = get_pg_conn()
     cur = conn.cursor()
@@ -146,19 +161,14 @@ def collect_changes(ema_dates: dict) -> tuple[list, dict]:
         col_iso = col_date.isoformat() if hasattr(col_date, "isoformat") else (col_date or None)
         meta_iso = meta_date or None
 
-        sidecar_path = None
+        p = _sidecar_path(archive_path)
+        sidecar_path = p
         sidecar = {}
-        if archive_path:
-            p = Path(archive_path) / "metadata.json"
-            for container_prefix, host_prefix in overrides.items():
-                if str(p).startswith(container_prefix):
-                    p = Path(host_prefix + str(p)[len(container_prefix):])
-            sidecar_path = p
-            if p.exists():
-                try:
-                    sidecar = json.loads(p.read_text(encoding="utf-8"))
-                except Exception:
-                    sidecar = {}
+        if p and p.exists():
+            try:
+                sidecar = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                sidecar = {}
 
         sc_pub = sidecar.get("publication_date") or None
         sc_pubdate = sidecar.get("pub_date") or None
