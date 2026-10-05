@@ -195,6 +195,23 @@ All settings live in `.env`; see the comments in [`.env.example`](.env.example).
 | `HF_TOKEN` | Optional Hugging Face token. |
 | `RSS_SCHEDULE_*` | Time of the daily feed run. |
 
+### Example: external Ollama and Docling
+
+To use an Ollama and Docling that already run elsewhere, set in `.env`:
+
+```bash
+OLLAMA_MODE=external
+OLLAMA_HOST=http://<host>:11434
+OLLAMA_PORT=11434
+
+DOCLING_MODE=external
+DOCLING_HOST=http://<host>:5001
+DOCLING_PORT=5001
+```
+
+The models must already be present on the external Ollama — `install.sh` does
+not pull them in external mode.
+
 ---
 
 ## Operations
