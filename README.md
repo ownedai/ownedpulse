@@ -213,7 +213,7 @@ Maintenance scripts are documented in [`scripts/maintenance/README.md`](scripts/
 
 ### Resetting the corpus
 
-Resetting empties the vector store and the run history, re-registers the base corpus from archive metadata, and leaves the downloaded documents in place. The next Initial Load then re-ingests everything, rewriting chunk payloads and registry dates — which is what makes it the way to recover from ingestion-side defects in an earlier release.
+Resetting empties the vector store and the run history and re-registers the base corpus from archive metadata, while the downloaded documents stay on disk with their registry rows intact. The next Initial Load then re-ingests everything, rewriting chunk payloads and registry dates — which is what makes it the way to recover from ingestion-side defects in an earlier release.
 
 ```bash
 curl -X POST http://localhost:8001/api/admin/reset-corpus \
@@ -227,7 +227,7 @@ curl -X POST http://localhost:8001/api/bootstrap/run \
      -H 'Content-Type: application/json' -d '{}'
 ```
 
-The reset truncates `ingestion_doc`, `ingestion_state` and `run_log`, deletes and recreates the Qdrant collection, and re-seeds `document_registry`. It refuses with HTTP 409 while an ingestion is running, so wait for any run to finish first. Nothing is skipped afterwards: a document is only skipped when its registry status is `success`/`indexed` **and** Qdrant still holds its vectors, so an empty collection forces a full re-ingest.
+The reset truncates `ingestion_doc`, `ingestion_state` and `run_log`, deletes and recreates the Qdrant collection, and re-registers the base corpus. `document_registry` is kept, not cleared: the manifest's twelve documents are upserted onto the rows already present, so every downloaded document keeps its registry row, its ingest status and its publication date. The response reports both counts — `registry_rows_kept` and `base_corpus_seeded`. It refuses with HTTP 409 while an ingestion is running, so wait for any run to finish first. Nothing is skipped afterwards: a document is only skipped when its registry status is `success`/`indexed` **and** Qdrant still holds its vectors, so an empty collection forces a full re-ingest.
 
 There is no UI button and no `install.sh` flag for this; it is an API call by design, because it is destructive. To keep the downloaded documents, do **not** use the `down -v` row above — that also deletes `./data`.
 

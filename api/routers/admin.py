@@ -500,8 +500,11 @@ class ResetCorpusRequest(BaseModel):
 @router.post("/reset-corpus")
 async def admin_reset_corpus(body: ResetCorpusRequest):
     """
-    Destructive reset: wipes Qdrant collection, truncates run_log and
-    ingestion_doc tables, then re-seeds document_registry from archive metadata.
+    Destructive reset: wipes the Qdrant collection, truncates run_log,
+    ingestion_doc and ingestion_state, then re-runs seed_registry against the
+    archive. document_registry is NOT cleared — seed_registry upserts the
+    corpus manifest's documents onto whatever rows are already there, so
+    downloaded documents keep their rows and their repaired dates.
     Requires confirm=true. Blocks if ingestion is running.
     """
     if not body.confirm:
@@ -518,7 +521,7 @@ async def admin_reset_corpus(body: ResetCorpusRequest):
     result: dict = {
         "qdrant_wiped": False,
         "tables_truncated": [],
-        "registry_reset": 0,
+        "registry_rows_kept": 0,
         "base_corpus_seeded": 0,
         "seed_registry_ok": False,
     }
@@ -552,7 +555,7 @@ async def admin_reset_corpus(body: ResetCorpusRequest):
         logger.error("Qdrant wipe failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Qdrant wipe failed: {e}")
 
-    # 3. Re-seed document_registry from archive metadata
+    # 3. Upsert the base corpus onto document_registry (it is not cleared first)
     try:
         seed_result = subprocess.run(
             ["python3", "/opt/scripts/registry/seed_registry.py"],
@@ -568,13 +571,20 @@ async def admin_reset_corpus(body: ResetCorpusRequest):
     except Exception as e:
         logger.error("seed_registry.py failed after reset: %s", e)
 
-    # 4. Count re-seeded documents
+    # 4. Report what the registry actually holds. Read from the table rather
+    #    than parsing seed_registry's stdout: the table is the result, and the
+    #    registry keeps every row it had, so the row count is not the seed count.
     try:
         conn = get_pg_conn()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM document_registry")
-            result["base_corpus_seeded"] = cur.fetchone()[0]
+            cur.execute(
+                "SELECT COUNT(*), COUNT(*) FILTER (WHERE corpus_doc) "
+                "FROM document_registry"
+            )
+            kept, seeded = cur.fetchone()
+            result["registry_rows_kept"] = kept
+            result["base_corpus_seeded"] = seeded
             cur.close()
         finally:
             conn.close()
