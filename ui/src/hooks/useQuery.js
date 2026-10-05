@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react';
 import { submitQuery, getQuery } from '../api/client';
 
-// Generation on a shared or memory-constrained GPU can take minutes when the
-// model has to be reloaded, so this sits above the API's own OLLAMA_TIMEOUT
-// (180s default) — the API's 504 is the better message when it wins the race.
-const QUERY_TIMEOUT_MS = 210000;
+// The first query after start can take minutes: the generation model is loaded
+// from disk into GPU memory, and on a GPU shared with other models that load is
+// paid again after every eviction. Measured at 218s on the reference install,
+// so this sits above both that and the API's own OLLAMA_TIMEOUT (180s default)
+// — the API's 504 is the better message when it wins the race.
+const QUERY_TIMEOUT_MS = 300000;
 
 export default function useQuery() {
   const [result, setResult] = useState(null);
