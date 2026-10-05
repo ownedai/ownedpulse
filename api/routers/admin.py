@@ -31,6 +31,9 @@ if "://" in OLLAMA_HOST:
     if _pu.port:
         OLLAMA_PORT = _pu.port
 OLLAMA_BASE = f"http://{_OLLAMA_PARSED}:{OLLAMA_PORT}"
+# Must match OLLAMA_NUM_CTX in main.py — a different context size here would
+# load a second runner for the same model and evict the query one.
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "12288"))
 DOCLING_HOST = os.getenv("DOCLING_HOST", "http://docling:5001")
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "http://langfuse:3000")
 
@@ -460,6 +463,7 @@ async def admin_warmup():
                     "prompt": "",
                     "stream": False,
                     "keep_alive": "10m",
+                    "options": {"num_ctx": OLLAMA_NUM_CTX},
                 })
         except Exception:
             pass

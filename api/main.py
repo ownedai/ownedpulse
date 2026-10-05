@@ -82,6 +82,12 @@ OLLAMA_GEN_MODEL = os.getenv("OLLAMA_GEN_MODEL", "phi4:14b-q8_0")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
 CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "phi4:14b-q8_0")
 
+# Every call that loads the generation model must request the same context
+# size. Ollama keeps one runner per (model, num_ctx) pair, so a second context
+# size evicts the first — on a GPU that cannot hold both, that means reloading
+# the whole model on every query.
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "12288"))
+
 # ── Active model cache (60s TTL, read from system_config) ─────────────────────
 
 _model_cache = {"value": None, "fetched_at": 0.0}
@@ -671,9 +677,10 @@ def classify_query(query: str) -> tuple[str, str]:
                 "prompt": f"Classify this query: {query}",
                 "system": CLASSIFIER_SYSTEM_PROMPT,
                 "stream": False,
-                "options": {"temperature": 0.0, "num_predict": 5},
+                "options": {"temperature": 0.0, "num_predict": 5,
+                            "num_ctx": OLLAMA_NUM_CTX},
             },
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         result = resp.json().get("response", "").strip().upper()
@@ -716,7 +723,7 @@ async def ollama_generate(
         "system": system,
         "stream": False,
     }
-    options: dict = {"num_ctx": 12288}
+    options: dict = {"num_ctx": OLLAMA_NUM_CTX}
     if temperature is not None:
         options["temperature"] = temperature
     payload["options"] = options
@@ -1802,7 +1809,9 @@ async def _run_content_query(
         # Fix: reserve 2 slots per explicitly mentioned document first (best-
         # scoring chunks only), then fill remaining budget greedily by score.
 
-        NUM_CTX = 12288
+        # Must match the num_ctx sent to Ollama, or the budget is sized for a
+        # different window than the model is actually loaded with.
+        NUM_CTX = OLLAMA_NUM_CTX
         SYSTEM_PROMPT_TOKENS = 1527
         ANSWER_RESERVE = 1024
         QUERY_TOKENS = len(request.query) // 4
@@ -1969,7 +1978,7 @@ async def _run_content_query(
                 "model": request.generation_model or get_active_model(),
                 "system": system_with_date,
                 "prompt": prompt,
-                "options": {"num_ctx": 12288},
+                "options": {"num_ctx": OLLAMA_NUM_CTX},
             },
         }
         result["langfuse_trace_id"] = trace_id
