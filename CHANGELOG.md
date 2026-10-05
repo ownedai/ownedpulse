@@ -41,7 +41,16 @@
 ### Upgrading from 1.0.x
 - The UI no longer allows `rp.*` hostnames by default. Set `VITE_ALLOWED_HOSTS` to the hostnames you use, or the UI answers `Blocked request. This host is not allowed` for anything but localhost and IP addresses. Add it to the `ownedpulse-ui` service environment.
 - `OLLAMA_NUM_CTX` defaults to 12288. If the Ollama you point at is shared, every other client must request the same context size for the same model, or each will evict the other's loaded model.
-- **Stored EMA publication dates and chunk document types written by earlier versions are wrong.** The date fix and the type fix apply at ingestion, so a corpus ingested by 1.0.x keeps the swapped dates and the collapsed `guidance` type. To repair it, reset the corpus and run Initial Load again:
+- **Stored EMA publication dates and chunk document types written by earlier versions are wrong.** The type fix applies at ingestion, but the date fix does not: re-ingestion reads `publication_date` from the archive sidecar, which still holds the swapped value. Repair the dates first, then reset:
+
+  ```bash
+  # 1. dates — dry run, then apply (needs a backup dir)
+  docker exec ownedpulse-api python3 /opt/scripts/maintenance/fix_ema_publication_dates.py
+  docker exec ownedpulse-api python3 /opt/scripts/maintenance/fix_ema_publication_dates.py \
+      --apply --backup-dir /opt/ownedpulse/backups/date-fix-$(date +%Y%m%dT%H%M%S)
+  ```
+
+  Then reset the corpus and run Initial Load, which rebuilds the chunk payloads from the corrected sidecars:
 
   ```bash
   curl -X POST http://localhost:8001/api/admin/reset-corpus \

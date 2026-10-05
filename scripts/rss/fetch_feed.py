@@ -26,6 +26,26 @@ HEADERS = {"User-Agent": "ownedai-regulatory-pipeline/1.0"}
 # "YYYY-MM-DD" — unambiguous, must never be handed to a day-first parser.
 _ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}')
 
+
+def parse_feed_date(raw_date) -> str | None:
+    """Parse a feed date to an ISO 'YYYY-MM-DD' string, or None.
+
+    ISO 8601 goes through datetime.fromisoformat: dateutil with dayfirst=True
+    reads a three-component ISO date as Y-D-M, so "2026-09-10" became
+    2026-10-09 — a real month/day swap for every value whose day is <= 12.
+    Day-first parsing is kept for the formats that genuinely need it.
+    """
+    if not raw_date:
+        return None
+    try:
+        if _ISO_DATE_RE.match(str(raw_date)):
+            dt = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
+        else:
+            dt = dateparser.parse(raw_date, dayfirst=True)
+        return dt.date().isoformat() if dt else None
+    except Exception:
+        return None
+
 # EMA CloudFront CDN requires browser-like headers with a Referer pointing to
 # the EMA search page. Without this, requests get 404 HTML error pages.
 # See: https://www.ema.europa.eu/en/about-us/about-website/download-website-data-json-data-format
@@ -281,23 +301,7 @@ def _fetch_ema_json(target_feed_id: str, months_override: int | None = None, cut
         if not title or not url:
             continue
 
-        pub_date = ''
-        raw_date = rec.get('first_published_date', '')
-        if raw_date:
-            try:
-                # EMA publishes ISO 8601 ("2026-09-10T10:49:46Z"). dateutil with
-                # dayfirst=True reads that as Y-D-M, so 2026-09-10 became
-                # 2026-10-09 — a real swap for every value whose day is <= 12.
-                # Parse ISO directly; fall back to day-first only for the
-                # genuinely day-first formats.
-                if _ISO_DATE_RE.match(str(raw_date)):
-                    dt = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
-                else:
-                    dt = dateparser.parse(raw_date, dayfirst=True)
-                if dt:
-                    pub_date = dt.date().isoformat()
-            except Exception:
-                pass
+        pub_date = parse_feed_date(rec.get('first_published_date', '')) or ''
 
         if cutoff and pub_date:
             try:
