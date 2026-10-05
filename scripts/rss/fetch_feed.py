@@ -713,6 +713,9 @@ def fetch_feed(feed_id: str, mode: str = "live", months_override: int = None,
         return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0}
     if ft == "rss":
         return fetch_rss(feed, months_override=months_override, cutoff_date=cutoff)
+    # Unhandled types used to fall off the end and return None, which surfaced
+    # as "cannot unpack non-iterable NoneType object" with no hint of the cause.
+    raise ValueError(f"Unsupported feed type: {ft}")
 
 def main():
     parser = argparse.ArgumentParser()
