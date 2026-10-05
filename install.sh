@@ -427,6 +427,20 @@ fi
 docker compose "${COMPOSE_FILES[@]}" up -d ownedpulse-api ownedpulse-ui 2>&1 \
   || die "Failed to start ownedpulse-api or ownedpulse-ui."
 
+# The api source is bind-mounted, and the API loads its modules once at start.
+# With --no-build the image is unchanged, so compose sees no reason to recreate
+# the container: "up -d" reports it as already running and the process keeps the
+# code it loaded. A `git pull && ./install.sh --no-build` would then serve the
+# previous version while reporting success. Restart it so the running code is
+# the code on disk. (A full build produces a new image, which compose does
+# recreate on.) The UI needs none of this — it is a Vite dev server reading the
+# bind-mounted source on every request.
+if [[ "$BUILD" == false ]]; then
+  log_info "Restarting ownedpulse-api to load the current source..."
+  docker compose "${COMPOSE_FILES[@]}" restart ownedpulse-api 2>&1 \
+    || die "Failed to restart ownedpulse-api."
+fi
+
 wait_for "ownedpulse-api" "curl -s http://localhost:${API_PORT}/api/health | grep -q status" 120
 wait_for "ownedpulse-ui"   "curl -sf http://localhost:${UI_PORT}" 60
 
