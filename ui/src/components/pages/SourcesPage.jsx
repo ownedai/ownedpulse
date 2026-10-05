@@ -44,6 +44,8 @@ const CloseIcon = () => (
 
 // ── Corpus Summary Card ───────────────────────────────────────────────────────
 
+// Plural labels: each row here is a category total, not a single document, so
+// this map stays separate from the shared per-document map in lib/doctype.js.
 const DOC_TYPE_LABELS = {
   guidance_pdf: 'Guidance',
   press_release: 'Press Releases',
@@ -52,6 +54,9 @@ const DOC_TYPE_LABELS = {
   safety_alert: 'Safety Alerts',
   news_item: 'News',
   other: 'Other',
+  regulation: 'Regulations',
+  annex: 'Annexes',
+  'qa-guidance': 'Q&A Guidance',
 };
 
 function CorpusSummaryCard() {

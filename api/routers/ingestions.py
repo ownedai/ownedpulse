@@ -183,6 +183,7 @@ async def session_documents(
                     COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title', id.doc_id) AS document_title,
                     COALESCE(dr.issuing_body, '') AS agency,
                     COALESCE(dr.doc_type, '') AS doc_type,
+                   COALESCE(dr.document_type, dr.metadata_json->>'document_type', '') AS document_type,
                     id.status AS ingestion_status,
                     id.chunk_count,
                     id.failure_reason,
@@ -206,7 +207,7 @@ async def session_documents(
         )
         items = []
         for row in cur.fetchall():
-            (doc_id, document_title, agency, doc_type, ingestion_status,
+            (doc_id, document_title, agency, doc_type, document_type, ingestion_status,
              chunk_count, failure_reason, trace_id, source_url,
              fetched_at, parsed_at, ingested_at, embedding_model,
              retry_count, first_attempt_status) = row
@@ -215,6 +216,7 @@ async def session_documents(
                 "document_title": document_title or doc_id,
                 "agency": agency,
                 "doc_type": doc_type,
+                "document_type": document_type or "",
                 "ingestion_status": ingestion_status,
                 "chunk_count": chunk_count or 0,
                 "failure_reason": failure_reason,
@@ -237,7 +239,8 @@ async def session_documents(
             SELECT rl.run_id, rl.doc_id, rl.status, rl.error_detail,
                    COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title') AS document_title,
                    COALESCE(dr.issuing_body, '') AS agency,
-                   COALESCE(dr.doc_type, '') AS doc_type
+                   COALESCE(dr.doc_type, '') AS doc_type,
+                   COALESCE(dr.document_type, dr.metadata_json->>'document_type', '') AS document_type
             FROM run_log rl
             LEFT JOIN document_registry dr ON dr.document_id = rl.doc_id
             WHERE rl.run_id::text = ANY(%s)
@@ -249,13 +252,14 @@ async def session_documents(
         )
         items = []
         for row in cur.fetchall():
-            rid, doc_id, status, error_detail, title, agency, doc_type = row
+            rid, doc_id, status, error_detail, title, agency, doc_type, document_type = row
             display_id = doc_id or str(rid)
             items.append({
                 "doc_id": display_id,
                 "document_title": title or display_id,
                 "agency": agency or "",
                 "doc_type": doc_type or "",
+                "document_type": document_type or "",
                 "ingestion_status": status,
                 "chunk_count": 0,
                 "failure_reason": error_detail,
@@ -353,6 +357,7 @@ async def run_documents(
                     COALESCE(dr.metadata_json->>'document_title', dr.metadata_json->>'title', id.doc_id) AS document_title,
                     COALESCE(dr.issuing_body, '') AS agency,
                     COALESCE(dr.doc_type, '') AS doc_type,
+                   COALESCE(dr.document_type, dr.metadata_json->>'document_type', '') AS document_type,
                     id.status AS ingestion_status,
                     id.chunk_count,
                     id.failure_reason,
@@ -377,7 +382,7 @@ async def run_documents(
         items = []
         traced_doc_ids = set()
         for row in cur.fetchall():
-            (doc_id, document_title, agency, doc_type, ingestion_status,
+            (doc_id, document_title, agency, doc_type, document_type, ingestion_status,
              chunk_count, failure_reason, trace_id, source_url,
              fetched_at, parsed_at, ingested_at, embedding_model,
              retry_count, first_attempt_status) = row
@@ -387,6 +392,7 @@ async def run_documents(
                 "document_title": document_title or doc_id,
                 "agency": agency,
                 "doc_type": doc_type,
+                "document_type": document_type or "",
                 "ingestion_status": ingestion_status,
                 "chunk_count": chunk_count or 0,
                 "failure_reason": failure_reason,
@@ -421,6 +427,7 @@ async def run_documents(
                               COALESCE(metadata_json->>'document_title', metadata_json->>'title', document_id) AS title,
                               issuing_body,
                               COALESCE(doc_type, '') AS doc_type,
+                              COALESCE(document_type, metadata_json->>'document_type', '') AS document_type,
                               ingestion_status,
                               chunk_count,
                               ingestion_error,
@@ -434,13 +441,14 @@ async def run_documents(
                     (feed_source, triggered_at, end_ts)
                 )
                 for row in cur.fetchall():
-                    doc_id, title, agency, doc_type, status, chunks, err, url, created_at = row
+                    doc_id, title, agency, doc_type, document_type, status, chunks, err, url, created_at = row
                     if doc_id not in traced_doc_ids:
                         items.append({
                             "doc_id": doc_id,
                             "document_title": title or doc_id,
                             "agency": agency or "",
                             "doc_type": doc_type or "",
+                "document_type": document_type or "",
                             "ingestion_status": status,
                             "chunk_count": chunks or 0,
                             "failure_reason": err,

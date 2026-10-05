@@ -21,7 +21,7 @@
 - EMA publication dates are no longer stored with the month and day swapped. The feed publishes ISO 8601 and the date was parsed day-first, which reads `2026-09-10` as 10 September's *month* — 34.7% of EMA records were affected, and four landed in the future. Documents ingested by an earlier version keep their wrong dates until the corpus is reset.
 - Citation counts include grouped markers. An answer citing `[3, 9]` had only its lone-style markers counted, so cited chunks were reported as not cited in the traceability panel, the citation payload and the PDF export.
 - Base-corpus documents keep their manifest classification in chunk payloads. 21 CFR Part 11 and the EU GMP annexes were ingested as "guidance" because the payload type was derived from the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`.
-- The UI labels and can filter regulations and annexes; the type filter previously offered only Guidance, Press Release and Reflection Paper.
+- Document classifications display and filter correctly across the UI. The query page, Corpus and Ingestions tables showed the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`, so 21 CFR Part 11 and the EU GMP annexes read "Guidance"; they now prefer `document_type`. One shared label map replaces three per-page copies, the Corpus and query type filters gained Regulation, Annex and Q&A Guidance, and ingestion rows carry `document_type` so the Ingestions table can show it. The type filter previously offered only Guidance, Press Release and Reflection Paper.
 - `OLLAMA_NUM_CTX` and `OLLAMA_TIMEOUT` are passed through to the API container; both were documented in `.env.example` but never forwarded, so setting either had no effect.
 
 ### Added
