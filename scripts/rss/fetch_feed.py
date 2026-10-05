@@ -776,15 +776,16 @@ def main():
         with conn.cursor() as c:
             c.execute("""
                 UPDATE run_log SET
-                    status = 'running',
+                    status = 'success',
+                    completed_at = NOW(),
                     items_fetched = %s,
                     items_new = %s,
                     items_skipped = %s,
                     error_count = 0,
-                    duration_ms = 0
+                    duration_ms = %s
                 WHERE run_id = %s
             """, (stats["items_fetched"], stats["items_new"],
-                  stats["items_skipped"], run_id))
+                  stats["items_skipped"], duration_ms, run_id))
             c.execute(
                 "UPDATE feed_config SET last_run_at = NOW() WHERE feed_id = %s",
                 (args.feed_id,)
