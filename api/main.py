@@ -87,6 +87,9 @@ CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "phi4:14b-q8_0")
 # size evicts the first — on a GPU that cannot hold both, that means reloading
 # the whole model on every query.
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "12288"))
+# Seconds to wait for the generation model. Generation on a shared or
+# memory-constrained GPU can take well over a minute.
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "180"))
 
 # ── Active model cache (60s TTL, read from system_config) ─────────────────────
 
@@ -139,7 +142,9 @@ def init_db():
                 filters_applied   JSONB,
                 retrieval_params  JSONB,
                 langfuse_trace_id TEXT,
-                timestamp         TIMESTAMPTZ DEFAULT NOW()
+                timestamp         TIMESTAMPTZ DEFAULT NOW(),
+                status            TEXT NOT NULL DEFAULT 'ok',
+                error             TEXT
             )
         """)
         # Migrate old schema — add missing columns if they don't exist
@@ -149,6 +154,8 @@ def init_db():
             ("langfuse_trace_id", "TEXT"),
             ("model_used", "TEXT"),
             ("classifier", "TEXT"),
+            ("status", "TEXT NOT NULL DEFAULT 'ok'"),
+            ("error", "TEXT"),
         ]
         for col_name, col_type in migrations:
             cur.execute(
@@ -185,21 +192,25 @@ def persist_query(
     timestamp: str = "",
     model_used: str = "",
     classifier: str = "",
+    status: str = "ok",
+    error: str | None = None,
 ):
-    """Persist a query result to query_history. Raises on failure."""
+    """Persist a query result (or a failed query) to query_history. Raises on failure."""
     conn = get_pg_conn()
     try:
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO query_history
                (query_id, query_text, routing_path, answer, citations,
-                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp, model_used, classifier)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                sub_queries, filters_applied, retrieval_params, langfuse_trace_id, timestamp, model_used, classifier,
+                status, error)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 query_id, query_text, routing_path, answer,
                 json.dumps(citations), json.dumps(sub_queries),
                 json.dumps(filters_applied), json.dumps(retrieval_params),
                 langfuse_trace_id, timestamp, model_used, classifier,
+                status, error,
             )
         )
         conn.commit()
@@ -701,6 +712,13 @@ def classify_query(query: str) -> tuple[str, str]:
 
 import httpx
 
+try:
+    # httpx normally re-raises its own subclasses, but a bare httpcore read
+    # timeout can still surface from the pooled connection.
+    from httpcore import ReadTimeout as _HttpcoreReadTimeout
+except Exception:  # pragma: no cover — httpcore ships with httpx
+    _HttpcoreReadTimeout = httpx.TimeoutException
+
 
 async def ollama_generate(
     prompt: str,
@@ -727,7 +745,7 @@ async def ollama_generate(
     if temperature is not None:
         options["temperature"] = temperature
     payload["options"] = options
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
         resp = await client.post(f"{OLLAMA_BASE}/api/generate", json=payload)
         resp.raise_for_status()
         body = resp.json()
@@ -1593,21 +1611,59 @@ async def submit_query(request: QueryRequest):
 
     # LLM-based query classification
     routing_path, classifier = classify_query(request.query)
-    if routing_path == "METADATA":
-        result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
-    elif routing_path == "SUPERSEDE":
-        # SUPERSEDE routed to CONTENT path — no dedicated handler yet.
-        # Logged in query_history.routing_path as "SUPERSEDE" for visibility.
-        logger.info("classify_query: SUPERSEDE path — routing to CONTENT handler")
-        result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
-    else:
-        result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
 
-    # Persist to query_history
     filters_dict = filters.model_dump() if filters else {}
     # Attach runtime prompt version so each query records which prompt was used
     retrieval_dict = retrieval.model_dump() if retrieval else {}
     retrieval_dict["prompt_version"] = SYSTEM_PROMPT_VERSION
+
+    def _record_failure(status: str, detail: str) -> None:
+        """Record a query that never produced an answer. A failure to record it
+        is logged but must not replace the original error."""
+        try:
+            persist_query(
+                query_id=query_id,
+                query_text=request.query,
+                routing_path=routing_path,
+                answer=None,
+                citations=[],
+                sub_queries=[],
+                filters_applied=filters_dict,
+                retrieval_params=retrieval_dict,
+                langfuse_trace_id="",
+                timestamp=timestamp,
+                model_used=get_active_model(),
+                classifier=classifier,
+                status=status,
+                error=detail[:2000],
+            )
+        except Exception as e:
+            logger.error("Failed to persist failed query %s: %s", query_id, e)
+
+    try:
+        if routing_path == "METADATA":
+            result = await _run_metadata_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
+        elif routing_path == "SUPERSEDE":
+            # SUPERSEDE routed to CONTENT path — no dedicated handler yet.
+            # Logged in query_history.routing_path as "SUPERSEDE" for visibility.
+            logger.info("classify_query: SUPERSEDE path — routing to CONTENT handler")
+            result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
+        else:
+            result = await _run_content_query(query_id, timestamp, request, filters, retrieval, routing_path, classifier)
+    except HTTPException:
+        raise
+    except (httpx.TimeoutException, _HttpcoreReadTimeout) as e:
+        detail = f"Model did not respond within {int(OLLAMA_TIMEOUT)}s"
+        logger.error("Query %s timed out waiting for the model: %s", query_id, e)
+        _record_failure("timeout", detail)
+        raise HTTPException(status_code=504, detail=detail)
+    except Exception as e:
+        detail = str(e)[:2000]
+        logger.error("Query %s failed: %s", query_id, e)
+        _record_failure("error", detail)
+        raise HTTPException(status_code=500, detail=detail)
+
+    # Persist to query_history
     try:
         persist_query(
             query_id=query_id,
@@ -2594,7 +2650,7 @@ async def query_history(
         total = cur.fetchone()[0]
         cur.execute(
             f"""SELECT query_id, query_text, timestamp, routing_path,
-                      citations, filters_applied
+                      citations, filters_applied, status, error
                FROM query_history
                {where}
                ORDER BY timestamp DESC
@@ -2604,7 +2660,7 @@ async def query_history(
         rows = cur.fetchall()
         items = []
         for row in rows:
-            qid, qtext, ts, routing, citations, filters_json = row
+            qid, qtext, ts, routing, citations, filters_json, qstatus, qerror = row
             cits = citations if isinstance(citations, list) else json.loads(citations or "[]")
             filts = filters_json if isinstance(filters_json, dict) else json.loads(filters_json or "{}")
             items.append({
@@ -2615,6 +2671,8 @@ async def query_history(
                 "citation_count": len(cits),
                 "filters_applied": filts,
                 "agency_filter": filts.get("agency", "All"),
+                "status": qstatus or "ok",
+                "error": qerror,
             })
         cur.close()
         return {"items": items, "total": total}
@@ -2868,7 +2926,8 @@ async def get_query(query_id: str):
         cur = conn.cursor()
         cur.execute(
             "SELECT query_text, routing_path, answer, citations, sub_queries, "
-            "filters_applied, retrieval_params, langfuse_trace_id, timestamp "
+            "filters_applied, retrieval_params, langfuse_trace_id, timestamp, "
+            "status, error "
             "FROM query_history WHERE query_id = %s",
             (query_id,)
         )
@@ -2879,7 +2938,8 @@ async def get_query(query_id: str):
             raise HTTPException(status_code=404, detail="Query not found")
 
         (query_text, routing_path, answer, citations, sub_queries,
-         filters_applied, retrieval_params, langfuse_trace_id, timestamp) = row
+         filters_applied, retrieval_params, langfuse_trace_id, timestamp,
+         status, error) = row
 
         citations_list = json.loads(citations) if isinstance(citations, str) else (citations or [])
         retrieval_dict = json.loads(retrieval_params) if isinstance(retrieval_params, str) else (retrieval_params or {})
@@ -2904,6 +2964,8 @@ async def get_query(query_id: str):
             "citations": citations_list,
             "retrieval_params_applied": retrieval_dict,
             "langfuse_trace_id": langfuse_trace_id,
+            "status": status or "ok",
+            "error": error,
         })
     finally:
         conn.close()

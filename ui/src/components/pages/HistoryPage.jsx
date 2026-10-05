@@ -345,7 +345,9 @@ export default function HistoryPage() {
                 </td>
               </tr>
             )}
-            {filtered.map((h, i) => (
+            {filtered.map((h, i) => {
+              const failed = !!h.status && h.status !== 'ok';
+              return (
               <tr key={h.query_id}>
                 <td className="num">{(page - 1) * pageSize + i + 1}</td>
                 <td>
@@ -354,6 +356,15 @@ export default function HistoryPage() {
                     <span className="query-id">{h.query_id}</span>
                     {h.routing_path === 'METADATA' && (
                       <span className="rp-meta-badge" title="Metadata lookup">Metadata lookup</span>
+                    )}
+                    {failed && (
+                      <span
+                        className="rp-meta-badge"
+                        style={{ background: 'var(--err-tint)', color: 'var(--err-text)' }}
+                        title={h.error || 'The query did not complete'}
+                      >
+                        {h.status === 'timeout' ? 'Timed out' : 'Failed'}
+                      </span>
                     )}
                   </span>
                 </td>
@@ -365,13 +376,16 @@ export default function HistoryPage() {
                 <td>
                   <button
                     className="action primary"
+                    disabled={failed}
+                    title={failed ? 'This query did not complete — there is no answer to load' : undefined}
                     onClick={() => navigate(`/?q=${h.query_id}`)}
                   >
                     Load
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
 
