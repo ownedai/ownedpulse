@@ -66,7 +66,7 @@ Read this before installing.
 
 - **No authentication.** The OwnedPulse API and UI have no login. Anyone who can reach them can query the system and use the admin functions.
 - **Services listen on all interfaces.** PostgreSQL, Qdrant, Ollama, Docling and Langfuse ports are published on the host. Qdrant and Ollama have no authentication of their own.
-- **Development-mode runtime.** The API runs under `uvicorn --reload` and the UI under the Vite development server, with source directories bind-mounted into the containers.
+- **Runtime.** The API runs without auto-reload by default. Editing files under `api/` restarts the API and interrupts a running ingestion only when `UVICORN_RELOAD=true`, which is for development. The UI runs under the Vite development server. Both services have their source directories bind-mounted into the containers.
 
 Run OwnedPulse on a single workstation or an isolated, trusted network only. Do not expose it to the internet. Change every `change_me` value in `.env` before the first start. See [SECURITY.md](SECURITY.md).
 
@@ -190,6 +190,7 @@ All settings live in `.env`; see the comments in [`.env.example`](.env.example).
 | `*_MODE=external` | Use an existing PostgreSQL, Qdrant, Ollama, Docling or Langfuse instead of the bundled container. Set the matching `*_HOST`, `*_PORT` and credentials. |
 | `DOCLING_VARIANT=cpu` | Run Docling on the CPU instead of the GPU. Usable and fully supported; PDF parsing during ingestion is slower, and VRAM is left free for the generation model. |
 | `OLLAMA_GEN_MODEL` | Generation model (default `phi4:14b-q8_0`). |
+| `UVICORN_RELOAD` | `true` restarts the API when a file under `api/` changes, for development. Off by default: a reload interrupts a running ingestion. |
 | `VITE_ALLOWED_HOSTS` | Comma-separated hostnames allowed to reach the UI, e.g. when opening it by server name instead of `localhost` or an IP address. |
 | `HF_TOKEN` | Optional Hugging Face token. |
 | `RSS_SCHEDULE_*` | Time of the daily feed run. |
@@ -202,7 +203,7 @@ All settings live in `.env`; see the comments in [`.env.example`](.env.example).
 |---|---|
 | Stop OwnedPulse API and UI | `./install.sh --stop` |
 | Start or update after changes | `./install.sh` (add `--no-build` to skip image builds) |
-| Update to a new release | `git pull && ./install.sh` |
+| Update to a new release | wait until no ingestion is running, then `git pull && ./install.sh` |
 | Stop everything | `docker compose --profile postgres --profile qdrant --profile ollama --profile docling --profile langfuse down` |
 | Remove everything, including all data | the command above with `-v`, then delete `./data` |
 | Reset the corpus and re-ingest from scratch | see **Resetting the corpus** below |

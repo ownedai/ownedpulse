@@ -36,6 +36,7 @@
 - Screenshots, CHANGELOG, SECURITY and CONTRIBUTING files, issue templates.
 
 ### Changed
+- The API no longer restarts itself when a source file changes. `api/` is bind-mounted into the container and the image started `uvicorn --reload`, so editing any file under `api/` restarted the API and killed the ingestion then running — most likely a long Initial Load. Reload is now off unless `UVICORN_RELOAD=true`, which is for development.
 - Container images pinned to tested versions: postgres 16.13, qdrant v1.19.1, ollama 0.35.1, docling-serve v1.35.0, langfuse 2.95.11.
 - One-off maintenance scripts moved to `scripts/maintenance/`.
 - Internal development notes removed from `docs/`.

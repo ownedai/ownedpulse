@@ -146,6 +146,18 @@ services:
       RSS_SCHEDULE_HOUR: ${RSS_SCHEDULE_HOUR:-9}
       RSS_SCHEDULE_MINUTE: ${RSS_SCHEDULE_MINUTE:-0}
       RSS_SCHEDULE_TIMEZONE: ${RSS_SCHEDULE_TIMEZONE:-Europe/Berlin}
+      UVICORN_RELOAD: ${UVICORN_RELOAD:-false}
+    # --reload only when UVICORN_RELOAD=true. The api directory is bind-mounted,
+    # so an unconditional reload would restart the API on any source edit and
+    # kill whatever ingestion is running.
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$$UVICORN_RELOAD" = "true" ]; then
+          exec uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+        fi
+        exec uvicorn main:app --host 0.0.0.0 --port 8001
     volumes:
       - ./api:/app
       - ${DATA_DIR:-./data/api}:/data
