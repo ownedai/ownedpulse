@@ -23,6 +23,9 @@
 - Base-corpus documents keep their manifest classification in chunk payloads. 21 CFR Part 11 and the EU GMP annexes were ingested as "guidance" because the payload type was derived from the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`.
 - Document classifications display and filter correctly across the UI. The query page, Corpus and Ingestions tables showed the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`, so 21 CFR Part 11 and the EU GMP annexes read "Guidance"; they now prefer `document_type`. One shared label map replaces three per-page copies, the Corpus and query type filters gained Regulation, Annex and Q&A Guidance, and ingestion rows carry `document_type` so the Ingestions table can show it. The type filter previously offered only Guidance, Press Release and Reflection Paper.
 - `OLLAMA_NUM_CTX` and `OLLAMA_TIMEOUT` are passed through to the API container; both were documented in `.env.example` but never forwarded, so setting either had no effect.
+- Re-ingestion no longer stores a null publication date. The archive sidecar written for a base-corpus document carries no date, so a reset followed by Initial Load wrote an empty `publication_date` into every chunk payload for those documents, discarding the dates an earlier corpus had. Ingestion falls back to `document_registry.publication_date` and then to the date in the source URL.
+- The EMA AI reflection paper carries its correct version and date: "Final (2024)" and 9 September 2024, not "1.0 (2023)" and 1 July 2023.
+- Initial Load defaults to the last 6 months instead of the last year, and the window is selectable in months (3, 6 or 12). Ingesting the entire feed history is still available, but it asks for its own confirmation and states how many documents that is.
 
 ### Added
 - `DOCLING_VARIANT=cpu`: run Docling on the CPU instead of the GPU (`docker-compose.docling-cpu.yml`).
