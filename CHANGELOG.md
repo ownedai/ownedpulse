@@ -9,9 +9,17 @@
 - PostgreSQL user and database defaults are consistent across `docker-compose.yml`, `install.sh` and `.env.example`.
 - The UI no longer hard-codes an allowed hostname; set `VITE_ALLOWED_HOSTS` instead.
 - Corrected the phi4:14b-q8_0 download size shown by `install.sh`.
+- A failed query is now visible. Previously the UI aborted at 60s and discarded the abort, showing a blank pane with no answer, no error and no spinner, while the API's own failure arrived later to a connection nobody was reading. The abort budget is 210s and an abort now reports a timeout.
+- The API returns 504 with a message when the generation model does not respond within `OLLAMA_TIMEOUT`, instead of a bare 500.
+- Failed queries are recorded. `persist_query` runs only after generation returns, so a query that timed out left no trace anywhere.
+- One context size for every generation-model call. The classifier sent no `num_ctx` and so loaded the model's 16384 default while generation used 12288; Ollama keeps one runner per (model, context size), so each query evicted and reloaded a 17 GB model. Set `OLLAMA_NUM_CTX` to match every other client of a shared Ollama.
+- `fda_drugs` ingests. Its configured `feed_type` was `rss`, which `fetch_feed()` did not handle, so it returned `None` and every run failed with "cannot unpack non-iterable NoneType object".
+- `fda_guidance_catalogue` runs on the scheduler and manual paths. It returned an errors list where the caller expected a stats dict, failing every run with "list indices must be integers or slices, not str". Unknown feed types now raise with the type named rather than returning `None`.
 
 ### Added
 - `DOCLING_VARIANT=cpu`: run Docling on the CPU instead of the GPU (`docker-compose.docling-cpu.yml`).
+- `query_history.status` and `query_history.error` columns, so a query that never produced an answer is recorded as `timeout` or `error` with its detail. Applied automatically on API start.
+- `OLLAMA_NUM_CTX` and `OLLAMA_TIMEOUT` settings.
 - Evaluation set, rubric, scoring scripts, result files and `eval/summarise.py`, which reproduces the README evaluation tables.
 - Screenshots, CHANGELOG, SECURITY and CONTRIBUTING files, issue templates.
 
@@ -21,6 +29,10 @@
 - Internal development notes removed from `docs/`.
 - README rewritten: requirements, quick start, configuration, operations, troubleshooting, security and runtime model, evaluation method.
 - Version set to 1.1.0 in the API and UI.
+
+### Upgrading from 1.0.x
+- The UI no longer allows `rp.*` hostnames by default. Set `VITE_ALLOWED_HOSTS` to the hostnames you use, or the UI answers `Blocked request. This host is not allowed` for anything but localhost and IP addresses. Add it to the `ownedpulse-ui` service environment.
+- `OLLAMA_NUM_CTX` defaults to 12288. If the Ollama you point at is shared, every other client must request the same context size for the same model, or each will evict the other's loaded model.
 
 ### Repository
 - The repository history was rewritten and the repository recreated on 2026-10-02 to remove an accidentally committed credential, which had already been rotated. If you cloned before that date, delete your clone and clone again.
