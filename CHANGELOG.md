@@ -15,6 +15,10 @@
 - One context size for every generation-model call. The classifier sent no `num_ctx` and so loaded the model's 16384 default while generation used 12288; Ollama keeps one runner per (model, context size), so each query evicted and reloaded a 17 GB model. Set `OLLAMA_NUM_CTX` to match every other client of a shared Ollama.
 - `fda_drugs` ingests. Its configured `feed_type` was `rss`, which `fetch_feed()` did not handle, so it returned `None` and every run failed with "cannot unpack non-iterable NoneType object".
 - `fda_guidance_catalogue` runs on the scheduler and manual paths. It returned an errors list where the caller expected a stats dict, failing every run with "list indices must be integers or slices, not str". Unknown feed types now raise with the type named rather than returning `None`.
+- The generation model is loaded in the background at API startup, and `install.sh` waits for it, so the first query after starting no longer pays a multi-minute model load. Measured at 218s before, when another model had taken the GPU.
+- Successful subprocess feed runs are recorded as `success` with their duration. They were written as `running` with `duration_ms = 0`, and the startup cleanup then rewrote every one of them to `error` with "Process was killed before run completed" — so the Run Log reported completed runs as failures.
+- The UI query timeout is 300s, above the model-load path and the API's own `OLLAMA_TIMEOUT`.
+- `OLLAMA_NUM_CTX` and `OLLAMA_TIMEOUT` are passed through to the API container; both were documented in `.env.example` but never forwarded, so setting either had no effect.
 
 ### Added
 - `DOCLING_VARIANT=cpu`: run Docling on the CPU instead of the GPU (`docker-compose.docling-cpu.yml`).
