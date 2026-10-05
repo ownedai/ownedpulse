@@ -587,11 +587,13 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
         data = r.json()
     except Exception as e:
         logger.error("FDA guidance catalogue fetch failed: %s", e)
-        return [], [str(e)]
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0,
+                    "errors": [str(e)[:200]]}
 
     if not isinstance(data, list):
         logger.error("FDA guidance catalogue: unexpected format (expected list, got %s)", type(data).__name__)
-        return [], ["unexpected-response-format"]
+        return [], {"items_fetched": 0, "items_new": 0, "items_skipped": 0,
+                    "errors": ["unexpected-response-format"]}
 
     logger.info("FDA guidance catalogue: %d raw records", len(data))
 
@@ -674,7 +676,8 @@ def fetch_fda_guidance_catalogue(feed: dict, months_override: int | None = None,
             continue
 
     logger.info("FDA guidance catalogue: %d items parsed, %d errors", len(items), len(errors))
-    return items, errors
+    return items, {"items_fetched": len(data), "items_new": len(items),
+                   "items_skipped": len(errors), "errors": errors[:5]}
 
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
