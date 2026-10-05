@@ -596,7 +596,13 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
         "document_id":        doc_id,
         "document_title":     metadata.get("document_title","") or metadata.get("title",""),
         "document_class":     "regulatory",
-        "document_type":      get_document_type(cls["doc_type"]),
+        # document_type is the filterable, human-readable classification. The
+        # manifest's value for a base-corpus document ("regulation", "annex",
+        # "qa-guidance") is the authoritative one and is what
+        # document_registry.document_type already holds; deriving it from the
+        # canonical doc_type collapsed all of those to "guidance". doc_type
+        # itself stays canonical — it is what the registry constraint allows.
+        "document_type":      metadata.get("document_type") or get_document_type(cls["doc_type"]),
         "document_status":    metadata.get("chunk_status","active") == "superseded" and "superseded" or "active",
         "document_version":   metadata.get("document_version","") or metadata.get("version","") or "",
         "document_family_id": metadata.get("document_family_id",""),
