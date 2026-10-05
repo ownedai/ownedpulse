@@ -4,13 +4,9 @@ import { getIngestions, getSessionDocuments, getRunDocuments, getDocSpans, reing
 import { startBootstrapTracking, stopBootstrapTracking, useBootstrapProgress } from '../../hooks/useBootstrapProgress';
 import { formatDateTime, convertLogTimestamps } from '../../dateFormat';
 import { getStatusConfig } from '../../utils/status';
+import { docTypeLabel } from '../../lib/doctype';
 import DateInput, { todayISO } from '../common/DateInput';
 
-const DOCTYPE_LABEL = {
-  drug_approval: 'Drug Approval', guidance: 'Guidance', press_release: 'Press Release',
-  safety_alert: 'Safety Alert', reflection_paper: 'Reflection Paper',
-  news_item: 'News Item', other: 'Unclassified',
-};
 
 function deriveSessionStatus(succeeded, failed, skipped, inflight) {
   if ((inflight || 0) > 0) return 'running';
@@ -401,7 +397,7 @@ function DocSubTable({ docs, loadingDocs, expandedDoc, onToggleDoc, expandedRetr
                     )}
                   </td>
                   <td><span className="agency-mini">{d.agency || '—'}</span></td>
-                  <td className="dim">{DOCTYPE_LABEL[d.doc_type] || d.doc_type || '—'}</td>
+                  <td className="dim">{docTypeLabel(d)}</td>
                   <td><G3Status status={d.ingestion_status} /></td>
                   <td className="num mono">{d.chunk_count > 0 ? d.chunk_count : '—'}</td>
                   <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45, paddingTop: 6, paddingBottom: 6 }}>

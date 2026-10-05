@@ -6,6 +6,7 @@ import { formatDate, isFutureDate } from '../../dateFormat';
 import Tooltip from '../common/Tooltip';
 import { getStatusConfig } from '../../utils/status';
 import DateInput, { todayISO } from '../common/DateInput';
+import { docTypeLabel } from '../../lib/doctype';
 
 const AGENCY_OPTS = [
   { label: 'All bodies', value: null },
@@ -13,13 +14,19 @@ const AGENCY_OPTS = [
   { label: 'EMA', value: 'EMA' },
   { label: 'ICH', value: 'ICH' },
 ];
+// Values are the hyphenated document_type form. The corpus API matches them
+// against metadata_json->>'document_type' and, after replacing "-" with "_",
+// against doc_type, so one value covers both vocabularies.
 const DOC_TYPES = [
   { label: 'All types', value: null },
   { label: 'Guidance', value: 'guidance' },
-  { label: 'Press Release', value: 'press_release' },
-  { label: 'Reflection Paper', value: 'reflection_paper' },
-  { label: 'Safety Alert', value: 'safety_alert' },
-  { label: 'News', value: 'news_item' },
+  { label: 'Regulation', value: 'regulation' },
+  { label: 'Annex', value: 'annex' },
+  { label: 'Press Release', value: 'press-release' },
+  { label: 'Reflection Paper', value: 'reflection-paper' },
+  { label: 'Q&A Guidance', value: 'qa-guidance' },
+  { label: 'Safety Communication', value: 'safety-communication' },
+  { label: 'News', value: 'news' },
   { label: 'Other', value: 'other' },
   { label: 'Base Corpus', value: 'base_corpus' },
 ];
@@ -32,12 +39,6 @@ const STATUS_OPTS = [
   { label: 'Not viable', value: 'not_viable' },
   { label: 'Processing', value: 'pending' },
 ];
-const DOC_TYPE_LABELS = {
-  guidance_pdf: 'Guidance', guidance: 'Guidance',
-  press_release: 'Press Release', reflection_paper: 'Reflection Paper',
-  safety_alert: 'Safety Alert',
-  news_item: 'News', other: 'Other',
-};
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -410,7 +411,7 @@ export default function CorpusPage() {
                   {doc.issuing_body === 'EU-Commission' ? 'EMA' : (doc.issuing_body || '—')}
                 </td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
-                  {DOC_TYPE_LABELS[doc.doc_type] || DOC_TYPE_LABELS[doc.document_type] || (doc.doc_type || '—').replace(/_/g, ' ')}
+                  {docTypeLabel(doc)}
                 </td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
