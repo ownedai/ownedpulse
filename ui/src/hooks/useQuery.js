@@ -1,6 +1,11 @@
 import { useState, useCallback } from 'react';
 import { submitQuery, getQuery } from '../api/client';
 
+// Generation on a shared or memory-constrained GPU can take minutes when the
+// model has to be reloaded, so this sits above the API's own OLLAMA_TIMEOUT
+// (180s default) — the API's 504 is the better message when it wins the race.
+const QUERY_TIMEOUT_MS = 210000;
+
 export default function useQuery() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -14,7 +19,7 @@ export default function useQuery() {
     setQueryText(query);
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
+    const timer = setTimeout(() => controller.abort(), QUERY_TIMEOUT_MS);
     try {
       const data = await submitQuery(
         {
@@ -28,7 +33,9 @@ export default function useQuery() {
       );
       setResult(data);
     } catch (err) {
-      if (err.name !== 'AbortError') {
+      if (err.name === 'AbortError') {
+        setError('The query timed out. The model may still be loading or the GPU is busy — try again.');
+      } else {
         setError(err.message);
       }
     } finally {
