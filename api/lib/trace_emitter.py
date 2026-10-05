@@ -57,6 +57,12 @@ class IngestionTrace:
                  doc_count_succeeded: int = 0,
                  doc_count_failed: int = 0,
                  error_summary: Optional[str] = None):
+        # Per-document traces (one row per doc, which is what the bootstrap
+        # worker writes) have no other timing source, so Run Log showed no
+        # duration for anything an Initial Load ingested.
+        duration_ms = int(
+            (datetime.now(timezone.utc) - datetime.fromisoformat(self._started_at))
+            .total_seconds() * 1000)
         conn = _pg_conn()
         try:
             cur = conn.cursor()
@@ -67,10 +73,11 @@ class IngestionTrace:
                     items_fetched = %s,
                     items_new = %s,
                     error_count = %s,
-                    error_detail = %s
+                    error_detail = %s,
+                    duration_ms = %s
                 WHERE run_id = %s
             """, (status, doc_count_attempted, doc_count_succeeded,
-                  doc_count_failed, error_summary, self.trace_id))
+                  doc_count_failed, error_summary, duration_ms, self.trace_id))
             conn.commit()
             cur.close()
         finally:
