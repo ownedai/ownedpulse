@@ -587,7 +587,28 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
     ext  = ".pdf" if ct == "pdf" else ".html"
     feed_id = metadata.get("feed_source","") or metadata.get("feed_id","")
     auth = _resolve_issuing_body(metadata, feed_id)
+    # Publication date, in order of authority: the archive sidecar, then the
+    # registry column, then anything encoded in the URL.
+    #
+    # The registry fallback matters for base-corpus documents: their sidecars
+    # carry no date field at all (seed_registry.py writes the date to the
+    # registry, not the sidecar), so without this a re-ingest rebuilt their
+    # chunk payloads with an empty publication_date — losing dates that
+    # scripts/maintenance/patch_qdrant_payloads.py had injected.
     pub_date = metadata.get("publication_date","") or metadata.get("pub_date","")
+    if not pub_date:
+        try:
+            with pg_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT publication_date FROM document_registry WHERE document_id = %s",
+                        (doc_id,),
+                    )
+                    _row = c.fetchone()
+            if _row and _row[0]:
+                pub_date = _row[0].isoformat() if hasattr(_row[0], "isoformat") else str(_row[0])
+        except Exception:
+            pass
     if not pub_date:
         _d = _date_from_url(metadata.get("source_url",""))
         if _d:
