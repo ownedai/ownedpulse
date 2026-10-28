@@ -48,6 +48,9 @@
 - Version set to 1.1.0 in the API and UI.
 - Removed unused pypdf dependency.
 
+### Known limitations
+- Re-ingesting a document replaces its chunks. Chunk-level version history is not retained: a previous version's chunks are removed, not marked superseded, so the superseded-chunk filter in retrieval has no effect for them.
+
 ### Upgrading from 1.0.x
 - The UI no longer allows `rp.*` hostnames by default. Set `VITE_ALLOWED_HOSTS` to the hostnames you use, or the UI answers `Blocked request. This host is not allowed` for anything but localhost and IP addresses. Add it to the `ownedpulse-ui` service environment.
 - `OLLAMA_NUM_CTX` defaults to 12288. If the Ollama you point at is shared, every other client must request the same context size for the same model, or each will evict the other's loaded model.
