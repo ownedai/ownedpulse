@@ -581,21 +581,56 @@ def _resolve_issuing_body(metadata: dict, feed_id: str) -> str:
     return FEED_ID_TO_ISSUING_BODY.get(feed_id, "")
 
 
+def _registry_corpus_values(doc_id: str) -> dict:
+    """Manifest values for a base-corpus document (registry corpus_doc = TRUE), or {}.
+
+    seed_registry.py upserts document_version, document_type and publication_date
+    from config/corpus_manifest.json on every API startup, so for these documents
+    the registry is authoritative and the archive sidecar may be stale.
+    """
+    try:
+        with pg_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "SELECT document_version, publication_date, document_type, "
+                    "metadata_json->>'document_title' FROM document_registry "
+                    "WHERE document_id = %s AND corpus_doc",
+                    (doc_id,),
+                )
+                row = c.fetchone()
+    except Exception as e:
+        print(f"  warning: registry lookup failed for {doc_id}: {e}", file=sys.stderr)
+        return {}
+    if not row:
+        return {}
+    version, pub, dtype, title = row
+    return {
+        "document_version": version or "",
+        "publication_date": pub.isoformat() if pub else "",
+        "document_type": dtype or "",
+        "document_title": title or "",
+    }
+
+
 def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) -> dict:
     # Support both old key names (bulk reingestion) and new key names (fetch_feed.py incremental)
     ct   = metadata.get("source_file_format") or metadata.get("content_type","pdf")
     ext  = ".pdf" if ct == "pdf" else ".html"
     feed_id = metadata.get("feed_source","") or metadata.get("feed_id","")
     auth = _resolve_issuing_body(metadata, feed_id)
-    # Publication date, in order of authority: the archive sidecar, then the
-    # registry column, then anything encoded in the URL.
+    # Base-corpus documents: manifest values from the registry take precedence over
+    # the archive sidecar (title, document_type, document_version, publication_date).
+    # Other documents keep the sidecar-first order.
+    corpus = _registry_corpus_values(doc_id)
+    # Publication date, in order of authority: the registry (base corpus), the archive
+    # sidecar, then the registry column for non-base documents, then the URL.
     #
     # The registry fallback matters for base-corpus documents: their sidecars
     # carry no date field at all (seed_registry.py writes the date to the
     # registry, not the sidecar), so without this a re-ingest rebuilt their
     # chunk payloads with an empty publication_date — losing dates that
     # scripts/maintenance/patch_qdrant_payloads.py had injected.
-    pub_date = metadata.get("publication_date","") or metadata.get("pub_date","")
+    pub_date = corpus.get("publication_date") or metadata.get("publication_date","") or metadata.get("pub_date","")
     if not pub_date:
         try:
             with pg_conn() as conn:
@@ -615,7 +650,7 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
             pub_date = _d.isoformat()
     return {
         "document_id":        doc_id,
-        "document_title":     metadata.get("document_title","") or metadata.get("title",""),
+        "document_title":     corpus.get("document_title") or metadata.get("document_title","") or metadata.get("title",""),
         "document_class":     "regulatory",
         # document_type is the filterable, human-readable classification. The
         # manifest's value for a base-corpus document ("regulation", "annex",
@@ -623,9 +658,9 @@ def build_rss_meta(doc_id: str, archive_dir: Path, metadata: dict, cls: dict) ->
         # document_registry.document_type already holds; deriving it from the
         # canonical doc_type collapsed all of those to "guidance". doc_type
         # itself stays canonical — it is what the registry constraint allows.
-        "document_type":      metadata.get("document_type") or get_document_type(cls["doc_type"]),
+        "document_type":      corpus.get("document_type") or metadata.get("document_type") or get_document_type(cls["doc_type"]),
         "document_status":    metadata.get("chunk_status","active") == "superseded" and "superseded" or "active",
-        "document_version":   metadata.get("document_version","") or metadata.get("version","") or "",
+        "document_version":   corpus.get("document_version") or metadata.get("document_version","") or metadata.get("version","") or "",
         "document_family_id": metadata.get("document_family_id",""),
         "superseded_by":      metadata.get("superseded_by",""),
         "language":           "en",
