@@ -18,7 +18,7 @@ from .extraction import (
     compute_char_offsets, extract_provenance,
 )
 from .payload import build_payload
-from .chunk_archive import upsert_chunks_pg
+from .chunk_archive import upsert_chunks_pg, delete_other_chunks
 from .embedding import embed
 from .qdrant_client import get_client
 
@@ -234,6 +234,10 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
         get_client().upsert(collection_name=QDRANT_COLLECTION, points=points)
         upsert_chunks_pg(points)
         print(f'Qdrant: {len(points)} upserted (+ PG)')
+        # Replace: drop this document's chunks from earlier builds (ids not in this run)
+        removed_q, removed_pg = delete_other_chunks(
+            meta['document_id'], [str(p.id) for p in points], get_client(), QDRANT_COLLECTION)
+        print(f'Replaced prior chunks: {removed_q} removed from Qdrant, {removed_pg} from PG')
         if _offset_warnings:
             print(f'WARNING: char_offset — {len(_offset_warnings)} chunk(s) with span < 50 in {meta["document_id"]}:')
             for doc_id, idx, span, anchor in _offset_warnings:

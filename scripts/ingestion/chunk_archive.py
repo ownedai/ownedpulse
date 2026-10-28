@@ -73,6 +73,38 @@ def upsert_chunks_pg(points) -> None:
     conn.close()
 
 
+DELETE_OTHER_SQL = "DELETE FROM chunks WHERE document_id = %s AND NOT (chunk_id = ANY(%s::uuid[]))"
+
+
+def delete_other_chunks(doc_id: str, keep_ids: List[str], qdrant, collection: str) -> tuple:
+    """Remove a document's chunks whose ids are not in keep_ids, from Qdrant and PostgreSQL.
+
+    Call only after the new chunks have been upserted, so a failed build never removes
+    existing data. Refuses to act when keep_ids is empty. Returns (qdrant_deleted, pg_deleted).
+    """
+    from qdrant_client.models import FieldCondition, Filter, FilterSelector, HasIdCondition, MatchValue
+    if not keep_ids:
+        logger.warning("chunk_archive: no new chunks for %s — existing chunks kept", doc_id)
+        return (0, 0)
+    flt = Filter(
+        must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))],
+        must_not=[HasIdCondition(has_id=keep_ids)],
+    )
+    qdrant_deleted = qdrant.count(collection_name=collection, count_filter=flt, exact=True).count
+    if qdrant_deleted:
+        qdrant.delete(collection_name=collection, points_selector=FilterSelector(filter=flt))
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(DELETE_OTHER_SQL, (doc_id, keep_ids))
+        pg_deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
+    return (qdrant_deleted, pg_deleted)
+
+
 def delete_chunks_pg(chunk_ids: List[str]) -> None:
     """Delete chunk records from PostgreSQL by chunk_id. Never raises."""
     if not chunk_ids:

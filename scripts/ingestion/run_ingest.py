@@ -892,8 +892,11 @@ def ingest_html_document(doc_id: str, archive_dir: Path, meta: dict,
             }
             points.append(PointStruct(id=chunk_id, vector=vector, payload=payload))
         get_client().upsert(collection_name=QDRANT_COLLECTION, points=points)
-        from ingestion.chunk_archive import upsert_chunks_pg
+        from ingestion.chunk_archive import upsert_chunks_pg, delete_other_chunks
         upsert_chunks_pg(points)
+        removed_q, removed_pg = delete_other_chunks(
+            doc_id, [str(p.id) for p in points], get_client(), QDRANT_COLLECTION)
+        print(f"Replaced prior chunks: {removed_q} removed from Qdrant, {removed_pg} from PG", file=sys.stderr)
         chunks_dir = archive_dir / "chunks"
         chunks_dir.mkdir(parents=True, exist_ok=True)
         jsonl_path = chunks_dir / f"chunks_{CHUNKER_VERSION}.jsonl"
