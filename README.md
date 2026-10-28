@@ -30,11 +30,11 @@ Recorded on v1.0.14. The UI, corpus handling and retrieval have changed since th
 
 ### Screenshots
 
-Screenshots are from a development build (the sidebar shows an older build number).
+Screenshots from v1.1.0.
 
-| Provenance of a retrieved chunk | Corpus registry | Ingestion run log |
-|---|---|---|
-| ![Provenance](docs/screenshots/provenance.png) | ![Corpus registry](docs/screenshots/corpus-registry.png) | ![Run log](docs/screenshots/run-log.png) |
+| Provenance of a retrieved chunk | Corpus registry |
+|---|---|
+| ![Provenance](docs/screenshots/provenance.png) | ![Corpus registry](docs/screenshots/corpus-registry.png) |
 
 ---
 
