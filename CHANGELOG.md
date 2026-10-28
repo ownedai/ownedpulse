@@ -44,6 +44,7 @@
 - Internal development notes removed from `docs/`.
 - README rewritten: requirements, quick start, configuration, operations, troubleshooting, security and runtime model, evaluation method.
 - Version set to 1.1.0 in the API and UI.
+- Removed unused pypdf dependency.
 
 ### Upgrading from 1.0.x
 - The UI no longer allows `rp.*` hostnames by default. Set `VITE_ALLOWED_HOSTS` to the hostnames you use, or the UI answers `Blocked request. This host is not allowed` for anything but localhost and IP addresses. Add it to the `ownedpulse-ui` service environment.
