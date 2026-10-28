@@ -18,7 +18,7 @@
 - The generation model is loaded in the background at API startup, and `install.sh` waits for it, so the first query after starting no longer pays a multi-minute model load. Measured at 218s before, when another model had taken the GPU.
 - Successful subprocess feed runs are recorded as `success` with their duration. They were written as `running` with `duration_ms = 0`, and the startup cleanup then rewrote every one of them to `error` with "Process was killed before run completed" — so the Run Log reported completed runs as failures.
 - The UI query timeout is 300s, above the model-load path and the API's own `OLLAMA_TIMEOUT`.
-- EMA publication dates are no longer stored with the month and day swapped. The feed publishes ISO 8601 and the date was parsed day-first, which reads `2026-09-10` as 10 September's *month* — 34.7% of EMA records were affected, and four landed in the future. Documents ingested by an earlier version keep their wrong dates until the corpus is reset.
+- EMA publication dates are no longer stored with the month and day swapped. The feed publishes ISO 8601 and the date was parsed day-first, which reads 2026-09-10 as 9 October 2026 — 34.7% of EMA records were affected, and four landed in the future. Documents ingested by an earlier version keep their wrong dates until the corpus is reset.
 - Citation counts include grouped markers. An answer citing `[3, 9]` had only its lone-style markers counted, so cited chunks were reported as not cited in the traceability panel, the citation payload and the PDF export.
 - Base-corpus documents keep their manifest classification in chunk payloads. 21 CFR Part 11 and the EU GMP annexes were ingested as "guidance" because the payload type was derived from the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`.
 - Document classifications display and filter correctly across the UI. The query page, Corpus and Ingestions tables showed the canonical `doc_type`, which maps `regulation` and `annex` to `guidance`, so 21 CFR Part 11 and the EU GMP annexes read "Guidance"; they now prefer `document_type`. One shared label map replaces three per-page copies, the Corpus and query type filters gained Regulation, Annex and Q&A Guidance, and ingestion rows carry `document_type` so the Ingestions table can show it. The type filter previously offered only Guidance, Press Release and Reflection Paper.
@@ -29,8 +29,12 @@
 - `./install.sh --no-build` no longer leaves the API serving the previous version. The api source is bind-mounted and the API loads its modules once at startup; with no image rebuild, compose found nothing to recreate, so `up -d` reported the container as already running and the process kept its old code. After a `git pull` that meant the update appeared to succeed while the old version kept answering. The API is now restarted on the `--no-build` path. The UI was never affected — it is a Vite dev server that reads the bind-mounted source on every request.
 - Initial Load documents record a duration. The bootstrap worker writes one `run_log` row per document through `trace_emitter`, whose `finalize()` never set `duration_ms`, so every document ingested by an Initial Load showed a blank duration in the Run Log however long it took. Duration is now taken from the trace's start time, covering both the per-document rows and the single-row batch traces.
 - `POST /api/admin/reset-corpus` reports what it actually did. It returned `registry_reset: 0` — a field that was never assigned anywhere — and `base_corpus_seeded`, which counted every row in `document_registry`, so a populated install reported 6,811 seeded documents. The registry is not cleared at all: `seed_registry.py` upserts the manifest's twelve documents onto the rows already present, which is what preserves downloaded documents and their repaired publication dates. The response now reports `registry_rows_kept` and `base_corpus_seeded` (`corpus_doc = TRUE`), read from the table rather than parsed from the script's output, and the README says the registry is kept rather than re-seeded.
-- UI dev dependencies bumped for security advisories: vite 6.4.5, source-map-js 1.2.2, postcss-selector-parser 6.1.5. Tailwind CSS stays on 3.4.x.
+- UI dependencies bumped (vite is the UI runtime) for security advisories: vite 6.4.5, source-map-js 1.2.2, postcss-selector-parser 6.1.5. Tailwind CSS stays on 3.4.x.
 - Re-ingesting a document replaces its chunks. Chunk ids include the document version, so a re-ingest after a version change left the previous version's chunks in Qdrant and PostgreSQL next to the new ones (EU GMP Annex 22 showed 28 chunks for 14). After the new chunks are written, chunks of that document with other ids are removed from both stores; nothing is removed if the build or upsert fails.
+- Model-generated links are validated before navigation, which guards against open redirects.
+- EU GMP Annex 22 carries its document date (2025-07-07) and version "Draft (2025)".
+- On re-ingest, a base-corpus document takes its version, publication date, title and type from the manifest in preference to the archive sidecar, whose stored values could be stale.
+- The Version column in the Corpus table wraps between words instead of overflowing into the Published column.
 
 ### Added
 - `DOCLING_VARIANT=cpu`: run Docling on the CPU instead of the GPU (`docker-compose.docling-cpu.yml`).
@@ -47,6 +51,8 @@
 - README rewritten: requirements, quick start, configuration, operations, troubleshooting, security and runtime model, evaluation method.
 - Version set to 1.1.0 in the API and UI.
 - Removed unused pypdf dependency.
+- Security: react-router-dom 6.30.6, vite 5 → 6.4.x (later 6.4.5) and postcss 8.5.28 with related tooling, for security advisories.
+- Python dependencies pinned to tested versions.
 
 ### Known limitations
 - Re-ingesting a document replaces its chunks. Chunk-level version history is not retained: a previous version's chunks are removed, not marked superseded, so the superseded-chunk filter in retrieval has no effect for them.
@@ -57,10 +63,11 @@
 - **Stored EMA publication dates and chunk document types written by earlier versions are wrong.** The type fix applies at ingestion, but the date fix does not: re-ingestion reads `publication_date` from the archive sidecar, which still holds the swapped value. Repair the dates first, then reset:
 
   ```bash
-  # 1. dates — dry run, then apply (needs a backup dir)
+  # 1. dates — dry run, then apply (needs a backup dir; inside the container it is
+  #    /data/backups, which is ./data/api/backups on the host)
   docker exec ownedpulse-api python3 /opt/scripts/maintenance/fix_ema_publication_dates.py
   docker exec ownedpulse-api python3 /opt/scripts/maintenance/fix_ema_publication_dates.py \
-      --apply --backup-dir /opt/ownedpulse/backups/date-fix-$(date +%Y%m%dT%H%M%S)
+      --apply --backup-dir /data/backups/date-fix-$(date +%Y%m%dT%H%M%S)
   ```
 
   Then reset the corpus and run Initial Load, which rebuilds the chunk payloads from the corrected sidecars:
@@ -68,9 +75,7 @@
   ```bash
   curl -X POST http://localhost:8001/api/admin/reset-corpus \
        -H 'Content-Type: application/json' -d '{"confirm": true}'
-  # then Initial Load from the UI, or:
-  curl -X POST http://localhost:8001/api/bootstrap/run \
-       -H 'Content-Type: application/json' -d '{}'
+  # then run Initial Load from the UI
   ```
 
   The reset empties the vector store and run history and re-registers the base corpus; downloaded documents are kept, and the next Initial Load re-ingests everything because an empty Qdrant collection is never treated as already ingested. See **Resetting the corpus** in the README.
