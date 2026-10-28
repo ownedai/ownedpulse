@@ -413,7 +413,7 @@ export default function CorpusPage() {
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--doc-text-2)' }}>
                   {docTypeLabel(doc)}
                 </td>
-                <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</td>
+                <td style={{ fontFamily: 'var(--mono)', fontSize: 11, overflowWrap: 'anywhere' }}>{doc.document_version && doc.document_version !== '1.0' ? doc.document_version : '—'}</td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                   {isFutureDate(doc.publication_date) ? (
                     <Tooltip tip="Future effective date — this document is not yet in force">
