@@ -3,16 +3,19 @@
 ## 1.1.1 (2026-11-19)
 
 ### Changed
-- PDF export: source numbers are the same as in the screen and JSON export. Sources are no longer renumbered in the PDF, and [N] markers in the answer are no longer rewritten. Cited sources are still listed first.
+- Source numbers: on the screen, in the PDF and in the JSON export, a source keeps its original citation index. v1.1.0 renumbered sources (cited first, from 1) on the screen and in the PDF, so those numbers did not match the JSON export. Cited sources are still listed first.
 - History audit-log PDF: cited sources keep their original numbers, as in the query export.
-- Citation markers: [N-M] (ends at most three apart), [N(x)] and [N, M] are shown as plain source numbers when the number is a valid source. Any other form stays as written. The rule is the same in the screen view and the PDF. Display only: stored answers and the cited flags are unchanged.
-- Clause numbers for EU GMP Annex 11, Annex 15, Annex 22, ICH Q10 and the EMA reflection paper are taken from the start of the chunk text. When the text has none, the first numbered heading is used. Inside reference lists the heading is used. Where text and heading disagree elsewhere, the text value is used and the conflict is counted. The base corpus has not been re-ingested for this change.
+- Citation markers: [N-M] (ends at most three apart), [N(x)] and [N, M] are shown as plain source numbers when the number is a valid source. Any other form stays as written. The rule is the same on the screen and in the PDF. Display only: stored answers and the cited flags are unchanged.
+- Clause numbers for EU GMP Annex 11, Annex 15, Annex 22, ICH Q10 and the EMA reflection paper are taken from the start of the chunk text. When the text has none, the first numbered heading is used. Inside reference lists the heading is used. A table-of-contents line, a number followed by a month name ("9 September 2024") and a numbered entry inside a reference list are not read as clauses. Where text and heading disagree elsewhere, the text value is used and the conflict is counted.
 - Answers that refuse (for example "The retrieved context does not contain sufficient information …") and have no [N] marker mark no source as cited.
 
 ### Known limitations
 - Answers with no [N] marker that are not refusals still mark the top three retrieved sources as cited.
-- The clause rule can read a date or a number that starts a sentence as a clause: "9 September 2024 …" is read as clause 9. Carry-forward during ingest can pass a clause on to later chunks.
-- Clause numbers in the existing base corpus are unchanged until the base documents are re-ingested.
+- clause_id is the clause at the start of the chunk. A chunk can contain later clauses: EU GMP Annex 11 section 9 ("Audit Trails") sits inside the chunk labelled 8.2.
+- Carry-forward during ingest can pass a clause on to later chunks that have none of their own.
+- The clause rule can read a number that starts a sentence as a clause.
+- Five base documents have no clause parser: ICH-Q9, ICH-Q9-R1, FDA-CSA-2025, FDA-CSV-2003 and FDA-Part11-Scope-2003. Their clause_id is empty.
+- The base corpus has not been re-ingested for this change. On the test base corpus only EU-GMP-Annex11 has been re-ingested; clause values of the other base documents in Qdrant are unchanged until they are re-ingested.
 - Wrong clause labels and wrong-document numbers in model answers are not corrected (display only).
 
 ## 1.1.0 (2026-10)

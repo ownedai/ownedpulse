@@ -381,9 +381,9 @@ def generate_query_export_pdf(
     classifier    = query_response.get("classifier") or "—"
     timestamp_iso = query_response.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    # Source numbers are the original citation indices, the same numbers the UI
-    # and the JSON export use. Cited sources are listed first, then uncited, but
-    # each keeps its original index; the answer text is not rewritten.
+    # Source numbers are the original citation indices, the same numbers the JSON export
+    # uses and the screen uses (ui/src/utils/citationDisplay.js). Cited sources are listed
+    # first, then uncited, but each keeps its original index; the answer text is not rewritten.
     cited_chunks = sorted(
         [dict(c) for c in citations if c.get("cited_by_llm")],
         key=lambda c: c.get("index", 0)
