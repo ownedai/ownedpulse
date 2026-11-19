@@ -380,44 +380,16 @@ def generate_query_export_pdf(
     classifier    = query_response.get("classifier") or "—"
     timestamp_iso = query_response.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    # Normalize citation numbering: sequential 1..N cited, N+1..M uncited
-    # so screen and PDF show identical ordered numbering.
-    raw_cited   = sorted(
-        [c for c in citations if c.get("cited_by_llm")],
+    # Source numbers are the original citation indices, the same numbers the UI
+    # and the JSON export use. Cited sources are listed first, then uncited, but
+    # each keeps its original index; the answer text is not rewritten.
+    cited_chunks = sorted(
+        [dict(c) for c in citations if c.get("cited_by_llm")],
         key=lambda c: c.get("index", 0)
     )
-    raw_uncited = sorted(
-        [c for c in citations if not c.get("cited_by_llm")],
+    uncited_chunks = sorted(
+        [dict(c) for c in citations if not c.get("cited_by_llm")],
         key=lambda c: c.get("index", 0)
-    )
-    # Build old-index → new-index map
-    remap = {}
-    for i, c in enumerate(raw_cited + raw_uncited):
-        remap[c.get("index")] = i + 1
-    # Renumber citations
-    cited_chunks = []
-    for c in raw_cited:
-        c = dict(c)
-        c["index"] = remap[c.get("index")]
-        cited_chunks.append(c)
-    uncited_chunks = []
-    for c in raw_uncited:
-        c = dict(c)
-        c["index"] = remap[c.get("index")]
-        uncited_chunks.append(c)
-    # Remap [N] and [N, M, ...] markers in answer text
-    import re as _re
-    def _remap_nums(m):
-        nums = m.group(1)
-        remapped = ', '.join(
-            str(remap.get(int(n.strip()), n.strip()))
-            for n in nums.split(',')
-        )
-        return f'[{remapped}]'
-    answer = _re.sub(
-        r'\[(\d+(?:\s*,\s*\d+)*)\]',
-        _remap_nums,
-        answer
     )
 
     routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
@@ -705,7 +677,7 @@ def generate_query_export_pdf(
                 rc.circle(bx, head_y, 9.0, fill=1, stroke=0)
                 rc.setFillColorRGB(*C_WHITE)
                 rc.setFont("Inter-Bold", 8.0)
-                rc.drawCentredString(bx, head_y - 2.8, str(idx + 1))
+                rc.drawCentredString(bx, head_y - 2.8, str(chunk.get("index", idx + 1)))
                 rc.restoreState()
 
                 _text(rc, MARGIN_X + 30, head_y - 3, title_c, "Inter-SemiBold", 10.5, C_INK)
@@ -849,7 +821,7 @@ def generate_query_export_pdf(
                 rc.circle(MARGIN_X + 14, uc_head_y, 9.0, fill=1, stroke=0)
                 rc.setFillColorRGB(*C_WHITE)
                 rc.setFont("Inter-Bold", 8.0)
-                rc.drawCentredString(MARGIN_X + 14, uc_head_y - 2.8, str(idx + 1))
+                rc.drawCentredString(MARGIN_X + 14, uc_head_y - 2.8, str(chunk.get("index", idx + 1)))
                 rc.restoreState()
                 _text(rc, MARGIN_X + 30, uc_head_y - 3, uc_title, "Inter-SemiBold", 10.5, C_INK_SEC)
 
