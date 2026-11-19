@@ -25,18 +25,19 @@ def _clause_from_part11(headings, prefix, chunk_text=""):
     return None
 
 
-def _from_annex(h: list, p: str, **kwargs) -> str:
-    """EU GMP Annex / ICH style: '4.8 Audit Trails' -> prefix + '4.8'
-    Scans all headings top-to-bottom — sub-headings are often text-only,
-    numbered heading may appear earlier in the hierarchy.
-    """
-    if not h:
-        return None
-    for heading in h:
-        m = _RE_ANNEX.match(heading)
-        if m:
-            return f'{p}{m.group(1)}'
-    return None
+# Clause number at the start of the chunk text: '9. Audit Trails', '8.2 For critical ...'.
+# Up to two digits per component; the full stop after the number is optional; a
+# capital letter must follow. '2011 revision' and '1 000 units' do not match.
+_RE_CLAUSE_START = re.compile(r'^\s*(\d{1,2}(?:\.\d{1,2})*)\.?\s+[A-Z]')
+
+
+def _from_annex(h: list, p: str, chunk_text: str = "", **kwargs) -> str:
+    """EU GMP Annex / ICH style. Set only when the chunk text clearly begins with a
+    clause number ('9. Audit Trails' -> prefix + '9'); otherwise None. The heading
+    list is not read, so a number that appears only in a heading does not set the
+    clause. Chunks that are not clause starts stay null (K3 decision; D23)."""
+    m = _RE_CLAUSE_START.match(chunk_text or "")
+    return f'{p}{m.group(1)}' if m else None
 
 
 def _from_part11(h: list, p: str) -> str:
