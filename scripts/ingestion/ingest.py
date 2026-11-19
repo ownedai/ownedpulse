@@ -14,7 +14,7 @@ from .registry import load_metadata, update_ingestion_status, pg_conn
 from .parsing import parse_document
 from .chunking import chunk_document, make_chunk_id
 from .extraction import (
-    extract_clause_id, extract_cross_refs,
+    extract_clause_id, extract_cross_refs, forward_clause_ids,
     compute_char_offsets, extract_provenance,
 )
 from .payload import build_payload
@@ -166,13 +166,7 @@ def ingest_document(doc_id: str, chunker_version: str = 'v0.1.0',
 
     # Carry-forward clause_id for sub-heading chunks (Annex 15 pattern)
         # Sub-sections with text-only headings inherit nearest preceding numbered clause
-        last_clause = None
-        clause_ids_forward = []
-        for chunk in chunks:
-            cid = extract_clause_id(chunk, meta)
-            if cid:
-                last_clause = cid
-            clause_ids_forward.append(cid if cid else last_clause)
+        clause_ids_forward = forward_clause_ids(chunks, meta)
 
 
         # C9 — Supersede old chunks BEFORE upserting new ones

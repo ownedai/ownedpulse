@@ -52,6 +52,21 @@ def _is_toc_like(text: str, lead_end: int) -> bool:
     return bool(_RE_SECOND_CLAUSE.search(head[lead_end:]))
 
 
+def _first_clause_line(text: str):
+    """First line of the chunk text that starts with a clause number and a capitalised title
+    ('1. Risk Management' -> '1'). The date and TOC rules apply to each candidate line."""
+    for line in text.splitlines():
+        m = _RE_CLAUSE_START.match(line)
+        if not m:
+            continue
+        if _RE_MONTH_AFTER_NUMBER.match(line):
+            continue
+        if _is_toc_like(line, m.end(1)):
+            continue
+        return m.group(1)
+    return None
+
+
 def annex_clause(h: list, p: str, chunk_text: str = ""):
     """EU GMP Annex / ICH style clause for one chunk. Returns (value, source, conflict).
 
@@ -148,6 +163,35 @@ def extract_clause_id(chunk, meta: dict) -> str:
     h = list(getattr(chunk.meta, 'headings', []) or [])
     parser = _DISPATCH.get(meta['document_id'])
     return parser(h, meta.get('clause_id_prefix', ''), chunk_text=getattr(chunk, 'text', '')) if parser else None
+
+
+def extract_clause_line_fallback(chunk, meta: dict):
+    """K3 line rule. For annex-family documents only: a chunk that does not start with a clause
+    number takes the first numbered clause line inside its text ('1. Risk Management' -> '1').
+    Used by forward_clause_ids only, after the own parser and the carried value give nothing."""
+    if _DISPATCH.get(meta['document_id']) is not _from_annex:
+        return None
+    text = getattr(chunk, 'text', '') or ''
+    if _RE_CLAUSE_START.match(text):
+        return None
+    return _first_clause_line(text)
+
+
+def forward_clause_ids(chunks, meta: dict) -> list:
+    """clause_id per chunk, in order: the own clause, else the last clause carried forward,
+    else (only before any clause in the document) the K3 line rule."""
+    last = None
+    out = []
+    for chunk in chunks:
+        cid = extract_clause_id(chunk, meta)
+        if cid:
+            last = cid
+        elif last is None:
+            cid = extract_clause_line_fallback(chunk, meta)
+            if cid:
+                last = cid
+        out.append(cid if cid else last)
+    return out
 
 
 # ── C5: Cross-reference extraction ───────────────────────────────────────────
