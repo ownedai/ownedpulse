@@ -82,3 +82,30 @@ def test_extract_clause_id_uses_text_for_annex_documents():
     assert extract_clause_id(chunk, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) == "9"
     chunk2 = _Chunk("Audit trails should be ...", headings=["8.2 Something"])
     assert extract_clause_id(chunk2, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) == "8.2"
+
+
+# ── K3 conflict rule: reference lists ─────────────────────────────────────────
+# Synthetic cases in the form of the EMA-Reflection reference-list chunks (no document text).
+
+
+def test_reference_list_entries_take_heading_value():
+    for text in ["19. Smith J, Title of a paper", "5. Jones K, Another paper", "9. Lee M, Third paper"]:
+        value, source, conflict = annex_clause(["6. References"], "", chunk_text=text)
+        assert (value, source, conflict) == ("6", "heading", False), text
+
+
+def test_reference_title_variants():
+    assert annex_clause(["7. Bibliography"], "", chunk_text="3. X")[0] == "7"
+    assert annex_clause(["8. Reference list"], "", chunk_text="3. X")[0] == "8"
+
+
+def test_reference_title_must_start_the_title():
+    # 'Cross references' is not a reference list: text-first applies, and the conflict is counted.
+    value, source, conflict = annex_clause(["6. Cross references in the text"], "", chunk_text="9. Audit Trails")
+    assert (value, source, conflict) == ("9", "text", True)
+
+
+def test_non_reference_conflict_text_wins_synthetic():
+    # SYNTHETIC (labelled): a non-reference heading and a text number that differ.
+    value, source, conflict = annex_clause(["6. Methods"], "", chunk_text="9. Audit Trails")
+    assert (value, source, conflict) == ("9", "text", True)

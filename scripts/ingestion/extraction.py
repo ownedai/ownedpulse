@@ -29,6 +29,9 @@ def _clause_from_part11(headings, prefix, chunk_text=""):
 # Up to two digits per component; the full stop after the number is optional; a
 # capital letter must follow. '2011 revision' and '1 000 units' do not match.
 _RE_CLAUSE_START = re.compile(r'^\s*(\d{1,2}(?:\.\d{1,2})*)\.?\s+[A-Z]')
+# Heading titles of reference lists. Entries under such a heading are numbered, but the
+# number is an entry number, not a clause (K3 conflict rule).
+_RE_REFERENCES_TITLE = re.compile(r'^(references?|bibliography)\b', re.IGNORECASE)
 
 
 def annex_clause(h: list, p: str, chunk_text: str = ""):
@@ -43,11 +46,17 @@ def annex_clause(h: list, p: str, chunk_text: str = ""):
     m_text = _RE_CLAUSE_START.match(chunk_text or "")
     text_num = m_text.group(1) if m_text else None
     head_num = None
+    head_title = ""
     for heading in h or []:
         m = _RE_ANNEX.match(heading)
         if m:
             head_num = m.group(1)
+            head_title = heading[m.end():].lstrip(" .:-\t")
             break
+    # K3 conflict rule: inside a reference list the text number is an entry number,
+    # so the numbered heading decides (text rule skipped for this chunk).
+    if head_num and _RE_REFERENCES_TITLE.match(head_title):
+        return f'{p}{head_num}', 'heading', False
     conflict = bool(text_num and head_num and text_num != head_num)
     if text_num:
         return f'{p}{text_num}', 'text', conflict
