@@ -109,3 +109,34 @@ def test_non_reference_conflict_text_wins_synthetic():
     # SYNTHETIC (labelled): a non-reference heading and a text number that differ.
     value, source, conflict = annex_clause(["6. Methods"], "", chunk_text="9. Audit Trails")
     assert (value, source, conflict) == ("9", "text", True)
+
+
+# ── K3 date rule: a number followed by a month name is not a clause ──────────
+
+
+def test_date_at_chunk_start_is_not_a_clause():
+    # Real chunk start form (EMA-Reflection chunk 0): '9 September 2024 …'.
+    assert annex_clause([], "", chunk_text="9 September 2024 EMA/CHMP/CVMP/83833/2023 Committee") == (None, None, False)
+
+
+def test_date_falls_through_to_heading_fallback():
+    value, source, conflict = annex_clause(["8.2 Something"], "", chunk_text="9 September 2024 Committee")
+    assert (value, source, conflict) == ("8.2", "heading", False)
+
+
+def test_abbreviated_month_is_a_date():
+    assert annex_clause([], "", chunk_text="9 Sep 2024 Committee")[0] is None
+    assert annex_clause([], "", chunk_text="3 Jan 2025 Committee")[0] is None
+
+
+def test_month_word_inside_a_longer_word_is_still_a_clause():
+    # 'Mayor' is not 'May'.
+    assert annex_clause([], "", chunk_text="9 Mayor functions are described")[0] == "9"
+
+
+def test_real_two_component_clause_unchanged():
+    assert annex_clause([], "", chunk_text="12.2 Text of the requirement ...")[0] == "12.2"
+
+
+def test_single_component_with_full_stop_unchanged():
+    assert annex_clause([], "", chunk_text="9. Text of the requirement ...")[0] == "9"

@@ -32,6 +32,11 @@ _RE_CLAUSE_START = re.compile(r'^\s*(\d{1,2}(?:\.\d{1,2})*)\.?\s+[A-Z]')
 # Heading titles of reference lists. Entries under such a heading are numbered, but the
 # number is an entry number, not a clause (K3 conflict rule).
 _RE_REFERENCES_TITLE = re.compile(r'^(references?|bibliography)\b', re.IGNORECASE)
+# A number followed by a month name (full or abbreviated) is read as a date, not a clause.
+_RE_MONTH_AFTER_NUMBER = re.compile(
+    r'^\s*\d{1,2}\.?\s+(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b',
+    re.IGNORECASE,
+)
 
 
 def annex_clause(h: list, p: str, chunk_text: str = ""):
@@ -45,6 +50,9 @@ def annex_clause(h: list, p: str, chunk_text: str = ""):
     """
     m_text = _RE_CLAUSE_START.match(chunk_text or "")
     text_num = m_text.group(1) if m_text else None
+    # K3 date rule: a leading number followed by a month name ('9 September 2024') is a date.
+    if text_num and _RE_MONTH_AFTER_NUMBER.match(chunk_text or ""):
+        text_num = None
     head_num = None
     head_title = ""
     for heading in h or []:
