@@ -1,0 +1,126 @@
+{
+  "note": "Verbatim copies from c1_payloads_base.jsonl (sha256 ad730984eda6664fee9e7fb23f62927ecfaf6496d3a34e1a4cb85ccc716c9b08). Labels are recorded.",
+  "chunks": [
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 2,
+      "chunk_id": "e5fa4e2f-59be-b2cb-0196-817d661bed1d",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "1. Introduction ............................................................................................ 3\n2. Discussion ............................................................................................... 3\n2.1. Definitions and scope ............................................................................................ 3\n2.2. General considerations .......................................................................................... 4",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 3,
+      "chunk_id": "7cad066c-e36e-869e-47cb-e730917a6f87",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "2.3. AI in the lifecycle of medicinal products ................................................................... 4\n2.3.1. Drug discovery .................................................................................................. 5\n2.3.2. Non-clinical development .................................................................................... 5\n2.3.3. Clinical trials ..................................................................................................... 5",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 4,
+      "chunk_id": "35289572-c96f-ed20-962c-0aa518c51847",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "2.3.4. Precision medicine ............................................................................................. 7\n2.3.5. Product information ........................................................................................... 7\n2.3.6. Manufacturing ................................................................................................... 7",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 5,
+      "chunk_id": "3af6e865-53ff-5576-046d-5817f35ea855",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "2.3.7. Post-authorisation phase .................................................................................... 7\n2.4. Regulatory interactions ......................................................................................... 8\n2.5. Technical aspects ................................................................................................. 8\n2.5.1. Data acquisition and augmentation ...................................................................... 8",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 6,
+      "chunk_id": "46ddcdf5-2bcc-ed9c-08e8-f8dc2706103b",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "2.5.2. Training, validation, and test datasets .................................................................. 9\n2.5.3. Model development ............................................................................................ 9\n2.5.4. Performance assessment .................................................................................. 10\n2.5.5. Interpretability and explainability ...................................................................... 10",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 7,
+      "chunk_id": "58b01938-965a-966e-4800-47faadc16644",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "2.5.6. Model deployment ........................................................................................... 10\n2.6. Governance ....................................................................................................... 11\n2.7. Integrity aspects and data protection .................................................................... 11\n2.8. Ethical aspects and trustworthy AI ........................................................................ 12",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 8,
+      "chunk_id": "f3a59e6c-2bd2-f5b4-b1fa-6acddbd8ea95",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "3. Conclusion ............................................................................................. 12\n4. Glossary ................................................................................................ 13\n5. Related methodology guidance.............................................................. 14\n5.1. Guidance concerning human medicines ................................................................. 14",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EMA-Reflection-AI",
+      "chunk_index": 9,
+      "chunk_id": "b640ba2e-9d4b-5388-abde-c64e3e1d32ed",
+      "section_path": [
+        "Table of contents"
+      ],
+      "chunk_text": "5.2. Guidance concerning veterinary medicines ............................................................ 15\n6. References ............................................................................................ 16",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded TOC chunk (must give None: headings not numbered)",
+      "doc": "EU-GMP-Annex22",
+      "chunk_index": 0,
+      "chunk_id": "13ce8bf2-03a9-def4-a1d8-ed2bb45a7014",
+      "section_path": [
+        "Document map 3"
+      ],
+      "chunk_text": "1. Scope\n2. Principles\n3. Intended Use\n4. Acceptance Criteria\n5. Test Data\n6. Test Data Independency\n7. Test Execution\n8. Explainability\n9. Confidence\n10. Operation\n11. Glossary",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded real clause (must be unchanged)",
+      "doc": "EU-GMP-Annex11",
+      "chunk_index": 2,
+      "chunk_id": "51adcdb4-ea37-aae1-8421-3c670f50977c",
+      "section_path": [
+        "Annex 11: Computerised Systems"
+      ],
+      "chunk_text": "3.1 When third parties (e.g. suppliers, service providers) are used e.g. to provide, install, configure, integrate, validate, maintain (e.g. via remote access), modify or retain a computerised system or related service or for data processing, formal agreements must exist between the manufacturer and any third parties, and these agreements should include clear statements of the responsibilities of the third party. IT-departments should be considered analogous.",
+      "stored_clause_id": null
+    },
+    {
+      "label": "recorded real clause (must be unchanged)",
+      "doc": "EU-GMP-Annex11",
+      "chunk_index": 21,
+      "chunk_id": "43793210-baba-c228-a9f0-ff7296246895",
+      "section_path": [
+        "Annex 11: Computerised Systems"
+      ],
+      "chunk_text": "12.4 Management systems for data and for documents should be designed to record the identity of operators entering, changing, confirming or deleting data including date and time.\n13. Incident Management\nAll incidents, not only system failures and data errors, should be reported and assessed. The root cause of a critical incident should be identified and should form the basis of corrective and preventive actions.\n14. Electronic Signature\nElectronic records may be signed electronically. Electronic signatures are expected to:\n- a. have the same impact as hand-written signatures within the boundaries of the\ncompany,\n- b. be permanently linked to their respective record,\n- c. include the time and date that they were applied.",
+      "stored_clause_id": null
+    }
+  ]
+}

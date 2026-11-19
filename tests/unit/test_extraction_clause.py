@@ -25,51 +25,51 @@ class _Chunk:
 
 
 def test_annex11_section9_text_start():
-    assert _from_annex([], "", chunk_text="9. Audit Trails\nThe audit trail should record ...") == "9"
+    assert _from_annex([], "", chunk_text="9. Audit Trails\nThe audit trail should record (text)") == "9"
 
 
 def test_two_component_clause_start():
-    assert _from_annex([], "", chunk_text="8.2 For critical systems, the audit trail ...") == "8.2"
+    assert _from_annex([], "", chunk_text="8.2 For critical systems, the audit trail (text)") == "8.2"
 
 
 def test_prefix_is_applied():
-    assert _from_annex([], "X-", chunk_text="4.8 Audit trails are ...") == "X-4.8"
+    assert _from_annex([], "X-", chunk_text="4.8 Audit trails are (text)") == "X-4.8"
 
 
 def test_body_text_without_number_is_null():
-    assert _from_annex([], "", chunk_text="Audit trails should be considered based on risk ...") is None
+    assert _from_annex([], "", chunk_text="Audit trails should be considered based on risk (text)") is None
 
 
 def test_four_digit_year_is_not_a_clause():
-    assert _from_annex([], "", chunk_text="2011 revision of the annex ...") is None
+    assert _from_annex([], "", chunk_text="2011 revision of the annex (text)") is None
 
 
 def test_number_followed_by_digits_is_not_a_clause():
-    assert _from_annex([], "", chunk_text="1 000 units were recorded ...") is None
+    assert _from_annex([], "", chunk_text="1 000 units were recorded (text)") is None
 
 
 def test_heading_fallback_when_text_has_no_number():
     # Amendment (K3): with no clause number at the start of the text, the first
     # numbered heading is used, as the old parser did.
-    assert _from_annex(["8.2 Something"], "", chunk_text="Audit trails should be ...") == "8.2"
+    assert _from_annex(["8.2 Something"], "", chunk_text="Audit trails should be (text)") == "8.2"
 
 
 def test_heading_fallback_skips_non_numbered_headings():
-    assert _from_annex(["Annex 11", "Audit trails"], "", chunk_text="Audit trails should be ...") is None
+    assert _from_annex(["Annex 11", "Audit trails"], "", chunk_text="Audit trails should be (text)") is None
 
 
 def test_conflict_text_wins_and_is_counted():
-    value, source, conflict = annex_clause(["8.2 Something"], "", chunk_text="9. Audit Trails\nThe audit trail ...")
+    value, source, conflict = annex_clause(["8.2 Something"], "", chunk_text="9. Audit Trails\nThe audit trail (text)")
     assert (value, source, conflict) == ("9", "text", True)
 
 
 def test_agreement_is_not_a_conflict():
-    value, source, conflict = annex_clause(["9 Audit Trails"], "", chunk_text="9. Audit Trails\nThe audit trail ...")
+    value, source, conflict = annex_clause(["9 Audit Trails"], "", chunk_text="9. Audit Trails\nThe audit trail (text)")
     assert (value, source, conflict) == ("9", "text", False)
 
 
 def test_heading_only_source_has_no_conflict():
-    assert annex_clause(["8.2 Something"], "", chunk_text="Audit trails ...") == ("8.2", "heading", False)
+    assert annex_clause(["8.2 Something"], "", chunk_text="Audit trails (text)") == ("8.2", "heading", False)
 
 
 def test_empty_text_uses_heading_and_empty_heading_is_null():
@@ -78,9 +78,9 @@ def test_empty_text_uses_heading_and_empty_heading_is_null():
 
 
 def test_extract_clause_id_uses_text_for_annex_documents():
-    chunk = _Chunk("9. Audit Trails\nThe audit trail ...", headings=["Annex 11"])
+    chunk = _Chunk("9. Audit Trails\nThe audit trail (text)", headings=["Annex 11"])
     assert extract_clause_id(chunk, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) == "9"
-    chunk2 = _Chunk("Audit trails should be ...", headings=["8.2 Something"])
+    chunk2 = _Chunk("Audit trails should be (text)", headings=["8.2 Something"])
     assert extract_clause_id(chunk2, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) == "8.2"
 
 
@@ -135,8 +135,8 @@ def test_month_word_inside_a_longer_word_is_still_a_clause():
 
 
 def test_real_two_component_clause_unchanged():
-    assert annex_clause([], "", chunk_text="12.2 Text of the requirement ...")[0] == "12.2"
+    assert annex_clause([], "", chunk_text="12.2 Text of the requirement (text)")[0] == "12.2"
 
 
 def test_single_component_with_full_stop_unchanged():
-    assert annex_clause([], "", chunk_text="9. Text of the requirement ...")[0] == "9"
+    assert annex_clause([], "", chunk_text="9. Text of the requirement (text)")[0] == "9"

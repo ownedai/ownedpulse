@@ -38,6 +38,19 @@ _RE_MONTH_AFTER_NUMBER = re.compile(
     re.IGNORECASE,
 )
 
+# Table-of-contents lines: a dot-leader run, or a second clause-like token, in the first 120 characters.
+_TOC_WINDOW = 120
+_RE_DOT_LEADER = re.compile(r'\.{3,}|\.(?:\s\.){2,}')
+_RE_SECOND_CLAUSE = re.compile(r'\s\d{1,2}\.\s+[A-Z]')
+
+
+def _is_toc_like(text: str, lead_end: int) -> bool:
+    """True when the first 120 characters look like a table-of-contents line."""
+    head = (text or "")[:_TOC_WINDOW]
+    if _RE_DOT_LEADER.search(head):
+        return True
+    return bool(_RE_SECOND_CLAUSE.search(head[lead_end:]))
+
 
 def annex_clause(h: list, p: str, chunk_text: str = ""):
     """EU GMP Annex / ICH style clause for one chunk. Returns (value, source, conflict).
@@ -52,6 +65,9 @@ def annex_clause(h: list, p: str, chunk_text: str = ""):
     text_num = m_text.group(1) if m_text else None
     # K3 date rule: a leading number followed by a month name ('9 September 2024') is a date.
     if text_num and _RE_MONTH_AFTER_NUMBER.match(chunk_text or ""):
+        text_num = None
+    # K3 TOC rule: a table-of-contents line is not a clause; the heading fallback applies.
+    if text_num and _is_toc_like(chunk_text or "", m_text.end(1)):
         text_num = None
     head_num = None
     head_title = ""
