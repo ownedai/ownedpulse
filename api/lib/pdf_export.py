@@ -14,6 +14,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from lib.citation_markers import normalise_markers
 from reportlab.lib.pagesizes import letter
 
 from reportlab.pdfbase import pdfmetrics
@@ -391,6 +392,9 @@ def generate_query_export_pdf(
         [dict(c) for c in citations if not c.get("cited_by_llm")],
         key=lambda c: c.get("index", 0)
     )
+
+    # Display rule for [N-M], [N(x)], [N, M] markers (K12); numbers stay the original indices.
+    answer = normalise_markers(answer, {c.get("index") for c in citations})
 
     routing_label = "Metadata lookup" if routing_path == "METADATA" else "Semantic search"
 

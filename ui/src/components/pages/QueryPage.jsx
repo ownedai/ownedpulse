@@ -10,6 +10,7 @@ import useQuery from '../../hooks/useQuery';
 import { exportQuery, getPdfPage, getQueryTrace, getSystemPrompt, getChunkProvenance } from '../../api/client';
 import { formatDate, formatDateTime } from '../../dateFormat';
 import { DOCTYPE_LABEL, docTypeLabel } from '../../lib/doctype';
+import { normaliseMarkers } from '../../utils/citationMarkers';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ const LEGAL_RE = /legal interpretation|qualified regulatory professional|not a s
 
 function renderAnswer(text, selectedChunkId, citations, onCitationClick) {
   if (!text) return { nodes: null, legalNote: null };
-  const normalised = text
+  const normalised = normaliseMarkers(text, (citations || []).map((c) => c.index))
     .replace(/\[(\d+)\.\d+\]/g, (_, n) => `[${n}]`)
     .replace(/\n{1,2}(\[\d+(?:\s*,\s*\d+)*\])\n([.,])/g, ' $1$2')
     .replace(/(\[\d+(?:\s*,\s*\d+)*\])\s*\./g, '$1.')

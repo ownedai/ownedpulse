@@ -1,0 +1,116 @@
+[
+  {
+    "name": "plain single",
+    "input": "Text [12] end.",
+    "valid_max": 52,
+    "expected": "Text [12] end."
+  },
+  {
+    "name": "range expands",
+    "input": "see [36-37].",
+    "valid_max": 52,
+    "expected": "see [36][37]."
+  },
+  {
+    "name": "range of three",
+    "input": "[5-8]",
+    "valid_max": 52,
+    "expected": "[5][6][7][8]"
+  },
+  {
+    "name": "range of four unchanged",
+    "input": "[5-9]",
+    "valid_max": 52,
+    "expected": "[5-9]"
+  },
+  {
+    "name": "range too wide",
+    "input": "see [36-40].",
+    "valid_max": 52,
+    "expected": "see [36-40]."
+  },
+  {
+    "name": "range reversed",
+    "input": "see [37-36].",
+    "valid_max": 52,
+    "expected": "see [37-36]."
+  },
+  {
+    "name": "range end invalid",
+    "input": "see [50-53].",
+    "valid_max": 52,
+    "expected": "see [50-53]."
+  },
+  {
+    "name": "range with clause suffix unchanged",
+    "input": "see [36(e)-37].",
+    "valid_max": 52,
+    "expected": "see [36(e)-37]."
+  },
+  {
+    "name": "clause suffix dropped",
+    "input": "rule [36(g)].",
+    "valid_max": 52,
+    "expected": "rule [36]."
+  },
+  {
+    "name": "group with clauses",
+    "input": "[36(e), 37(e)]",
+    "valid_max": 52,
+    "expected": "[36][37]"
+  },
+  {
+    "name": "group plain",
+    "input": "[12, 16]",
+    "valid_max": 52,
+    "expected": "[12][16]"
+  },
+  {
+    "name": "group with invalid item unchanged",
+    "input": "[12, 99]",
+    "valid_max": 52,
+    "expected": "[12, 99]"
+  },
+  {
+    "name": "leading integer invalid unchanged",
+    "input": "[99(x)]",
+    "valid_max": 52,
+    "expected": "[99(x)]"
+  },
+  {
+    "name": "dot form unchanged",
+    "input": "clause [11.10(d)].",
+    "valid_max": 52,
+    "expected": "clause [11.10(d)]."
+  },
+  {
+    "name": "dot form with plain number unchanged",
+    "input": "[11.300]",
+    "valid_max": 52,
+    "expected": "[11.300]"
+  },
+  {
+    "name": "markdown link unchanged",
+    "input": "[12](/corpus)",
+    "valid_max": 52,
+    "expected": "[12](/corpus)"
+  },
+  {
+    "name": "bracketed words unchanged",
+    "input": "[see above]",
+    "valid_max": 52,
+    "expected": "[see above]"
+  },
+  {
+    "name": "empty group unchanged",
+    "input": "x [] y",
+    "valid_max": 52,
+    "expected": "x [] y"
+  },
+  {
+    "name": "no valid sources",
+    "input": "[1]",
+    "valid_max": 0,
+    "expected": "[1]"
+  }
+]

@@ -59,11 +59,17 @@ def _cards(text):
 
 
 def test_answer_markers_equal_json():
+    """PDF markers equal the markers of the JSON answer after the display rule (K12).
+
+    The display rule turns e.g. [36-37] into [36][37]; the numbers must still be
+    the JSON numbers, which is what this checks."""
+    from lib.citation_markers import normalise_markers
     with open(FIXTURE, encoding="utf-8") as f:
         response = json.load(f)
     text = _pdf_text(response)
+    valid = [c["index"] for c in response["citations"]]
     pdf_markers = set(int(m) for m in re.findall(r"\[(\d+)\]", _answer_section(text)))
-    json_markers = set(int(m) for m in re.findall(r"\[(\d+)\]", response["answer"]))
+    json_markers = set(int(m) for m in re.findall(r"\[(\d+)\]", normalise_markers(response["answer"], valid)))
     assert pdf_markers == json_markers, "PDF markers %s != JSON markers %s" % (sorted(pdf_markers), sorted(json_markers))
 
 

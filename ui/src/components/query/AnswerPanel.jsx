@@ -1,3 +1,4 @@
+import { normaliseMarkers } from '../../utils/citationMarkers';
 import { Link } from 'react-router-dom';
 
 function renderInline(text, activeCitation, onCitationClick) {
@@ -50,10 +51,10 @@ function renderInline(text, activeCitation, onCitationClick) {
   return parts;
 }
 
-export default function AnswerPanel({ answer, onCitationClick, activeCitation }) {
+export default function AnswerPanel({ answer, onCitationClick, activeCitation, citations }) {
   if (!answer) return null;
 
-  const normalised = answer
+  const normalised = normaliseMarkers(answer, (citations || []).map((c) => c.index))
     .replace(/\n{1,2}(\[\d+\])\n([.,])/g, ' $1$2')
     .replace(/(\[\d+\])\s*\./g, '$1.')
     .replace(/\s*\.\s*(\[\d+\])/g, '$1.');

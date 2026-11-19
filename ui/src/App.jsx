@@ -162,6 +162,7 @@ function MainPage() {
               <>
                 <AnswerPanel
                   answer={result.answer}
+                  citations={result.citations}
                   activeCitation={activeCitation}
                   onCitationClick={(n) => setActiveCitation(n === activeCitation ? null : n)}
                 />
