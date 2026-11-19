@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 (2026-11-19)
+
+### Changed
+- PDF export: source numbers are the same as in the screen and JSON export. Sources are no longer renumbered in the PDF, and [N] markers in the answer are no longer rewritten. Cited sources are still listed first.
+- Citation markers: [N-M] (ends at most three apart), [N(x)] and [N, M] are shown as plain source numbers when the number is a valid source. Any other form stays as written. The rule is the same in the screen view and the PDF. Display only: stored answers and the cited flags are unchanged.
+- Clause numbers for EU GMP Annex 11, Annex 15, Annex 22, ICH Q10 and the EMA reflection paper are read from the start of the chunk text, not from headings. A chunk without a clause number at its start stays without one. The base corpus has not been re-ingested for this change.
+
+### Known limitations
+- An answer with no [N] markers still marks the top three retrieved sources as cited. The refusal case is not yet separated (not changed in this version).
+- Clause numbers in the existing base corpus are unchanged until the base documents are re-ingested.
+
 ## 1.1.0 (2026-10)
 
 ### Fixed

@@ -346,7 +346,7 @@ bash tests/run_tests.sh         # all suites
 
 ## Status
 
-v1.1.0, October 2026. Maintained as a portfolio demonstrator; updates are occasional. See [CHANGELOG.md](CHANGELOG.md).
+v1.1.1, November 2026. Maintained as a portfolio demonstrator; updates are occasional. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing and security
 
