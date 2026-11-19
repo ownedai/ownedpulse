@@ -51,3 +51,21 @@ def parse_cited_indices(answer: str, num_chunks: int) -> set[int]:
             if 1 <= n <= num_chunks:
                 cited.add(n)
     return cited
+
+
+# ── K2: refusal answers without markers ──────────────────────────────────────
+# The system prompt tells the model to say when the retrieved context does not
+# contain the answer. When such an answer has no [N] marker, the API must not mark
+# any chunk as cited. Anchored at the start of the answer (stripped, case-insensitive).
+REFUSAL_OPENING_PATTERN = (
+    r"^(the )?(retrieved|provided) context (does|do) not contain "
+    r"(sufficient |enough |any )?(information|relevant)"
+)
+REFUSAL_OPENING_RE = re.compile(REFUSAL_OPENING_PATTERN, re.IGNORECASE)
+_ANY_MARKER_RE = re.compile(r"\[\d")
+
+
+def is_marker_less_refusal(answer: str) -> bool:
+    """True when the answer has no [N] marker and starts with the refusal wording."""
+    text = (answer or "").strip()
+    return not _ANY_MARKER_RE.search(text) and bool(REFUSAL_OPENING_RE.match(text))

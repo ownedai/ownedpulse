@@ -648,7 +648,7 @@ class QueryRequest(BaseModel):
     generation_model: Optional[str] = None
 
 
-from lib.text_utils import normalise_agency, strip_title_suffix, parse_cited_indices
+from lib.text_utils import normalise_agency, strip_title_suffix, parse_cited_indices, is_marker_less_refusal
 
 
 def normalise_agency_for_filter(agency: str) -> list[str]:
@@ -1957,8 +1957,10 @@ async def _run_content_query(
         # Step 6: Determine which chunks were cited
         cited_indices = parse_cited_indices(answer, len(deduped_chunks))
 
-        # Fallback: if LLM didn't use any [N] markers, treat top 3 as cited
-        if not cited_indices and deduped_chunks:
+        # Fallback: if LLM didn't use any [N] markers, treat top 3 as cited.
+        # K2: a marker-less refusal marks no chunk as cited (is_marker_less_refusal).
+        # Other marker-less answers keep the top-3 fallback (known limitation).
+        if not cited_indices and deduped_chunks and not is_marker_less_refusal(answer):
             cited_indices = set(range(1, min(4, len(deduped_chunks) + 1)))
 
         # Step 7: Build citations array (with provenance and publication_date batch)
