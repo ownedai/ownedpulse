@@ -1080,7 +1080,8 @@ def generate_audit_log_pdf(
             clause = (c.get("clause_id") or "").strip()
             score = c.get("score")
 
-            parts = [f"[{i + 1}] {_esc(title)}"]
+            # Source number is the original citation index, as in the query export (K14).
+            parts = [f"[{c.get('index', i + 1)}] {_esc(title)}"]
             if issuing:
                 parts.append(_esc(issuing))
             if pub_date and pub_date != "None":
