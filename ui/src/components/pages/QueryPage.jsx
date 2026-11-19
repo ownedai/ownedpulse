@@ -11,6 +11,7 @@ import { exportQuery, getPdfPage, getQueryTrace, getSystemPrompt, getChunkProven
 import { formatDate, formatDateTime } from '../../dateFormat';
 import { DOCTYPE_LABEL, docTypeLabel } from '../../lib/doctype';
 import { normaliseMarkers } from '../../utils/citationMarkers';
+import { displayCitations } from '../../utils/citationDisplay';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -746,39 +747,9 @@ export default function QueryPage() {
     }
   }, [result?.query_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Normalize citations: renumber sequentially (cited 1..N, uncited N+1..M)
-  // so screen and PDF show consistent ordered numbering.
-  const { citations, answerText } = (() => {
-    const raw = result?.citations || [];
-    const rawAnswer = result?.answer || '';
-    if (!raw.length) return { citations: raw, answerText: rawAnswer };
-
-    // Split and sort each group by original index ascending
-    const cited = raw.filter((c) => c.cited_by_llm).sort((a, b) => a.index - b.index);
-    const uncited = raw.filter((c) => !c.cited_by_llm).sort((a, b) => a.index - b.index);
-    const ordered = [...cited, ...uncited];
-
-    // Build old-index → new-index map
-    const remap = {};
-    ordered.forEach((c, i) => { remap[c.index] = i + 1; });
-
-    // Renumber citations
-    const normalized = ordered.map((c, i) => ({ ...c, index: i + 1 }));
-
-    // Strip any decimal sub-citations [N.M] → [N] before remapping (LLM safety net)
-    const cleanAnswer = rawAnswer.replace(/\[(\d+)\.\d+\]/g, (_, n) => `[${n}]`);
-
-    // Rewrite answer [N] and [N, M, ...] markers to new indices
-    const normAnswer = cleanAnswer.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_, nums) => {
-      const remapped = nums.split(/\s*,\s*/).map((n) => {
-        const newIdx = remap[parseInt(n, 10)];
-        return newIdx != null ? String(newIdx) : n;
-      }).join(', ');
-      return `[${remapped}]`;
-    });
-
-    return { citations: normalized, answerText: normAnswer };
-  })();
+  // Source numbers are the original citation indices (the same as the JSON export and the PDF).
+  // Nothing is renumbered; see ui/src/utils/citationDisplay.js.
+  const { citations, answerText } = displayCitations(result);
 
   const handleCitationClick = useCallback((n) => {
     const chunk = citations.find((c) => c.index === n);
