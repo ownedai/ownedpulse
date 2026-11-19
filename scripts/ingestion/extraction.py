@@ -31,13 +31,34 @@ def _clause_from_part11(headings, prefix, chunk_text=""):
 _RE_CLAUSE_START = re.compile(r'^\s*(\d{1,2}(?:\.\d{1,2})*)\.?\s+[A-Z]')
 
 
+def annex_clause(h: list, p: str, chunk_text: str = ""):
+    """EU GMP Annex / ICH style clause for one chunk. Returns (value, source, conflict).
+
+    1. The chunk text clearly starts with a clause number ('9. Audit Trails') -> source 'text'.
+    2. Otherwise the first numbered heading in the heading list (the old parser's
+       rule) -> source 'heading'.
+    3. Otherwise (None, None, False).
+    If both 1 and 2 give a value and they differ, the text value wins and conflict is True.
+    """
+    m_text = _RE_CLAUSE_START.match(chunk_text or "")
+    text_num = m_text.group(1) if m_text else None
+    head_num = None
+    for heading in h or []:
+        m = _RE_ANNEX.match(heading)
+        if m:
+            head_num = m.group(1)
+            break
+    conflict = bool(text_num and head_num and text_num != head_num)
+    if text_num:
+        return f'{p}{text_num}', 'text', conflict
+    if head_num:
+        return f'{p}{head_num}', 'heading', False
+    return None, None, False
+
+
 def _from_annex(h: list, p: str, chunk_text: str = "", **kwargs) -> str:
-    """EU GMP Annex / ICH style. Set only when the chunk text clearly begins with a
-    clause number ('9. Audit Trails' -> prefix + '9'); otherwise None. The heading
-    list is not read, so a number that appears only in a heading does not set the
-    clause. Chunks that are not clause starts stay null (K3 decision; D23)."""
-    m = _RE_CLAUSE_START.match(chunk_text or "")
-    return f'{p}{m.group(1)}' if m else None
+    """EU GMP Annex / ICH style: the clause value from annex_clause (text first, then heading)."""
+    return annex_clause(h, p, chunk_text)[0]
 
 
 def _from_part11(h: list, p: str) -> str:

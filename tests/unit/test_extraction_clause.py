@@ -10,7 +10,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "ingestion"))
 
-from extraction import _from_annex, extract_clause_id  # noqa: E402
+from extraction import _from_annex, annex_clause, extract_clause_id  # noqa: E402
 
 
 class _Meta:
@@ -48,18 +48,37 @@ def test_number_followed_by_digits_is_not_a_clause():
     assert _from_annex([], "", chunk_text="1 000 units were recorded ...") is None
 
 
-def test_heading_only_number_does_not_set_clause():
-    # The old heading-based parser would have returned '8.2' here.
-    assert _from_annex(["8.2 Something"], "", chunk_text="Audit trails should be ...") is None
+def test_heading_fallback_when_text_has_no_number():
+    # Amendment (K3): with no clause number at the start of the text, the first
+    # numbered heading is used, as the old parser did.
+    assert _from_annex(["8.2 Something"], "", chunk_text="Audit trails should be ...") == "8.2"
 
 
-def test_empty_text_is_null():
-    assert _from_annex(["9 Audit Trails"], "", chunk_text="") is None
-    assert _from_annex([], "") is None
+def test_heading_fallback_skips_non_numbered_headings():
+    assert _from_annex(["Annex 11", "Audit trails"], "", chunk_text="Audit trails should be ...") is None
+
+
+def test_conflict_text_wins_and_is_counted():
+    value, source, conflict = annex_clause(["8.2 Something"], "", chunk_text="9. Audit Trails\nThe audit trail ...")
+    assert (value, source, conflict) == ("9", "text", True)
+
+
+def test_agreement_is_not_a_conflict():
+    value, source, conflict = annex_clause(["9 Audit Trails"], "", chunk_text="9. Audit Trails\nThe audit trail ...")
+    assert (value, source, conflict) == ("9", "text", False)
+
+
+def test_heading_only_source_has_no_conflict():
+    assert annex_clause(["8.2 Something"], "", chunk_text="Audit trails ...") == ("8.2", "heading", False)
+
+
+def test_empty_text_uses_heading_and_empty_heading_is_null():
+    assert _from_annex(["9 Audit Trails"], "", chunk_text="") == "9"
+    assert _from_annex([], "", chunk_text="") is None
 
 
 def test_extract_clause_id_uses_text_for_annex_documents():
     chunk = _Chunk("9. Audit Trails\nThe audit trail ...", headings=["Annex 11"])
     assert extract_clause_id(chunk, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) == "9"
     chunk2 = _Chunk("Audit trails should be ...", headings=["8.2 Something"])
-    assert extract_clause_id(chunk2, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) is None
+    assert extract_clause_id(chunk2, {"document_id": "EU-GMP-Annex11", "clause_id_prefix": ""}) == "8.2"
