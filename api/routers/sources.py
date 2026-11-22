@@ -5,6 +5,7 @@ import uuid
 import subprocess
 import threading
 import logging
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
@@ -17,6 +18,9 @@ from lib import ingestion_lock
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Source archive root. A module constant so tests can point it at a temp directory.
+ARCHIVE_ROOT = Path("/archive")
 
 QDRANT_HOST       = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT       = int(os.getenv("QDRANT_PORT", "6333"))
@@ -322,24 +326,23 @@ async def sources_bootstrap(body: BootstrapRequest):
     if not docs:
         raise HTTPException(status_code=422, detail="No documents match the selected scope.")
 
-    # Map UI mode to redownload strategy (controls source file fetch, not the wipe).
-    # 'missing only' (redownload=check) skips the wipe and keeps existing files.
+    # redownload controls the source fetch: "check" (missing only) keeps everything,
+    # "none" (use local files) keeps the archives and re-embeds from them, and
+    # "force" deletes the archives and re-downloads. full_reset always forces.
     redownload = body.redownload
-    if body.mode in ("wipe_and_reload", "full_reset") and redownload != "check":
+    if body.mode == "full_reset" and redownload != "check":
         redownload = "force"
 
-    # When wipe_and_reload or full_reset (and not missing-only): delete archive
-    # directories for selected docs so source files are re-downloaded from scratch.
-    if body.mode in ("wipe_and_reload", "full_reset") and redownload != "check":
+    # Archive directories of the selected docs are deleted only when re-downloading,
+    # so source files are fetched again from scratch.
+    if redownload == "force" and body.mode in ("wipe_and_reload", "full_reset"):
         import shutil
-        from pathlib import Path
-        ARCHIVE = Path("/archive")
         wiped = 0
         for doc in docs:
             doc_id = doc.get("doc_id", "")
             if not doc_id:
                 continue
-            for agency_dir in ARCHIVE.iterdir():
+            for agency_dir in ARCHIVE_ROOT.iterdir():
                 if not agency_dir.is_dir():
                     continue
                 candidate = agency_dir / doc_id

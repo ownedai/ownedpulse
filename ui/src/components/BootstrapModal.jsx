@@ -622,7 +622,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                     { value: 'missing_only', label: 'Missing only',    hint: 'Download and embed only missing files — skip documents that are already ingested' },
                     { value: 'use_local',    label: 'Re-embed selected and use local files where available', hint: 'Re-chunk and re-embed without re-downloading — fastest option' },
                     { value: 'redownload',   label: 'Re-download and re-embed selected', hint: 'Re-fetch and re-process only the selected sources' },
-                    { value: 'nuclear',      label: '☢ Nuclear reset', hint: 'Wipes ALL cached files from ALL sources (not just selected), then re-downloads selected. Cannot be undone.' },
+                    { value: 'nuclear',      label: '☢ Nuclear reset', hint: 'Clears run history and ingestion state, deletes and recreates the whole vector index, re-seeds the document registry, and deletes and re-downloads the archives of the selected sources. Cannot be undone.' },
                   ].map(opt => {
                     const active = fileStrategy === opt.value;
                     const isNuclear = opt.value === 'nuclear';
@@ -671,7 +671,7 @@ export default function BootstrapModal({ onClose, onStarted, autoSubmit = false,
                     <span className={`rp-check warn ${nuclearConfirmed ? 'on' : ''}`} style={{ borderColor: 'var(--warn, #f59e0b)' }}>
                       {nuclearConfirmed && <CheckIcon />}
                     </span>
-                    <span className="ctxt" style={{ color: 'var(--warn-text)' }}>I understand Nuclear will delete ALL cached files</span>
+                    <span className="ctxt" style={{ color: 'var(--warn-text)' }}>I understand Nuclear will clear run history, rebuild the whole vector index and re-download the selected archives</span>
                   </label>
                 )}
               </div>
