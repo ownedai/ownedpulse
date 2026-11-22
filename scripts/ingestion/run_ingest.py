@@ -499,6 +499,7 @@ def _date_from_chunks(chunks):
     return None
 
 def write_meta_json(doc_id: str, meta: dict):
+    from ingestion.metadata_merge import merge_metadata
     pub_date = (
         _parse_pub_date(meta.get("publication_date") or meta.get("pub_date"))
         or _date_from_url(meta.get("source_url", ""))
@@ -506,11 +507,16 @@ def write_meta_json(doc_id: str, meta: dict):
     )
     with pg_conn() as conn:
         with conn.cursor() as c:
+            # Merge, not overwrite: keys written at registration (for example
+            # resolved_via and pdf_url_failed) must survive ingestion.
+            c.execute("SELECT metadata_json FROM document_registry WHERE document_id = %s", (doc_id,))
+            row = c.fetchone()
+            merged = merge_metadata(row[0] if row else None, meta)
             c.execute(
                 "UPDATE document_registry SET metadata_json = %s, "
                 "publication_date = COALESCE(%s, publication_date) "
                 "WHERE document_id = %s",
-                (json.dumps(meta), pub_date, doc_id)
+                (json.dumps(merged), pub_date, doc_id)
             )
 
 def _backfill_pub_date_from_chunks(doc_id: str, archive_dir: Path):
