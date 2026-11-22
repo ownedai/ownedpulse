@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.2 - 2026-11-22
 
 ### Changed
 - Sources reingest window: 'Re-embed selected and use local files where available' now keeps local files and re-embeds from them, downloading only documents without a local copy (it deleted and re-downloaded them before). Nuclear reset hint corrected to match what it does.
