@@ -1195,18 +1195,46 @@ async def fetch_clause_chunks(doc_id: str, clause_identifiers: list[str]) -> lis
 
 # ── Supersede-pair detection ──────────────────────────────────────────────────
 
-def detect_supersede_pair(chunks: list[dict], pg_conn) -> dict | None:
+def fetch_registry_supersede_map(doc_ids: list, pg_conn) -> dict:
+    """Family and status per document from the registry, in one query.
+
+    Returns {document_id: {"family": str, "status": str}} for the ids given.
+    Raises on a database error; the caller logs it.
+    """
+    ids = sorted({d for d in doc_ids if d})
+    if not ids:
+        return {}
+    cur = pg_conn.cursor()
+    try:
+        cur.execute(
+            "SELECT document_id, COALESCE(document_family_id, ''), COALESCE(document_status, '') "
+            "FROM document_registry WHERE document_id = ANY(%s)",
+            (ids,),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+    return {r[0]: {"family": r[1], "status": r[2]} for r in rows}
+
+
+def detect_supersede_pair(chunks: list[dict], pg_conn, registry_map: dict | None = None) -> dict | None:
     """Check retrieved chunks for a document_family_id. If found, resolve the
     full family from PostgreSQL and return a supersede_context dict.
 
     Returns None when no supersede pair is detected — caller is unaffected.
     Only issues one PG query when a family is triggered; zero queries otherwise.
+    registry_map (from fetch_registry_supersede_map) supplies each chunk's family;
+    when None, the family is read from the chunk payload as before.
     """
-    # Scan chunk payloads for a non-null document_family_id (already in Qdrant payload).
+    # Scan the retrieved chunks for a non-empty family: from the registry when
+    # registry_map is given, otherwise from the Qdrant payload (previous behaviour).
     family_id = None
     triggered_by = None
     for chunk in chunks:
-        fid = chunk.get("document_family_id") or ""
+        if registry_map is not None:
+            fid = (registry_map.get(chunk.get("document_id", "")) or {}).get("family") or ""
+        else:
+            fid = chunk.get("document_family_id") or ""
         if fid:
             family_id = fid
             triggered_by = chunk.get("document_id", "")
@@ -1252,6 +1280,25 @@ def detect_supersede_pair(chunks: list[dict], pg_conn) -> dict | None:
         "members": members,
         "triggered_by": triggered_by,
     }
+
+
+def apply_registry_supersede(chunks: list[dict], pg_conn, query_id: str) -> dict | None:
+    """Set chunk["superseded"] from the registry status and return detect_supersede_pair's result.
+
+    If the registry lookup raises, the error is logged with query_id and the previous
+    behaviour applies: the family comes from the chunk payload and no chunk is flagged.
+    """
+    registry_map = None
+    try:
+        registry_map = fetch_registry_supersede_map([c.get("document_id") for c in chunks], pg_conn)
+    except Exception:
+        logger.error("supersede: registry lookup failed query_id=%s; "
+                     "using previous behaviour (no supersede flag)", query_id, exc_info=True)
+    supersede_context = detect_supersede_pair(chunks, pg_conn, registry_map)
+    if registry_map is not None:
+        for c in chunks:
+            c["superseded"] = (registry_map.get(c.get("document_id")) or {}).get("status") == "superseded"
+    return supersede_context
 
 
 def fetch_family_supplement_chunks(missing_doc_id: str, limit: int = 5) -> list[dict]:
@@ -1791,15 +1838,8 @@ async def _run_content_query(
         supersede_context = None
         try:
             _pg_sup = get_pg_conn()
-            supersede_context = detect_supersede_pair(deduped_chunks, _pg_sup)
-            if supersede_context:
-                # Determine which family member is absent from semantic results
-                retrieved_doc_ids = {c.get("document_id") for c in deduped_chunks}
-                for member in supersede_context["members"]:
-                    if member["document_id"] not in retrieved_doc_ids:
-                        supplement = fetch_family_supplement_chunks(member["document_id"])
-                        deduped_chunks = deduped_chunks + supplement
-                        break
+            # Family members are not added to the chunks here (C36: no added chunks).
+            supersede_context = apply_registry_supersede(deduped_chunks, _pg_sup, query_id)
             _pg_sup.close()
         except Exception:
             supersede_context = None
