@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from lib import ingestion_lock
 from lib.db import get_pg_conn
+from lib.error_tail import tail_text
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -156,7 +157,7 @@ async def run_ingestion_job(feed_id: str | None = None, triggered_by: str = "sch
                     logger.info(f"ingestion: feed={fid} run_id={run_id} complete")
                     continue
                 else:
-                    error_detail = f"Process exited rc={proc.returncode}: {stderr.decode()[:400]}"
+                    error_detail = f"Process exited rc={proc.returncode}: {tail_text(stderr)}"
                     logger.error(f"ingestion: feed={fid} run_id={run_id} failed: {error_detail}")
             except asyncio.TimeoutError:
                 error_detail = "Timed out after 30 minutes"

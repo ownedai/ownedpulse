@@ -24,6 +24,7 @@ import psycopg2
 
 sys.path.insert(0, "/opt/scripts")
 from ingestion.config import PG_DSN
+from item_failure import describe_item_failure
 
 FEED_AUTHORITY = {
     'fda_drugs': 'FDA',
@@ -366,7 +367,7 @@ def main():
                 succeeded += 1
 
             except Exception as e:
-                logger.error(f"Pipeline failed for url={url[:80]}: {e}")
+                logger.error(describe_item_failure(_make_doc_id(item.get("feed_id", ""), url), url, e))
                 failed += 1
 
     # Retry previously failed documents for this feed
