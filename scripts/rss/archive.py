@@ -63,6 +63,24 @@ FEED_ID_TO_ISSUING_BODY = {
 }
 
 
+# Keys the resolver sets when it falls back to the landing page (C27).
+FALLBACK_KEYS = ("resolved_via", "pdf_url_failed")
+
+
+def registry_metadata_on_reregister(existing, item: dict) -> dict:
+    """metadata_json for an existing registry row when the item is archived again.
+
+    Keeps every existing key and sets source_hash. The fallback keys are set when
+    the item has them, and removed when it does not (it resolved via its PDF this
+    time), so they cannot go stale.
+    """
+    merged = ({k: v for k, v in existing.items() if k not in FALLBACK_KEYS}
+              if isinstance(existing, dict) else {})
+    merged["source_hash"] = item.get("sha256", "")
+    merged.update({k: item[k] for k in FALLBACK_KEYS if item.get(k)})
+    return merged
+
+
 def register(item: dict, archive_dir: Path, content_type: str):
     meta      = item.get('extracted_metadata', {})
     raw_date  = meta.get('pub_date') or item.get('pub_date') or None
@@ -73,6 +91,9 @@ def register(item: dict, archive_dir: Path, content_type: str):
     with conn.cursor() as c:
         # GATE3b: identity-only upsert — state columns removed
         sha256_val = item.get('sha256', '')
+        c.execute("SELECT metadata_json FROM document_registry WHERE document_id = %s", (item['doc_id'],))
+        row = c.fetchone()
+        conflict_metadata = registry_metadata_on_reregister(row[0] if row else None, item)
         c.execute(
             'INSERT INTO document_registry '
             '(document_id, source_url, source_hash, source_fetched_at, '
@@ -85,7 +106,7 @@ def register(item: dict, archive_dir: Path, content_type: str):
             'source_fetched_at=EXCLUDED.source_fetched_at, archive_path=EXCLUDED.archive_path, '
             "issuing_body=COALESCE(NULLIF(EXCLUDED.issuing_body, ''), document_registry.issuing_body), "
             'publication_date=COALESCE(EXCLUDED.publication_date, document_registry.publication_date), '
-            'metadata_json=document_registry.metadata_json || jsonb_build_object(\'source_hash\', EXCLUDED.source_hash), '
+            'metadata_json=%s, '
             'updated_at=NOW()',
             (
                 item['doc_id'], item.get('pdf_url') or item.get('url',''), sha256_val,
@@ -96,6 +117,7 @@ def register(item: dict, archive_dir: Path, content_type: str):
                 json.dumps({'doc_id': item['doc_id'], 'feed_id': feed_id, 'source_hash': sha256_val,
                          **{k: item[k] for k in ('resolved_via', 'pdf_url_failed') if item.get(k)}}),
                 pub_date,
+                json.dumps(conflict_metadata),
             )
         )
     conn.close()
