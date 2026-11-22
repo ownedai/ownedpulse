@@ -351,6 +351,16 @@ _C_MARKER    = _rgb("2563EB")
 _ATTACH_LEFT = frozenset('.,;:!?)}]')  # punctuation that attaches to the preceding token
 
 
+# Same definition as GET /api/corpus/stats ("Indexed N" on the screen, api/routers/corpus.py).
+# Keep the SQL identical to that endpoint; tests/unit/test_pdf_corpus_count.py checks it.
+INDEXED_DOCUMENT_SQL = "SELECT count(*) FROM document_registry_ext WHERE ingestion_status = 'indexed'"
+
+
+def indexed_document_count(cur) -> int:
+    cur.execute(INDEXED_DOCUMENT_SQL)
+    return int(cur.fetchone()[0])
+
+
 def _display_page(page_no) -> str:
     """chunk page_no is a 0-based index; the PDF shows 1-based pages, as the UI does."""
     if page_no is None or page_no == "":
@@ -510,8 +520,7 @@ def generate_query_export_pdf(
         prompt_version   = cfg.get("prompt_version", "V8")
         # Get active document count for corpus field
         try:
-            _cur.execute("SELECT COUNT(*) FROM document_registry WHERE document_status = 'active' OR document_status = 'final'")
-            _doc_count = _cur.fetchone()[0]
+            _doc_count = indexed_document_count(_cur)
         except Exception:
             _doc_count = 0
         corpus_snapshot = f"knowledge_base · {_doc_count} docs · {_snap_fmt}"
