@@ -249,6 +249,28 @@ def extract_date_from_filename(url: str) -> str:
     return ""
 
 
+def _html_result(doc_id: str, item_dir: Path, r, soup, metadata: dict, url: str) -> dict:
+    """Write the landing page's own HTML as source.html, or raise if it has too little text."""
+    # Reject pages that yielded no substantive content — typically JS-rendered
+    # pages where requests.get() only retrieved a bare HTML shell (e.g. ICH
+    # navigation pages that produce only their <title> text, ~27 chars).
+    MIN_BODY_CHARS = 200
+    body_text = soup.get_text(" ", strip=True)
+    if len(body_text) < MIN_BODY_CHARS:
+        raise ValueError(
+            f"Extracted body too short ({len(body_text)} chars, minimum {MIN_BODY_CHARS}): "
+            f"likely a JavaScript-rendered page with no static content. "
+            f"URL: {url}"
+        )
+    # Write raw HTML so downstream ingestion can re-parse it with newlines
+    # preserved — extracting to text here loses structure needed for chunking.
+    dest   = item_dir / "source.html"
+    dest.write_text(r.text, encoding="utf-8")
+    sha256 = hashlib.sha256(r.text.encode()).hexdigest()
+    return {"doc_id":doc_id,"file_path":str(dest),"content_type":"html",
+            "sha256":sha256,"extracted_metadata":metadata}
+
+
 def resolve(url: str, feed_id: str, title: str = "", authority: str = "") -> dict:
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     doc_id   = make_doc_id(feed_id, url)
@@ -273,27 +295,24 @@ def resolve(url: str, feed_id: str, title: str = "", authority: str = "") -> dic
     pdf_url  = find_pdf_link(soup, url, authority)
     if pdf_url:
         dest = item_dir / "source.pdf"
-        sha256 = download_pdf(pdf_url, dest)
+        try:
+            sha256 = download_pdf(pdf_url, dest)
+        except Exception as pdf_err:
+            # The linked PDF could not be downloaded (for example an upstream 502).
+            # Use the landing page's own text when it is long enough.
+            try:
+                result = _html_result(doc_id, item_dir, r, soup, metadata, url)
+            except ValueError as html_err:
+                raise ValueError(
+                    f"PDF download failed ({type(pdf_err).__name__}: {pdf_err}); "
+                    f"HTML fallback rejected: {html_err}"
+                ) from pdf_err
+            result["resolved_via"] = "html_fallback"
+            result["pdf_url_failed"] = pdf_url
+            return result
         return {"doc_id":doc_id,"file_path":str(dest),"content_type":"pdf",
                 "sha256":sha256,"extracted_metadata":metadata,"pdf_url":pdf_url}
-    # Reject pages that yielded no substantive content — typically JS-rendered
-    # pages where requests.get() only retrieved a bare HTML shell (e.g. ICH
-    # navigation pages that produce only their <title> text, ~27 chars).
-    MIN_BODY_CHARS = 200
-    body_text = soup.get_text(" ", strip=True)
-    if len(body_text) < MIN_BODY_CHARS:
-        raise ValueError(
-            f"Extracted body too short ({len(body_text)} chars, minimum {MIN_BODY_CHARS}): "
-            f"likely a JavaScript-rendered page with no static content. "
-            f"URL: {url}"
-        )
-    # Write raw HTML so downstream ingestion can re-parse it with newlines
-    # preserved — extracting to text here loses structure needed for chunking.
-    dest   = item_dir / "source.html"
-    dest.write_text(r.text, encoding="utf-8")
-    sha256 = hashlib.sha256(r.text.encode()).hexdigest()
-    return {"doc_id":doc_id,"file_path":str(dest),"content_type":"html",
-            "sha256":sha256,"extracted_metadata":metadata}
+    return _html_result(doc_id, item_dir, r, soup, metadata, url)
 
 def main():
     parser = argparse.ArgumentParser()

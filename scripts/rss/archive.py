@@ -93,7 +93,8 @@ def register(item: dict, archive_dir: Path, content_type: str):
                 authority, feed_id,
                 'regulatory', content_type, 'active',
                 meta.get('version',''),
-                json.dumps({'doc_id': item['doc_id'], 'feed_id': feed_id, 'source_hash': sha256_val}),
+                json.dumps({'doc_id': item['doc_id'], 'feed_id': feed_id, 'source_hash': sha256_val,
+                         **{k: item[k] for k in ('resolved_via', 'pdf_url_failed') if item.get(k)}}),
                 pub_date,
             )
         )
@@ -131,6 +132,8 @@ def archive(item: dict) -> dict:
         "feed_item_guid":   item.get("feed_item_guid",""),
         "document_family_id": item.get("document_family_id",""),
     }
+    # Set only for an HTML fallback used because the linked PDF could not be downloaded.
+    metadata_record.update({k: item[k] for k in ("resolved_via", "pdf_url_failed") if item.get(k)})
     (archive_dir / "metadata.json").write_text(
         json.dumps(metadata_record, indent=2, ensure_ascii=False), encoding="utf-8"
     )
