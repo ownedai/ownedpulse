@@ -351,6 +351,16 @@ _C_MARKER    = _rgb("2563EB")
 _ATTACH_LEFT = frozenset('.,;:!?)}]')  # punctuation that attaches to the preceding token
 
 
+def _display_page(page_no) -> str:
+    """chunk page_no is a 0-based index; the PDF shows 1-based pages, as the UI does."""
+    if page_no is None or page_no == "":
+        return "—"
+    try:
+        return str(int(page_no) + 1)
+    except (TypeError, ValueError):
+        return str(page_no)
+
+
 def _wrapped_text_marked(c: canvas.Canvas, x, y, text, font, size, color,
                          max_w, line_height=None) -> float:
     """Render wrapped text; [N] citation markers are drawn in blue Inter-SemiBold.
@@ -688,7 +698,7 @@ def generate_query_export_pdf(
                 version    = version_raw if (version_raw and version_raw != "1.0") else "—"
                 clause     = chunk.get("clause_id") or ""
                 pub_date   = chunk.get("publication_date") or ""
-                page_no    = str(chunk.get("page_no") or "—")
+                page_no    = _display_page(chunk.get("page_no"))
                 doc_type   = chunk.get("doc_type") or chunk.get("document_type") or "Not classified"
                 chunk_txt  = chunk.get("chunk_text") or ""
                 score      = chunk.get("score")
@@ -856,7 +866,7 @@ def generate_query_export_pdf(
                 uc_version  = uc_version_raw if (uc_version_raw and uc_version_raw != "1.0") else "—"
                 uc_pub_date = chunk.get("publication_date") or ""
                 uc_clause   = chunk.get("clause_id") or ""
-                uc_page_no  = str(chunk.get("page_no") or "—")
+                uc_page_no  = _display_page(chunk.get("page_no"))
                 uc_doc_type = chunk.get("doc_type") or chunk.get("document_type") or "Not classified"
                 uc_score    = chunk.get("score")
                 uc_score_str = f"{uc_score:.3f}" if uc_score is not None else "—"
