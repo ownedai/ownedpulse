@@ -349,6 +349,7 @@ def _section_header(c: canvas.Canvas, x, y, label: str, index_label: str = "") -
 _MARKER_RE   = re.compile(r'(\[\d+\])')
 _C_MARKER    = _rgb("2563EB")
 _ATTACH_LEFT = frozenset('.,;:!?)}]')  # punctuation that attaches to the preceding token
+_BOLD_RE     = re.compile(r'\*\*(.+?)\*\*')  # **bold** spans in answer text (same as the UI)
 
 
 # Same definition as GET /api/corpus/stats ("Indexed N" on the screen, api/routers/corpus.py).
@@ -383,24 +384,27 @@ def _wrapped_text_marked(c: canvas.Canvas, x, y, text, font, size, color,
         line_height = size * 1.55
     space_w = c.stringWidth(" ", font, size)
 
-    # Tokenise: split on marker boundaries, then on spaces within prose segments
-    tokens = []  # (word, is_marker)
+    # Tokenise: split on marker boundaries, then on bold spans, then on spaces.
+    # style: "m" citation marker, "b" bold text, "n" normal text.
+    tokens = []  # (word, style)
     for seg in _MARKER_RE.split(text):
         if _MARKER_RE.fullmatch(seg):
-            tokens.append((seg, True))
+            tokens.append((seg, "m"))
         else:
-            for w in seg.split():
-                tokens.append((w, False))
+            for i, part in enumerate(_BOLD_RE.split(seg)):
+                style = "b" if i % 2 == 1 else "n"
+                for w in part.split():
+                    tokens.append((w, style))
 
-    line_items: list[tuple[str, bool]] = []
+    line_items: list[tuple[str, str]] = []
     line_w = 0.0
     cy = y
 
     def _render_line(items):
         dx = x
-        for i, (w, is_m) in enumerate(items):
-            f = "Inter-SemiBold" if is_m else font
-            col = _C_MARKER if is_m else color
+        for i, (w, style) in enumerate(items):
+            f = "Inter-SemiBold" if style in ("m", "b") else font
+            col = _C_MARKER if style == "m" else color
             c.saveState()
             c.setFont(f, size)
             c.setFillColorRGB(*col)
@@ -412,18 +416,18 @@ def _wrapped_text_marked(c: canvas.Canvas, x, y, text, font, size, color,
                 if not (next_w and next_w[0] in _ATTACH_LEFT):
                     dx += space_w
 
-    for word, is_m in tokens:
-        f = "Inter-SemiBold" if is_m else font
+    for word, style in tokens:
+        f = "Inter-SemiBold" if style in ("m", "b") else font
         ww = c.stringWidth(word, f, size)
         # No leading space for attach-left punctuation (e.g. '.' after '[1]')
         gap = (space_w if line_items else 0.0) if not (word and word[0] in _ATTACH_LEFT) else 0.0
         if line_items and line_w + gap + ww > max_w:
             _render_line(line_items)
             cy -= line_height
-            line_items = [(word, is_m)]
+            line_items = [(word, style)]
             line_w = ww
         else:
-            line_items.append((word, is_m))
+            line_items.append((word, style))
             line_w += gap + ww
 
     if line_items:
@@ -1145,7 +1149,7 @@ def generate_audit_log_pdf(
         )
 
         # Answer — full text since each query has its own page
-        answer_display = _esc(q.get("answer") or "")
+        answer_display = _BOLD_RE.sub(r"<b>\1</b>", _esc(q.get("answer") or ""))
 
         # Cited sources — one line each, max 10
         citations = q.get("citations") or []
