@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.6 - 2026-11-22
+
+### Changed
+- PDF export prints page numbers as 1-based pages, as the UI does. Previously every page number was one lower, and the first page printed a dash.
+- PDF export header shows the number of indexed documents, the same count the screen shows. Previously it showed the number of registry rows with status active or final.
+- Answers in the PDF export and in the audit-log PDF show **bold** text in bold, without the asterisks.
+- The PDF label for the chunk date reads "Chunked" instead of "Ingested". The date is the chunk creation date.
+
 ## 1.1.5 - 2026-11-22
 
 ### Changed
