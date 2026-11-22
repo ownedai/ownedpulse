@@ -839,7 +839,7 @@ def generate_query_export_pdf(
                     # ── trace lines (tight below text box) ────────────────────
                     tl1_y = chunk_y - ctxt_box_h - 8
                     _text(rc, MARGIN_X + 10, tl1_y,
-                          f"Ingested  {chunked_at[:10]}   Trace ID  {trace_id}",
+                          f"Chunked  {chunked_at[:10]}   Trace ID  {trace_id}",
                           "Mono", 7.5, C_INK_TER)
                     _draw_lines(rc, MARGIN_X + 10, tl1_y - 11, src_lines, "Mono", src_size, C_INK_TER, 11)
                     if source_local:
@@ -937,7 +937,7 @@ def generate_query_export_pdf(
                 # trace lines (tight below metadata grid)
                 uc_tl1_y = uc_meta_y - uc_meta_extra - _UNC_META_ROWS * _UNC_META_ROW_H - 8
                 _text(rc, MARGIN_X + 10, uc_tl1_y,
-                      f"Ingested  {uc_chunked[:10]}   Trace ID  {uc_trace_id}",
+                      f"Chunked  {uc_chunked[:10]}   Trace ID  {uc_trace_id}",
                       "Mono", 7.5, C_INK_TER)
                 _draw_lines(rc, MARGIN_X + 10, uc_tl1_y - 11, uc_src_lines, "Mono", uc_src_size, C_INK_TER, 11)
                 if uc_local:
