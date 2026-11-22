@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.1.3 - 2026-11-22
 
 ### Changed
-- Resolver: when the PDF linked from a landing page cannot be downloaded, the page's own HTML is used if it has enough text. The item is recorded with resolved_via "html_fallback" and pdf_url_failed (the PDF URL) in metadata.json and in the registry metadata. Pages with no usable text still fail, and the error names both the PDF and the HTML failure.
-- Pipeline errors: a failed item's log line names its doc_id, its full URL and the exception type and message. The scheduler keeps the last 2000 characters of a failed run's stderr instead of the first 400, so the failing line is no longer cut off in run_log error_detail.
+- Resolver falls back to the landing-page HTML when the linked PDF cannot be downloaded. The item is marked resolved_via "html_fallback" with pdf_url_failed (the PDF URL), in metadata.json and in the registry.
+- The failed-item error line carries the doc_id, the URL and the exception type and message. The scheduler keeps the last 2000 characters of a failed run's stderr instead of the first 400.
+- The registry metadata_json keeps the fallback keys when ingestion and re-archiving update the row. Re-archiving records them, or removes them when a later run resolves via PDF.
 
 ## 1.1.2 - 2026-11-22
 
