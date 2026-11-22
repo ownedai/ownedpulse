@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.5 - 2026-11-22
+
+### Changed
+- Supersede check and superseded flag on citations read the document family and status from the registry. The Qdrant payload is empty for the ICH documents, so supersession was not detected before. A lookup error is logged with the query ID and the previous behaviour applies.
+- The family-member supplement chunks are no longer added when a supersede pair is detected (this step never ran before, because the payload family was always empty).
+
 ## 1.1.4 - 2026-11-22
 
 ### Changed
