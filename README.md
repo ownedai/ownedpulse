@@ -148,7 +148,7 @@ First installation downloads roughly 25 GB. Expect it to take from about 30 minu
 ## Quick start
 
 ```bash
-git clone --branch v1.1.5 https://github.com/ownedai/ownedpulse.git
+git clone --branch v1.1.6 https://github.com/ownedai/ownedpulse.git
 cd ownedpulse
 cp .env.example .env
 ```
@@ -222,7 +222,7 @@ not pull them in external mode.
 |---|---|
 | Stop OwnedPulse API and UI | `./install.sh --stop` |
 | Start or update after changes | `./install.sh` (add `--no-build` to skip image builds) |
-| Update to a new release | wait until no ingestion is running, then `git fetch --tags && git checkout v1.1.5 && ./install.sh` (replace v1.1.5 with the newest release tag) |
+| Update to a new release | wait until no ingestion is running, then `git fetch --tags && git checkout v1.1.6 && ./install.sh` (replace v1.1.6 with the newest release tag) |
 | Stop everything | `docker compose --profile postgres --profile qdrant --profile ollama --profile docling --profile langfuse down` |
 | Remove everything, including all data | the command above with `-v`, then delete `./data` |
 | Reset the corpus and re-ingest from scratch | see **Resetting the corpus** below |
