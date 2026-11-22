@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.4 - 2026-11-22
+
+### Changed
+- Feed runs started by the scheduler or by hand now download into the persistent archive folder. Previously they wrote into the container's writable layer, so the files were lost when the container was recreated.
+
 ## 1.1.3 - 2026-11-22
 
 ### Changed
