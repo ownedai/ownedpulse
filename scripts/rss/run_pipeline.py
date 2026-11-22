@@ -25,6 +25,7 @@ import psycopg2
 sys.path.insert(0, "/opt/scripts")
 from ingestion.config import PG_DSN
 from item_failure import describe_item_failure
+from archive_location import registry_archive_path
 
 FEED_AUTHORITY = {
     'fda_drugs': 'FDA',
@@ -116,7 +117,7 @@ def _register_feed_items(feed_id: str, items: list) -> int:
                 else:
                     pub_date = None
 
-                archive_path = f"/mnt/data/regulatory_archive/{authority.lower()}/{doc_id}" if authority else f"/archive/{doc_id}"
+                archive_path = registry_archive_path(authority, doc_id, os.environ.get("ARCHIVE_ROOT"))
 
                 cur.execute("""
                     INSERT INTO document_registry (

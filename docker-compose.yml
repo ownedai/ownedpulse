@@ -138,6 +138,8 @@ services:
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-12288}
       OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-180}
       DATA_DIR: /data
+      # Persistent archive for every pipeline subprocess started from this container.
+      ARCHIVE_ROOT: /archive
       DOCLING_HOST: ${DOCLING_HOST:-http://ownedpulse-docling:5001}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}

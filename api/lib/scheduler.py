@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from lib import ingestion_lock
 from lib.db import get_pg_conn
 from lib.error_tail import tail_text
+from lib.archive_root import with_archive_root
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -134,7 +135,7 @@ async def run_ingestion_job(feed_id: str | None = None, triggered_by: str = "sch
             logger.info(f"ingestion: starting feed={fid} run_id={run_id}")
             error_detail = None
             try:
-                env = os.environ.copy()
+                env = with_archive_root(os.environ)
                 pg_host = env.get("POSTGRES_HOST", "postgres")
                 pg_port = env.get("POSTGRES_PORT", "5432")
                 pg_user = env.get("POSTGRES_USER", "postgres")
