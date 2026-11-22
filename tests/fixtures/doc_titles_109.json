@@ -1,0 +1,547 @@
+[
+ {
+  "document_id": "21-CFR-Part-11",
+  "document_title": "21 CFR Part 11 — Electronic Records; Electronic Signatures",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "EMA-Reflection-AI",
+  "document_title": "EMA Reflection Paper on the Use of Artificial Intelligence in the Medicinal Product Lifecycle",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "ema_reg_guidance-draft-data-quality-framework-dqf-eu-medi-79d3fcca8f99",
+  "document_title": "Draft Data Quality Framework (DQF) for EU medicines regulation: application to collection, management and submission of Adverse Drug Reaction reports",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_reg_guidance-draft-guideline-veterinary-good-pharmaco-8af15ad7b6c9",
+  "document_title": "Draft guideline on veterinary good pharmacovigilance practices (VGVP) Module: Signal Management - Revision 1",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_reg_guidance-guidance-industry-implementing-shortage-7f0773fba42a",
+  "document_title": "Guidance for industry on implementing Shortage Prevention Plans (SPP)",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_reg_guidance-methodological-principles-assessment-sec-aa52e4df6d73",
+  "document_title": "Methodological Principles for the Assessment of Section 5.1 of the Summary of Product Characteristics",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-concept-paper-clinical-trials-recipients-b49445ccbcfb",
+  "document_title": "Concept paper on clinical trials in recipients of kidney transplantation",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-concept-paper-guideline-revision-good-ph-9b5dcb522e81",
+  "document_title": "Concept paper on the guideline revision on good pharmacogenomic practice",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-concept-paper-need-guideline-clinical-in-492d7b0bbce8",
+  "document_title": "Concept paper on the need for the guideline on the clinical investigation of medicinal products for the treatment of inherited retinal dystrophies",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-concept-paper-need-revision-guideline-cl-24dd65ecb24f",
+  "document_title": "Concept paper on the need for revision of the guideline on clinical investigation of medicinal products in the treatment of hypertension (EMA/CHMP/29947/2013/Rev.4)",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-concept-paper-revision-cvmp-guideline-su-7d2eebb49749",
+  "document_title": "Concept paper on the revision of the CVMP guideline on the summary of product characteristics (SPC) for veterinary medicinal products containing antimicrobial substances (EMA/CVMP/383441/2005-Rev.1 Corr.1)",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-considerations-regarding-implementation-c9de3f4a0606",
+  "document_title": "Considerations regarding the implementation of ICH M13B on bioequivalence for immediate-release solid oral dosage forms",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-clinical-investigation-m-78e4a79bf698",
+  "document_title": "Draft guideline on clinical investigation of medicinal products for the treatment of migraine and cluster headache - Revision 2",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-clinical-requirements-me-4e8e9c29ee0b",
+  "document_title": "Draft guideline on the clinical requirements for medicines intended for the treatment of sickle cell disease",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-clinical-requirements-me-7696fbad891c",
+  "document_title": "Draft guideline on the clinical requirements for medicines intended for the treatment of thalassaemia",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-investigation-interactio-f5ef0a7b1c28",
+  "document_title": "Draft guideline on the investigation of interactions in the gastrointestinal tract",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-predictive-biomarker-ass-dd517d4ca1a0",
+  "document_title": "Draft guideline on predictive biomarker assays in the context of medicinal product lifecycle",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-requirements-demonstrati-85cdb75b21cf",
+  "document_title": "Draft guideline on the requirements for demonstrating therapeutic equivalence for nasal products",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-risk-assessment-medicina-fb5158c840d6",
+  "document_title": "Draft guideline on risk assessment of medicinal products in human reproduction and breastfeeding: from data to product information - Revision 1",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-user-safety-pharmaceutic-520c9fbc75f4",
+  "document_title": "Draft guideline on user safety for pharmaceutical veterinary medicinal products - Revision 2",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-user-safety-topically-ad-b11c5212ae43",
+  "document_title": "Draft guideline on user safety of topically administered veterinary medicinal products - Revision 1",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-guideline-veterinary-good-pharmaco-171a23d59bf1",
+  "document_title": "Draft guideline on veterinary good pharmacovigilance practices (VGVP) - List of medically important (MI) VeDDRA terms",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-reflection-paper-clinical-investig-75f898ea659e",
+  "document_title": "Draft reflection paper on the clinical investigation of medicinal products for the treatment of systemic sclerosis",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-draft-reflection-paper-investigation-dru-1cf812f4fdac",
+  "document_title": "Draft reflection paper on the investigation of drug interactions of herbal medicinal products",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-guideline-clinical-investigation-medicin-09b774f3848f",
+  "document_title": "Guideline on clinical investigation of medicinal products for the treatment of psoriatic arthritis - Revision 1",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-guideline-clinical-investigation-medicin-da1c5d10f434",
+  "document_title": "Guideline on clinical investigation of medicinal products for the treatment of psoriatic arthritis",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-guideline-good-pharmacovigilance-practic-703cc00c84bc",
+  "document_title": " Guideline on good pharmacovigilance practices: Module III - Pharmacovigilance inspections (Rev. 2) with tracked changes",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-guideline-good-pharmacovigilance-practic-7c1feea1ca06",
+  "document_title": "Guideline on good pharmacovigilance practices: Module III - Pharmacovigilance inspections (Rev. 2)",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-guidelines-good-pharmacovigilance-practi-b8460c8d0b4b",
+  "document_title": "Guidelines on good pharmacovigilance practices (GVP): Introductory cover note, last updated with revision 2 of Module III on pharmacovigilance inspections",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-ich-e14-s7b-r1-qas-clinical-nonclinical-d345b0117a02",
+  "document_title": "ICH E14/S7B (R1) Q&As: clinical and nonclinical evaluation of QT/QTc interval prolongation and proarrhythmic potential for non-antiarrhythmic drugs - questions and answers - step 5",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-ich-m13b-guideline-bioequivalence-immedi-93cfa5bf11b8",
+  "document_title": "ICH M13B guideline on bioequivalence for immediate-release solid oral dosage forms - additional strengths biowaiver - Step 5",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-niraparib-hard-capsules-100-mg-film-coat-95cf841827ad",
+  "document_title": "Niraparib hard capsules 100 mg and film-coated tablets 100 mg product-specific bioequivalence guidance",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-questions-answers-post-approval-change-m-979cb0bbd722",
+  "document_title": "Questions and answers on post approval change management protocols for veterinary medicinal products ",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-raltegravir-product-specific-bioequivale-7a6b836cfe61",
+  "document_title": "Raltegravir product-specific bioequivalence guidance 400 mg and 600 mg film-coated tablet, 25 and 100 mg chewable tablet, 100 mg granules for oral suspension",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-reflection-paper-methodological-aspects-8048471f2a84",
+  "document_title": "Reflection paper on methodological aspects in confirmatory platform trials",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-reflection-paper-use-heat-treatment-inac-c8c1800359dd",
+  "document_title": "Reflection paper on the use of heat treatment to inactivate endogenous retroviruses in live immunological veterinary medicinal products - Revision 1",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-semaglutide-tablet-15-4-9-25-50-mg-produ-70cccdd51a21",
+  "document_title": "Semaglutide tablet 1.5, 4, 9, 25 and 50 mg product-specific bioequivalence guidance",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-tofacitinib-prolonged-release-tablets-11-2174f20e22ad",
+  "document_title": "Tofacitinib, prolonged-release tablets, 11 mg product-specific bioequivalence guidance",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-vich-gl34-biologicals-testing-detection-9972c12772aa",
+  "document_title": "VICH GL34: Biologicals: testing for the detection of Mycoplasma contamination",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ema_sci_guidelines-vich-gl49-studies-evaluate-metabolism-re-82648fb6a75f",
+  "document_title": "VICH GL49: Studies to evaluate the metabolism and residue kinetics of veterinary drugs in food producing animals: validation of analytical methods used in residue depletion studies - Revision 2",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "EU-GMP-Annex11",
+  "document_title": "EU GMP Annex 11 — Computerised Systems",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "EU-GMP-Annex15",
+  "document_title": "EU GMP Annex 15 — Qualification and Validation",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "EU-GMP-Annex22",
+  "document_title": "EU GMP Annex 22 — Artificial Intelligence (draft / consultation)",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "FDA-CSA-2025",
+  "document_title": "Computer Software Assurance for Production and Quality System Software",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "FDA-CSV-2003",
+  "document_title": "Computerized Systems Used in Clinical Investigations",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "FDA-DI-CGMP-QA",
+  "document_title": "FDA Data Integrity and Compliance with CGMP — Questions and Answers Guidance for Industry",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "fda_drugs-breckenridge-pharmaceutical-inc-issues-v-91983196d571",
+  "document_title": "Breckenridge Pharmaceutical, Inc. Issues Voluntary Nationwide Consumer-Level Recall of One Lot of Propranolol Hydrochloride Extended-Release Capsules, USP, 60 mg, Due to Potential Metal Contamination",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-drug-alerts-and-statements-3f271fae38b1",
+  "document_title": "Drug Alerts and Statements",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-drugsfda-data-files-ca12a62ab2d2",
+  "document_title": "Drugs@FDA Data Files",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-first-generic-drug-approvals-c3a67251d458",
+  "document_title": "First Generic Drug Approvals",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-gdufa-paid-facilities-list-b858545af3d4",
+  "document_title": "GDUFA Paid Facilities List",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-generic-drug-user-fee-amendments-50e0c192024f",
+  "document_title": "Generic Drug User Fee Amendments",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-greenwich-rx-issues-voluntary-nationwide-1b1f4dd5645f",
+  "document_title": "Greenwich Rx Issues Voluntary Nationwide Recall of Compounded Sterile Products Due to Lack of Sterility Assurance",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-new-approach-methodologies-nams-database-854a88274529",
+  "document_title": "New Approach Methodologies (NAMs) Database of Use Case Examples",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-novel-drug-approvals-2026-3c26eb796f41",
+  "document_title": "Novel Drug Approvals for 2026",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-office-health-advancement-oha-guidance-d-0a10a9b11882",
+  "document_title": "OHA Guidance Documents",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-office-infectious-diseases-research-acti-fc0ca8c89093",
+  "document_title": "OID Research Activities",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-ogle-cattle-company-inc-713311-09052025-d6e84c348ccf",
+  "document_title": "Ogle Cattle Company, Inc. - 713311 - 09/05/2025",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-rare-disease-drug-approvals-f32d626622ef",
+  "document_title": "Rare Disease Drug Approvals",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-report-state-pharmaceutical-quality-17001d977c14",
+  "document_title": "Report on the State of Pharmaceutical Quality",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-upcoming-product-specific-guidances-gene-9f746d9eab76",
+  "document_title": "Upcoming Product-Specific Guidances for Generic Drug Product",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-verified-clinical-benefit-non-malignant-5720fd957982",
+  "document_title": "Verified Clinical Benefit I Heme/Neuro/Other",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_drugs-whats-new-related-drugs-208853175525",
+  "document_title": "What's New Related to Drugs",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "FDA-Part11-Scope-2003",
+  "document_title": "Part 11, Electronic Records; Electronic Signatures — Scope and Application",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-class-targeted-therap-28e7ce0ca8d7",
+  "document_title": "FDA Approves First in Class Targeted Therapy for Metastatic Pancreatic Cancer",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-drug-its-kind-polycyt-8b9cf27557d0",
+  "document_title": "FDA Approves First Drug of Its Kind for Polycythemia Vera, a Rare Blood Disorder",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-drug-shown-help-patie-03fd2b6983b7",
+  "document_title": "FDA Approves First Drug Shown to Help Patients with Infantile-Onset Niemann-Pick Disease Type C Live Longer",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-drug-treat-alexander-c08d134f55c7",
+  "document_title": "FDA Approves First Drug to Treat Alexander Disease",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-drug-treat-full-range-8f52f8c5ce90",
+  "document_title": "FDA Approves First Drug to Treat the Full Range of Narcolepsy Type 1 Symptoms",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-drug-treat-neurologic-166b54c5f7ac",
+  "document_title": "FDA Approves First Drug to Treat Neurological Symptoms of Type 3 Gaucher Disease",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-factor-xla-inhibitor-97a52420f4dd",
+  "document_title": "FDA Approves First Factor Xla Inhibitor to Help Prevent Stroke in Certain Adults at High Risk",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-gene-therapy-pediatri-6f05158e9abb",
+  "document_title": "FDA Approves First Gene Therapy for Pediatric Patients with Sanfilippo Syndrome Type A",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-heart-valve-designed-6a2bd6533c1a",
+  "document_title": "FDA Approves First Heart Valve Designed to Grow with Children",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-its-kind-chronic-hepa-65414b9e1604",
+  "document_title": "FDA Approves First-of-Its-Kind Chronic Hepatitis B Treatment",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-oral-drug-indicated-t-5b1397122c50",
+  "document_title": "FDA Approves First Oral Drug Indicated to Treat Dermatomyositis in Adults",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-plasmid-dna-based-imm-d3472343f0bf",
+  "document_title": "FDA Approves First Plasmid DNA-based Immunotherapy for Adults with Recurrent Respiratory Papillomatosis",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-therapy-patients-aged-84e45fe260e1",
+  "document_title": "FDA Approves First Therapy for Patients aged 8 years and older with Glycogen Storage Disease Type Ia",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-treatment-certain-peo-272d29d415b2",
+  "document_title": "FDA Approves First Treatment for Certain People With BCG-Unresponsive Bladder Cancer",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-first-treatment-mct8-defici-ccc41bc0be10",
+  "document_title": "FDA Approves First Treatment for MCT8 Deficiency",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-immunotherapy-may-allow-cer-53961c9f9e9e",
+  "document_title": "FDA Approves Immunotherapy That May Allow Certain Patients with Rectal Cancer to Avoid Chemotherapy, Radiation and Surgery",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-new-engineered-viral-immuno-7bf1526acc03",
+  "document_title": "FDA Approves New Engineered Viral Immunotherapy for Patients with Treatment-Resistant Advanced Melanoma",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-approves-once-weekly-generic-hormone-513b427afee7",
+  "document_title": "FDA Approves Once-Weekly Generic Hormone Therapy Patch for Women",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-authorizes-first-its-kind-robotic-bl-84ea627e9eab",
+  "document_title": "FDA Authorizes First-Of-Its-Kind Robotic Blood Draw Device",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-authorizes-first-wearable-device-con-d1594e345d64",
+  "document_title": "FDA Authorizes First Wearable Device That Continuously Monitors Both Ketone Levels and Blood Sugar",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-grants-accelerated-approval-new-brea-0d97ed0e5b88",
+  "document_title": "FDA Grants Accelerated Approval to a New Breast Cancer Treatment",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-grants-accelerated-approval-new-trea-ee781972af77",
+  "document_title": "FDA Grants Accelerated Approval to a New Treatment for Head and Neck Squamous Cell Carcinoma",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-intends-evaluate-changes-pmta-regula-aea48c272e29",
+  "document_title": "FDA intends to evaluate changes to the PMTA regulatory framework",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-investigation-leads-charges-against-593b8947d985",
+  "document_title": "FDA Investigation Leads to Charges Against Two Indian Nationals Involved in Transnational Counterfeit Drug Distribution Scheme",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-issues-emergency-use-authorization-d-5c9d008d10ce",
+  "document_title": "FDA Issues Emergency Use Authorization for Drug to Prevent New World Screwworm in Multiple Species, Including Sheep, Cattle, Goats, and Swine",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-issues-emergency-use-authorization-d-8fdb033c52cc",
+  "document_title": "FDA Issues Emergency Use Authorization for Drug to Treat New World Screwworm in Dogs and Puppies",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-issues-emergency-use-authorization-d-a7e4bf4b7b67",
+  "document_title": "FDA Issues Emergency Use Authorization for Drugs to Prevent and Treat New World Screwworm in Dogs and Cats",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-issues-emergency-use-authorization-g-d4785a963beb",
+  "document_title": "FDA Issues Emergency Use Authorization for Generic Drug to Prevent New World Screwworm in Cattle",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-issues-final-guidance-prescription-d-89215c91f4a6",
+  "document_title": "FDA Issues Final Guidance on Prescription Drug Apps and Software",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-launches-expedited-ind-pilot-begins-82420c309d57",
+  "document_title": "FDA Launches Expedited IND Pilot, Begins Accepting Applications",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-launches-global-reliance-disclosure-8a0db20f0a1c",
+  "document_title": "FDA Launches the Global Reliance Disclosure Program to Expand Patient Access to Medicines Worldwide",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-launches-nationwide-effort-expand-sc-08ef549c575b",
+  "document_title": "FDA Launches Nationwide Effort to Expand Scientific Expertise and Consumer Voices to Advisory Committees",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-launches-new-program-advance-neurosc-752383f8c2d7",
+  "document_title": "FDA Launches New Program to Advance Neuroscience Medical Product Development",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-launches-rare-disease-framework-init-9886511a0214",
+  "document_title": "FDA Launches the Rare Disease Framework Initiative to Develop a Holistic, Fit-For-Purpose Framework for Rare Disease Drug Development",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-provides-clarity-support-cell-and-ge-39e3837543ac",
+  "document_title": "FDA Provides Clarity to Support Cell and Gene Therapy Development and Quality",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-seeks-public-feedback-inform-regulat-0a1c28950f4e",
+  "document_title": "FDA Seeks Public Feedback to Inform Regulatory Approach for Generative AI-Enabled Medical Devices",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-seeks-public-input-advance-developme-78b064221b02",
+  "document_title": "FDA Seeks Public Input to Advance Development of Botanical Drug Products",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-seeks-public-input-support-ibogaine-eb2d34212f4f",
+  "document_title": "FDA Seeks Public Input to Support Ibogaine Research",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-takes-steps-maintain-newborn-access-8d5558ab2c19",
+  "document_title": "FDA Takes Steps to Maintain Newborn Access to Life-Saving Starter Nutrition Products",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-fda-updates-regulations-advance-innovati-c33235b58b68",
+  "document_title": "FDA Updates Regulations to Advance Innovative Alternatives to Animal Testing",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "fda_press_releases-federal-court-enters-consent-decree-agai-3cd3ec6badd6",
+  "document_title": "Federal Court Enters Consent Decree Against Gold Star Distribution, Inc. Following Persistent Insanitary Warehouse Conditions",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ich_guidelines-ich-20e14-s7b-20q-26as-28r1-29-202026-20-223e03c47ca8",
+  "document_title": "E14/S7B Q&A (R1) — Questions & Answers: Clinical and Nonclinical Evaluation of QT/QTc Interval Prolongation and Proarrhythmic Potential",
+  "registry_title_present": false
+ },
+ {
+  "document_id": "ICH-Q10",
+  "document_title": "ICH Q10 — Pharmaceutical Quality System",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "ICH-Q9",
+  "document_title": "ICH Q9 — Quality Risk Management (2005)",
+  "registry_title_present": true
+ },
+ {
+  "document_id": "ICH-Q9-R1",
+  "document_title": "ICH Q9(R1) — Quality Risk Management",
+  "registry_title_present": true
+ }
+]
