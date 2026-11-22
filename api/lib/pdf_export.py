@@ -196,6 +196,69 @@ def _measure_wrapped(c: canvas.Canvas, text: str, font: str, size: float,
     return lines * line_height
 
 
+def _wrap_fit(c: canvas.Canvas, text: str, font: str, size: float, max_w: float) -> list:
+    """Lines that fit max_w. Words wrap at spaces; a word wider than max_w is broken
+    between characters. Nothing is dropped and no ellipsis is added."""
+    lines, line = [], ""
+    for word in str(text).split():
+        cand = f"{line} {word}" if line else word
+        if c.stringWidth(cand, font, size) <= max_w:
+            line = cand
+            continue
+        if line:
+            lines.append(line)
+            line = ""
+        piece = ""
+        for ch in word:
+            if not piece or c.stringWidth(piece + ch, font, size) <= max_w:
+                piece += ch
+            else:
+                lines.append(piece)
+                piece = ch
+        line = piece
+    if line or not lines:
+        lines.append(line)
+    return lines
+
+
+def _draw_lines(c: canvas.Canvas, x, y, lines, font, size, color, line_height):
+    """Draw pre-wrapped lines downwards; the first baseline is at y."""
+    for i, line in enumerate(lines):
+        _text(c, x, y - i * line_height, line, font, size, color)
+
+
+_FIT_MIN_PT = 6.0
+
+
+def _fit_single_line(c: canvas.Canvas, text, font, size, max_w, min_size=_FIT_MIN_PT):
+    """(size, lines). The text on ONE line at the largest size from `size` down to
+    min_size that fits max_w. Only if nothing fits at min_size is it wrapped (at min_size)."""
+    s = size
+    while s >= min_size - 1e-9:
+        if c.stringWidth(text, font, s) <= max_w:
+            return s, [text]
+        s = round(s - 0.25, 2)
+    return min_size, _wrap_fit(c, text, font, min_size, max_w)
+
+
+def _cell_layout(c: canvas.Canvas, cells, rows, row_base):
+    """Per-cell (size, lines), row heights, row tops and extra height for a 3-column grid.
+    The Document ID cell uses the full row width (its row has two empty cells)."""
+    fit = []
+    for k, v in cells:
+        if not (k and v):
+            fit.append((9.0, []))
+            continue
+        w = (CONTENT_W - 20) if k == "Document ID" else (CONTENT_W / 3 - 14)
+        fit.append(_fit_single_line(c, v, "Mono", 9.0, w))
+    heights = []
+    for r in range(rows):
+        extra = max(len(fit[ci][1]) for ci in range(r * 3, r * 3 + 3)) - 1
+        heights.append(row_base + max(0, extra) * 10)
+    tops = [sum(heights[:r]) for r in range(rows)]
+    return fit, heights, tops, sum(heights) - rows * row_base
+
+
 # ── header drawing ─────────────────────────────────────────────────────────────
 
 def _draw_header_p1(c: canvas.Canvas, export_id: str, exported: str,
@@ -617,7 +680,9 @@ def generate_query_export_pdf(
 
             for idx, chunk in enumerate(cited_chunks):
                 superseded = chunk.get("superseded", False)
-                title_c    = (chunk.get("document_title") or "—")[:80]
+                title_c    = chunk.get("document_title") or "—"
+                title_lines = _wrap_fit(rc, title_c, "Inter-SemiBold", 10.5, CONTENT_W - 60)
+                title_extra = (len(title_lines) - 1) * 13.5
                 agency     = chunk.get("issuing_body") or "—"
                 version_raw = chunk.get("document_version") or ""
                 version    = version_raw if (version_raw and version_raw != "1.0") else "—"
@@ -639,13 +704,29 @@ def generate_query_export_pdf(
 
                 META_ROW_H    = 22
                 META_ROWS     = 3
-                HEAD_TOP      = 22
-                HEAD_META_GAP = 24
+                HEAD_TOP      = 38   # 22 + 16 pt row for the status badge above the title
+                HEAD_META_GAP = 24 + title_extra
+
+                # Metadata cells, full text (no slicing). Each cell wraps; a row grows to fit its tallest cell.
+                if is_metadata_citation:
+                    doc_id = chunk.get("document_id") or "—"
+                    cells = [
+                        ("Agency",      agency),     ("Version",   version),       ("Doc type",  doc_type),
+                        ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
+                        ("Document ID", doc_id),     ("",          ""),            ("",          ""),
+                    ]
+                else:
+                    cells = [
+                        ("Agency",      agency),     ("Version",   version),       ("Doc type",  doc_type),
+                        ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
+                        ("Similarity",  score_str),  ("",          ""),            ("",          ""),
+                    ]
+                cell_fit, row_h, row_top, meta_extra = _cell_layout(rc, cells, META_ROWS, META_ROW_H)
 
                 if is_metadata_citation:
                     # Compact card: head + metadata grid + footer line — no chunk text, no traces
                     FOOTER_H   = 16
-                    card_h = HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H + FOOTER_H
+                    card_h = HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H + meta_extra + FOOTER_H
                 else:
                     draw_w  = CONTENT_W - 28
                     ctxt_h  = _measure_wrapped(rc, display_txt or "—", "Mono", 8.5,
@@ -656,15 +737,15 @@ def generate_query_export_pdf(
                     ctxt_pad      = 9
                     LBL_H         = 12
                     ctxt_box_h    = ctxt_h + ctxt_pad * 2 + trunc_row + LBL_H
-                    src_display = source_url[:90] + ("…" if len(source_url) > 90 else "")
-                    loc_display = source_local[:80] + ("…" if len(source_local) > 80 else "")
                     trace_max_w   = CONTENT_W - 20
-                    src2_h = _measure_wrapped(rc, f"Source  {src_display}", "Mono", 7.5, trace_max_w, 11)
-                    src3_h = (_measure_wrapped(rc, f"File  {loc_display}", "Mono", 7.5, trace_max_w, 11)
-                              if source_local else 0)
+                    src_size, src_lines = _fit_single_line(rc, f"Source  {source_url}", "Mono", 7.5, trace_max_w)
+                    file_size, file_lines = (_fit_single_line(rc, f"File  {source_local}", "Mono", 7.5, trace_max_w)
+                                             if source_local else (7.5, []))
+                    src2_h = len(src_lines) * 11
+                    src3_h = len(file_lines) * 11
                     TRACE_BLOCK = 8 + 10 + 11 + src2_h + (11 + src3_h if source_local else 0) + 10
                     card_h = (HEAD_TOP + HEAD_META_GAP + META_ROWS * META_ROW_H
-                              + META_CHUNK_GAP + ctxt_box_h + TRACE_BLOCK)
+                              + META_CHUNK_GAP + ctxt_box_h + TRACE_BLOCK + meta_extra)
 
                 cy = chk(cy, card_h + 18, fp)
 
@@ -684,53 +765,38 @@ def generate_query_export_pdf(
                 rc.drawCentredString(bx, head_y - 2.8, str(chunk.get("index", idx + 1)))
                 rc.restoreState()
 
-                _text(rc, MARGIN_X + 30, head_y - 3, title_c, "Inter-SemiBold", 10.5, C_INK)
+                _draw_lines(rc, MARGIN_X + 30, head_y - 3, title_lines, "Inter-SemiBold", 10.5, C_INK, 13.5)
 
                 badge_txt = "● SUPERSEDED" if superseded else "● ACTIVE"
                 badge_fg  = C_WARN_TEXT if superseded else C_STATUS_OK
                 badge_bg  = C_STATUS_AMB_BG if superseded else C_STATUS_OK_BG
                 bw, bh = 64, 14
-                bx2 = MARGIN_X + CONTENT_W - bw - 8
-                by2 = head_y - 12
+                bx2 = MARGIN_X + 30
+                by2 = cy - 8 - bh
                 _rect(rc, bx2, by2, bw, bh, fill=badge_bg, stroke=None, radius=3)
                 _text(rc, bx2 + bw / 2, by2 + 3.5, badge_txt, "Inter-SemiBold", 7.5,
                       badge_fg, align="center")
 
                 # ── metadata grid 3×3 ─────────────────────────────────────────
                 meta_y = cy - HEAD_TOP - HEAD_META_GAP
-                if is_metadata_citation:
-                    doc_id = chunk.get("document_id") or "—"
-                    cells = [
-                        ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
-                        ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
-                        ("Document ID", doc_id[:32]),("",          ""),            ("",          ""),
-                    ]
-                else:
-                    cells = [
-                        ("Agency",      agency),     ("Version",   version[:32]),  ("Doc type",  doc_type),
-                        ("Published",   pub_date),   ("Clause ID", clause),        ("Page",      page_no),
-                        ("Similarity",  score_str),  ("",          ""),            ("",          ""),
-                    ]
                 col_w3 = CONTENT_W / 3
                 for ci, (k, v) in enumerate(cells):
-                    if not k:
-                        continue
-                    if not v:
+                    if not k or not v:
                         continue
                     cx3   = MARGIN_X + (ci % 3) * col_w3 + 10
-                    row_y = meta_y - (ci // 3) * META_ROW_H
+                    row_y = meta_y - row_top[ci // 3]
                     _text(rc, cx3, row_y, k, "Mono", 7.5, C_INK_TER)
-                    _text(rc, cx3, row_y - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
+                    _draw_lines(rc, cx3, row_y - 12, cell_fit[ci][1], "Mono", cell_fit[ci][0], C_INK, 10)
 
                 if is_metadata_citation:
                     # ── document registry reference footer ────────────────────
-                    footer_y = meta_y - META_ROWS * META_ROW_H - 6
+                    footer_y = meta_y - META_ROWS * META_ROW_H - meta_extra - 6
                     _text(rc, MARGIN_X + 14, footer_y,
                           "Document registry reference  ·  No chunk text retrieved",
                           "Mono", 7.5, C_INK_TER)
                 else:
                     # ── chunk text box ────────────────────────────────────────
-                    chunk_y = meta_y - META_ROWS * META_ROW_H - META_CHUNK_GAP
+                    chunk_y = meta_y - META_ROWS * META_ROW_H - meta_extra - META_CHUNK_GAP
                     _rect(rc, MARGIN_X + 8, chunk_y - ctxt_box_h, CONTENT_W - 16, ctxt_box_h,
                           fill=box_bg, stroke=C_BORDER, lw=0.75)
                     # "Chunk text" label at top of box
@@ -752,13 +818,9 @@ def generate_query_export_pdf(
                     _text(rc, MARGIN_X + 10, tl1_y,
                           f"Ingested  {chunked_at[:10]}   Trace ID  {trace_id}",
                           "Mono", 7.5, C_INK_TER)
-                    _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11,
-                                  f"Source  {src_display}",
-                                  "Mono", 7.5, C_INK_TER, trace_max_w, 11)
+                    _draw_lines(rc, MARGIN_X + 10, tl1_y - 11, src_lines, "Mono", src_size, C_INK_TER, 11)
                     if source_local:
-                        _wrapped_text(rc, MARGIN_X + 10, tl1_y - 11 - src2_h,
-                                      f"File  {loc_display}",
-                                      "Mono", 7.5, C_INK_TER, trace_max_w, 11)
+                        _draw_lines(rc, MARGIN_X + 10, tl1_y - 11 - src2_h, file_lines, "Mono", file_size, C_INK_TER, 11)
                 cy -= card_h + 18
 
             _line(rc, MARGIN_X, cy + 4, MARGIN_X + CONTENT_W, cy + 4, C_BORDER)
@@ -786,7 +848,9 @@ def generate_query_export_pdf(
             _UNC_HEAD_META_GAP = 24
 
             for idx, chunk in enumerate(uncited_chunks):
-                uc_title    = (chunk.get("document_title") or "—")[:80]
+                uc_title    = chunk.get("document_title") or "—"
+                uc_title_lines = _wrap_fit(rc, uc_title, "Inter-SemiBold", 10.5, CONTENT_W - 60)
+                uc_title_extra = (len(uc_title_lines) - 1) * 13.5
                 uc_agency   = chunk.get("issuing_body") or "—"
                 uc_version_raw = chunk.get("document_version") or ""
                 uc_version  = uc_version_raw if (uc_version_raw and uc_version_raw != "1.0") else "—"
@@ -801,14 +865,22 @@ def generate_query_export_pdf(
                 uc_url       = chunk.get("source_url") or "—"
                 uc_local     = chunk.get("source_local_path") or ""
 
-                uc_src_disp = uc_url[:90] + ("…" if len(uc_url) > 90 else "")
-                uc_loc_disp = uc_local[:80] + ("…" if len(uc_local) > 80 else "")
                 uc_trace_max_w = CONTENT_W - 20
-                uc_src2_h   = _measure_wrapped(rc, f"Source  {uc_src_disp}", "Mono", 7.5, uc_trace_max_w, 11)
-                uc_src3_h   = (_measure_wrapped(rc, f"File  {uc_loc_disp}", "Mono", 7.5, uc_trace_max_w, 11)
-                               if uc_local else 0)
+                uc_src_size, uc_src_lines = _fit_single_line(rc, f"Source  {uc_url}", "Mono", 7.5, uc_trace_max_w)
+                uc_file_size, uc_file_lines = (_fit_single_line(rc, f"File  {uc_local}", "Mono", 7.5, uc_trace_max_w)
+                                               if uc_local else (7.5, []))
+                uc_src2_h   = len(uc_src_lines) * 11
+                uc_src3_h   = len(uc_file_lines) * 11
+                uc_cells = [
+                    ("Agency",     uc_agency),    ("Version",   uc_version),       ("Doc type",  uc_doc_type),
+                    ("Published",  uc_pub_date),  ("Clause ID", uc_clause),        ("Page",      uc_page_no),
+                    ("Similarity", uc_score_str), ("",          ""),               ("",          ""),
+                ]
+                uc_col_w3 = CONTENT_W / 3
+                uc_cell_fit, uc_row_h, uc_row_top, uc_meta_extra = _cell_layout(rc, uc_cells, _UNC_META_ROWS, _UNC_META_ROW_H)
+                uc_meta_gap = _UNC_HEAD_META_GAP + uc_title_extra
                 _UNC_TRACE_BLOCK = 8 + 10 + 11 + uc_src2_h + (11 + uc_src3_h if uc_local else 0) + 10
-                unc_card_h = (_UNC_HEAD_TOP + _UNC_HEAD_META_GAP
+                unc_card_h = (_UNC_HEAD_TOP + uc_meta_gap + uc_meta_extra
                               + _UNC_META_ROWS * _UNC_META_ROW_H + _UNC_TRACE_BLOCK)
 
                 cy = chk(cy, unc_card_h + 18, fp)
@@ -827,38 +899,26 @@ def generate_query_export_pdf(
                 rc.setFont("Inter-Bold", 8.0)
                 rc.drawCentredString(MARGIN_X + 14, uc_head_y - 2.8, str(chunk.get("index", idx + 1)))
                 rc.restoreState()
-                _text(rc, MARGIN_X + 30, uc_head_y - 3, uc_title, "Inter-SemiBold", 10.5, C_INK_SEC)
+                _draw_lines(rc, MARGIN_X + 30, uc_head_y - 3, uc_title_lines, "Inter-SemiBold", 10.5, C_INK_SEC, 13.5)
 
                 # metadata grid 3×3
-                uc_meta_y = cy - _UNC_HEAD_TOP - _UNC_HEAD_META_GAP
-                uc_cells = [
-                    ("Agency",     uc_agency),    ("Version",   uc_version[:32]),  ("Doc type",  uc_doc_type),
-                    ("Published",  uc_pub_date),  ("Clause ID", uc_clause),        ("Page",      uc_page_no),
-                    ("Similarity", uc_score_str), ("",          ""),               ("",          ""),
-                ]
-                uc_col_w3 = CONTENT_W / 3
+                uc_meta_y = cy - _UNC_HEAD_TOP - uc_meta_gap
                 for ci, (k, v) in enumerate(uc_cells):
-                    if not k:
-                        continue
-                    if not v:
+                    if not k or not v:
                         continue
                     uc_cx = MARGIN_X + (ci % 3) * uc_col_w3 + 10
-                    uc_ry = uc_meta_y - (ci // 3) * _UNC_META_ROW_H
+                    uc_ry = uc_meta_y - uc_row_top[ci // 3]
                     _text(rc, uc_cx, uc_ry, k, "Mono", 7.5, C_INK_TER)
-                    _text(rc, uc_cx, uc_ry - 12, (v or "—")[:32], "Mono", 9.0, C_INK)
+                    _draw_lines(rc, uc_cx, uc_ry - 12, uc_cell_fit[ci][1], "Mono", uc_cell_fit[ci][0], C_INK, 10)
 
                 # trace lines (tight below metadata grid)
-                uc_tl1_y = uc_meta_y - _UNC_META_ROWS * _UNC_META_ROW_H - 8
+                uc_tl1_y = uc_meta_y - uc_meta_extra - _UNC_META_ROWS * _UNC_META_ROW_H - 8
                 _text(rc, MARGIN_X + 10, uc_tl1_y,
                       f"Ingested  {uc_chunked[:10]}   Trace ID  {uc_trace_id}",
                       "Mono", 7.5, C_INK_TER)
-                _wrapped_text(rc, MARGIN_X + 10, uc_tl1_y - 11,
-                              f"Source  {uc_src_disp}",
-                              "Mono", 7.5, C_INK_TER, uc_trace_max_w, 11)
+                _draw_lines(rc, MARGIN_X + 10, uc_tl1_y - 11, uc_src_lines, "Mono", uc_src_size, C_INK_TER, 11)
                 if uc_local:
-                    _wrapped_text(rc, MARGIN_X + 10, uc_tl1_y - 11 - uc_src2_h,
-                                  f"File  {uc_loc_disp}",
-                                  "Mono", 7.5, C_INK_TER, uc_trace_max_w, 11)
+                    _draw_lines(rc, MARGIN_X + 10, uc_tl1_y - 11 - uc_src2_h, uc_file_lines, "Mono", uc_file_size, C_INK_TER, 11)
 
                 cy -= unc_card_h + 18
 
