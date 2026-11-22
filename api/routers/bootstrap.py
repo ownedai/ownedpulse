@@ -464,8 +464,8 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
 
     # Pre-scan: for 'missing only' mode, check which docs are already
     # ingested so the total reflects only documents that need work.
-    # Base corpus documents (corpus_doc=TRUE) are always re-ingested —
-    # the user explicitly selected them and they should never be skipped.
+    # A document is skipped when PostgreSQL marks it indexed and Qdrant still has
+    # its vectors. Base corpus documents follow the same rule.
     if redownload == "check":
         from lib.db import get_pg_conn as _get_conn
         from pathlib import Path
@@ -475,15 +475,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
             all_ids = [d["doc_id"] for d in docs]
             _conn = _get_conn()
             with _conn.cursor() as _cur:
-                # Batch 1: which of these are base corpus docs (always re-ingested)
-                _cur.execute(
-                    "SELECT document_id FROM document_registry "
-                    "WHERE document_id = ANY(%s) AND corpus_doc = TRUE",
-                    (all_ids,),
-                )
-                corpus_doc_ids = {r[0] for r in _cur.fetchall()}
-
-                # Batch 2: which are marked indexed/success in PG
+                # Batch 1: which are marked indexed/success in PG
                 _cur.execute(
                     "SELECT document_id FROM ingestion_state "
                     "WHERE document_id = ANY(%s) AND ingestion_status IN ('success','indexed')",
@@ -491,7 +483,7 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
                 )
                 pg_indexed_ids = {r[0] for r in _cur.fetchall()}
 
-                # Batch 3: archive_path fallback for docs with no ingestion_state row
+                # Batch 2: archive_path fallback for docs with no ingestion_state row
                 _cur.execute(
                     "SELECT document_id, archive_path FROM document_registry "
                     "WHERE document_id = ANY(%s) AND archive_path IS NOT NULL",
@@ -501,20 +493,14 @@ def _bootstrap_worker(session_id: str, docs: list, redownload: str = "none"):
             _conn.close()
 
             # Single batched Qdrant check (instead of one round-trip per document)
-            # for docs PG says are indexed but aren't base corpus — those verify
-            # their vectors actually still exist before being counted as "skip".
-            candidates_for_qdrant_check = [
-                d for d in pg_indexed_ids if d not in corpus_doc_ids
-            ]
+            # for docs PG says are indexed: their vectors must still exist before
+            # they are counted as "skip".
+            candidates_for_qdrant_check = list(pg_indexed_ids)
             _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
             qdrant_present_ids = _docs_with_qdrant_chunks(_qdrant, candidates_for_qdrant_check)
 
             for doc in docs:
                 doc_id = doc["doc_id"]
-                # Always include base corpus docs — they're explicitly selected
-                if doc_id in corpus_doc_ids:
-                    ingest_docs.append(doc)
-                    continue
                 if doc_id in pg_indexed_ids:
                     # PostgreSQL reports this document as ingested, but Qdrant may
                     # have been wiped/restored independently (e.g. stale snapshot,

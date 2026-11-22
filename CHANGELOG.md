@@ -4,6 +4,7 @@
 
 ### Changed
 - Sources reingest window: 'Re-embed selected and use local files where available' now keeps local files and re-embeds from them, downloading only documents without a local copy (it deleted and re-downloaded them before). Nuclear reset hint corrected to match what it does.
+- Sources reingest window: 'Missing only' now skips base-corpus documents that are already indexed (it queued them every time).
 
 ## 1.1.1 (2026-11-19)
 
